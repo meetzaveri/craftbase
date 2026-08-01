@@ -43,11 +43,23 @@ async function waitForIdRemovedFromDraft(page, id) {
     )
 }
 
-// Text creation records two history entries: ADD (handleTextElement on toolbar
-// click) and UPDATE_VERTICES (SCENARIO_TEXT_DRAW positioning the element from
-// its off-screen seed coords to where the user clicked). One undo only reverts
-// the position update; a second undo pops the ADD and removes the element.
-const TEXT_UNDO_COUNT = 2
+// Placing a text and committing its editor records three history entries:
+// ADD (handleTextElement on toolbar click), UPDATE_VERTICES (SCENARIO_TEXT_DRAW
+// positioning the element from its off-screen seed coords to where the user
+// clicked), and UPDATE_BULK (the editor's blur commit writing width/height/
+// metadata — newText.tsx). Only the last of those three pops the ADD and
+// removes the element.
+const TEXT_UNDO_COUNT = 3
+
+// Placing a text element auto-opens its inline editor with focus, and canvas
+// undo deliberately stands down while a text field is focused so Cmd+Z reaches
+// the browser's native text undo instead. Dismiss the editor first, the same
+// way a user would, so the following Cmd+Z is a canvas undo.
+async function dismissTextEditor(page) {
+    await page.waitForSelector('.temp-input-area')
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.temp-input-area', { state: 'detached' })
+}
 
 test.describe('Undo (local mode, keyboard Cmd/Ctrl+Z)', () => {
     for (const { name, draw } of SHAPES) {
@@ -73,6 +85,8 @@ test.describe('Undo (local mode, keyboard Cmd/Ctrl+Z)', () => {
             const draftBefore = await getDraftComponents(page)
             expect(draftBefore?.[id]).toBeTruthy()
             expect(draftBefore?.[anchorId]).toBeTruthy()
+
+            if (name === 'text') await dismissTextEditor(page)
 
             const undoPresses = name === 'text' ? TEXT_UNDO_COUNT : 1
             for (let i = 0; i < undoPresses; i++) {

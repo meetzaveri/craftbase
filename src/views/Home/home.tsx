@@ -62,7 +62,7 @@ const HomePage: React.FC = () => {
                         </div>
                         <div className="text-ink-muted pl-2 text-sm">
                             {' '}
-                            (still in early alpha stage)
+                            (Beta version)
                         </div>
                     </div>
 

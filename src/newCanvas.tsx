@@ -860,6 +860,27 @@ function addZUI(
     }
     window.addEventListener('keydown', onCurvedLineDeleteKeyDown, false)
 
+    // An element can leave the scene without the selection ever being cleared —
+    // undoing its ADD is the common case (history's applyRemove just drops the
+    // group). The selection overlay lives at scene level, so it survives the
+    // element it was framing and would keep painting (and stay hit-testable) at
+    // the dead shape's last position. Drop any selection state pointing at the
+    // removed id. Idempotent: detach() no-ops when nothing is selected, so the
+    // delete paths that already detach are unaffected.
+    window.addEventListener('elementRemoved', ((e: CustomEvent) => {
+        const id = e.detail?.id
+        if (!id) return
+        if (selectionController.currentGroup?.elementData?.id === id) {
+            selectionController.detach()
+        }
+        if (lastSelectedShape?.elementData?.id === id) {
+            lastSelectedShape = null
+        }
+        if (activeGroupRef.current?.elementData?.id === id) {
+            activeGroupRef.current = null
+        }
+    }) as EventListener)
+
     domElement.addEventListener('mousedown', mousedown, false)
     domElement.addEventListener('mousemove', hoverDetectMove, false)
     domElement.addEventListener('dblclick', dblclick, false)
@@ -1141,7 +1162,9 @@ function addZUI(
                 | HTMLElement
                 | undefined
             if (layerElem) layerElem.style.display = 'none'
-            selectionController.ui.visible = false
+            // The selection box stays visible while editing (same as the solo
+            // text editor) — it re-syncs on every render, so it tracks the
+            // shape as it auto-grows with the text.
             two.update()
 
             const rawLiveMeta =
@@ -5203,6 +5226,12 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     useEffect(() => {
         const onUndoRedoKeyDown = (evt: KeyboardEvent) => {
             if (evt.key.toLowerCase() === 'z' && (evt.ctrlKey || evt.metaKey)) {
+                // Live text editing (solo text component, shape inline text —
+                // both are .temp-input-area textareas — or any other text
+                // field): let the browser's native text undo handle the key
+                // instead of popping a canvas action out from under the editor.
+                const tag = document.activeElement?.tagName
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return
                 evt.preventDefault()
                 // Don't undo/redo mid-stroke — the in-progress pencil stroke
                 // isn't in history yet, so undoing here would pop the wrong

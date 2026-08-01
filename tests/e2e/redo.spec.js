@@ -29,9 +29,21 @@ const SHAPES = [
 
 const DRAFT_DEBOUNCE_MS = 700
 
-// Text creation records two history entries (ADD + UPDATE_VERTICES from
-// SCENARIO_TEXT_DRAW). Two undos remove it; two redos restore it.
-const TEXT_HISTORY_COUNT = 2
+// Placing a text and committing its editor records three history entries: ADD,
+// UPDATE_VERTICES (SCENARIO_TEXT_DRAW), and the editor's blur commit
+// (UPDATE_BULK of width/height/metadata — newText.tsx). Three undos remove it;
+// three redos restore it.
+const TEXT_HISTORY_COUNT = 3
+
+// Placing a text element auto-opens its inline editor with focus, and canvas
+// undo/redo deliberately stands down while a text field is focused so Cmd+Z
+// reaches the browser's native text undo instead. Dismiss the editor first, the
+// same way a user would, so the following shortcuts are canvas undo/redo.
+async function dismissTextEditor(page) {
+    await page.waitForSelector('.temp-input-area')
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.temp-input-area', { state: 'detached' })
+}
 
 async function waitForIdInDraft(page, id) {
     await page.waitForFunction(
@@ -80,6 +92,8 @@ test.describe('Redo (local mode, keyboard Cmd/Ctrl+Shift+Z)', () => {
             await page.waitForTimeout(DRAFT_DEBOUNCE_MS)
             const draftAfterDraw = await getDraftComponents(page)
             expect(draftAfterDraw?.[id]).toBeTruthy()
+
+            if (name === 'text') await dismissTextEditor(page)
 
             const passes = name === 'text' ? TEXT_HISTORY_COUNT : 1
 
