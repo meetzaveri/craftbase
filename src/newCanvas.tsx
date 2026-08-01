@@ -3150,8 +3150,9 @@ function addZUI(
                         // code block condition to handle normal component's dragging
                         else {
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const node = (shape as any)._renderer
-                                ?.elem as SVGGraphicsElement | undefined
+                            const node = (shape as any)._renderer?.elem as
+                                | SVGGraphicsElement
+                                | undefined
                             // CSS-transform move: eligible for non-rotated
                             // elements, including the group overlay — its member
                             // copies and selector chrome live inside its own SVG
@@ -5611,7 +5612,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
 
     return (
         <>
-            {import.meta.env.DEV && <PerfOverlay />}
+            {/* {import.meta.env.DEV && <PerfOverlay />} */}
             <div id="selector-rect"></div>
             {props.renderBackground?.()}
             <div id="main-two-root"></div>
