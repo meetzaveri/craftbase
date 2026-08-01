@@ -1227,6 +1227,13 @@ function addZUI(
             input.style.boxSizing = 'border-box'
             input.className = 'temp-input-area'
 
+            // Where the shape sat and how tall it was before typing began.
+            // Growing a rectangle downward moves its origin (see
+            // growShapeToFit), so the commit below has to persist the new y —
+            // compared against these.
+            const startTranslationY = group.translation.y
+            const startHeight = rectChild?.height
+
             // Anchor point: the SVG shape's screen-space center. The shape stays
             // VISIBLE during edit (only the text layer is hidden), so its rect is
             // live — recomputeGeometry() re-reads it each frame to follow pan/zoom.
@@ -1331,8 +1338,8 @@ function addZUI(
             }
 
             // Grow ONLY the shape height to fit the wrapped lines (width is
-            // user-driven). Symmetric growth keeps the centre fixed. Only on
-            // typing — NOT from the update handler (it calls two.update).
+            // user-driven). Only on typing — NOT from the update handler (it
+            // calls two.update).
             const growShapeToFit = () => {
                 if (!rectChild) return
                 const val = input.value || 'M'
@@ -1347,7 +1354,20 @@ function addZUI(
                     textSurfaceH
                 )
                 if (rectChild.height < nextH) {
+                    const dh = nextH - rectChild.height
                     rectChild.height = nextH
+                    // The shape path sits on the group origin, so growing
+                    // `height` alone expands symmetrically and lifts the TOP
+                    // edge — the box would swell around the text instead of
+                    // below it, walking line 1 upward on every newline. Shift
+                    // the origin down by half the delta so the top edge stays
+                    // put and the box only extends downward (matching the
+                    // standalone text editor). Rectangles only: a diamond or
+                    // circle reads as a centered figure, so symmetric growth is
+                    // the right behavior there.
+                    if (shapeKind === componentTypes.rectangle) {
+                        group.translation.y += dh / 2
+                    }
                     two.update()
                 }
             }
@@ -1446,6 +1466,12 @@ function addZUI(
                         persistPayload.width = Math.round(rectChild.width)
                         persistPayload.height = Math.round(rectChild.height)
                     }
+                    // Keeping the top edge fixed moved the origin; without
+                    // persisting it a reload would re-center the grown box on
+                    // the old origin and the shape would jump upward.
+                    if (group.translation.y !== startTranslationY) {
+                        persistPayload.y = Math.round(group.translation.y)
+                    }
                     updateComponentBulkPropertiesInLocalStore(
                         componentId,
                         persistPayload
@@ -1459,6 +1485,23 @@ function addZUI(
                             group.elementData.width = persistPayload.width
                             group.elementData.height = persistPayload.height
                         }
+                        if (persistPayload.y !== undefined) {
+                            group.elementData.y = persistPayload.y
+                        }
+                    }
+
+                    // Typing resized the box (and, for a rectangle, moved it),
+                    // so every edge port shifted — re-glue anything docked to
+                    // them. Restacking an edge with nothing docked is a no-op,
+                    // so fire all four rather than scanning for bindings.
+                    if (
+                        persistPayload.y !== undefined ||
+                        (rectChild && rectChild.height !== startHeight)
+                    ) {
+                        ;['n-resize', 'e-resize', 's-resize', 'w-resize'].forEach(
+                            (edge) => restackPortConnectors(componentId, edge)
+                        )
+                        two.update()
                     }
                 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactElement } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactElement } from 'react'
 import {
     staticPrimaryElementData,
     geoElementData,
@@ -34,6 +34,23 @@ const GEO_HIDDEN_TOOLS = new Set([
     'pencil',
     'text',
 ])
+
+// Tools whose secondary drawer behaves like a hover menu: the drawer opens on
+// hover (desktop) instead of waiting for a click, and clicking the parent icon
+// activates the mapped child straight away rather than only opening the drawer.
+// Keyed by parent tool → the child a bare click selects.
+const HOVER_DRAWER_DEFAULT_TOOL: Record<string, string> = {
+    lines: 'line',
+}
+
+// The drawer closes the instant the pointer leaves it or its icon. The two are
+// separated visually by a 6px gap, which the pointer would otherwise have to
+// cross through dead space — one stray mousemove landing in there would close
+// the drawer before it could be reached. So the drawer's hover area is extended
+// upward by exactly that gap as transparent padding: the icon and the drawer
+// touch as far as the pointer is concerned, while the panel still renders 6px
+// clear of the toolbar.
+const HOVER_DRAWER_BRIDGE_PX = 6
 
 const flattenShapesForDesktop = (
     elements: PrimaryElement[]
@@ -149,6 +166,23 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         }
     }, [openDrawer])
 
+    // Hover-menu plumbing for the drawers listed in HOVER_DRAWER_DEFAULT_TOOL.
+    // Closing is immediate, so leaving the icon has to be able to tell "the
+    // pointer went into the drawer" (keep it open) from "the pointer went
+    // anywhere else" (close). It can't wait for the drawer's own mouseenter —
+    // by then the drawer would already be unmounted.
+    const hoverDrawerRef = useRef<HTMLDivElement | null>(null)
+
+    const closeHoverDrawer = (): void =>
+        setOpenDrawer((current) =>
+            current && current in HOVER_DRAWER_DEFAULT_TOOL ? null : current
+        )
+
+    const movingIntoHoverDrawer = (e: ReactMouseEvent): boolean => {
+        const to = e.relatedTarget
+        return to instanceof Node && !!hoverDrawerRef.current?.contains(to)
+    }
+
     const btnSize = isMobile ? 'w-8 h-8' : 'w-9 h-9'
     const iconSize = isMobile ? 'w-4 h-4' : 'w-5 h-5'
 
@@ -235,7 +269,56 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
                                 }
                             `}
+                            onMouseEnter={(e): void => {
+                                if (isMobile) return
+                                if (
+                                    !(
+                                        element.elementName in
+                                        HOVER_DRAWER_DEFAULT_TOOL
+                                    )
+                                ) {
+                                    // Sliding onto any other tool dismisses an
+                                    // open hover drawer.
+                                    closeHoverDrawer()
+                                    return
+                                }
+                                const rect =
+                                    e.currentTarget.getBoundingClientRect()
+                                setDrawerAnchor({
+                                    left: rect.left,
+                                    top: rect.bottom,
+                                    rectTop: rect.top,
+                                })
+                                setOpenDrawer(element.elementName)
+                            }}
+                            onMouseLeave={(e): void => {
+                                if (isMobile) return
+                                if (movingIntoHoverDrawer(e)) return
+                                closeHoverDrawer()
+                            }}
                             onClick={(e): void => {
+                                // Hover-menu tools (e.g. Lines): a bare click
+                                // picks the default child — the drawer is for
+                                // switching to the alternative, not a required
+                                // step. It stays open so that switch is one
+                                // move away.
+                                const defaultTool =
+                                    HOVER_DRAWER_DEFAULT_TOOL[
+                                        element.elementName
+                                    ]
+                                if (defaultTool) {
+                                    const rect =
+                                        e.currentTarget.getBoundingClientRect()
+                                    setDrawerAnchor({
+                                        left: rect.left,
+                                        top: rect.bottom,
+                                        rectTop: rect.top,
+                                    })
+                                    setOpenDrawer(element.elementName)
+                                    addElement(defaultTool)
+                                    setCurrentElementInBoard(defaultTool)
+                                    return
+                                }
                                 // Point opens a category drawer rather than
                                 // drawing immediately — the chosen category
                                 // seeds the new point (or recolors a selected
@@ -298,9 +381,17 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
             </div>
 
             {openDrawer && shapeDrawerElements.length > 0 && drawerAnchor && (
+                // Outer element is the hover area, not the visible panel: on
+                // desktop it starts flush with the icon's bottom edge and pads
+                // the 6px gap transparently (HOVER_DRAWER_BRIDGE_PX), so the
+                // pointer never crosses dead space on its way in.
                 <div
-                    className={`fixed bg-card-bg rounded-card flex items-center flex-row
-                        ${isMobile ? 'px-1 py-1 gap-0.5 border-t-2 border-accent-dark' : 'px-2 py-1 gap-1 border-b-2 border-accent-dark'}`}
+                    ref={hoverDrawerRef}
+                    onMouseLeave={(): void => {
+                        if (isMobile) return
+                        closeHoverDrawer()
+                    }}
+                    className="fixed"
                     style={
                         isMobile
                             ? {
@@ -312,20 +403,25 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                   zIndex: 11,
                               }
                             : {
-                                  top: drawerAnchor.top + 6,
+                                  top: drawerAnchor.top,
                                   left: drawerAnchor.left,
+                                  paddingTop: HOVER_DRAWER_BRIDGE_PX,
                                   zIndex: 11,
                               }
                     }
                 >
-                    {shapeDrawerElements.map((item) => {
-                        const Icon = item.elementIcon
-                        const isActive = currentElement === item.elementName
-                        return (
-                            <div
-                                key={item.elementName}
-                                title={item.elementDisplayName}
-                                className={`
+                    <div
+                        className={`bg-card-bg rounded-card flex items-center flex-row
+                        ${isMobile ? 'px-1 py-1 gap-0.5 border-t-2 border-accent-dark' : 'px-2 py-1 gap-1 border-b-2 border-accent-dark'}`}
+                    >
+                        {shapeDrawerElements.map((item) => {
+                            const Icon = item.elementIcon
+                            const isActive = currentElement === item.elementName
+                            return (
+                                <div
+                                    key={item.elementName}
+                                    title={item.elementDisplayName}
+                                    className={`
                                     ${btnSize} flex items-center justify-center rounded cursor-pointer
                                     transition-all ease-in-out duration-200
                                     ${
@@ -334,19 +430,22 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                             : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
                                     }
                                 `}
-                                onClick={(): void => {
-                                    addElement(item.elementName)
-                                    setCurrentElementInBoard(item.elementName)
-                                    setOpenDrawer(null)
-                                }}
-                            >
-                                <Icon
-                                    className={iconSize}
-                                    aria-label={item.elementDisplayName}
-                                />
-                            </div>
-                        )
-                    })}
+                                    onClick={(): void => {
+                                        addElement(item.elementName)
+                                        setCurrentElementInBoard(
+                                            item.elementName
+                                        )
+                                        setOpenDrawer(null)
+                                    }}
+                                >
+                                    <Icon
+                                        className={iconSize}
+                                        aria-label={item.elementDisplayName}
+                                    />
+                                </div>
+                            )
+                        })}
+                    </div>
                 </div>
             )}
 

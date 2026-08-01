@@ -245,8 +245,9 @@ export async function drawLine(page, { startX, startY, endX, endY }) {
         (els) => els.length
     )
 
-    // Open the Lines drawer, then pick the plain-line tool.
-    await page.click('[aria-label="Lines"]')
+    // Open the Lines drawer by hovering the parent icon (see drawCurvedLine),
+    // then pick the plain-line tool.
+    await page.hover('[aria-label="Lines"]')
     await page.click('[aria-label="Line"]')
 
     await page.mouse.move(startX, startY)
@@ -274,8 +275,12 @@ export async function drawCurvedLine(page, points) {
         (els) => els.length
     )
 
-    // Open the Lines drawer, then pick the curved-line tool.
-    await page.click('[aria-label="Lines"]')
+    // Open the Lines drawer by HOVERING the parent icon, then pick the
+    // curved-line tool. Hover is how the drawer is meant to be opened
+    // (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar) and it arms nothing —
+    // clicking the parent would select its default child (a plain line),
+    // arming a pending element that the curved-line click then has to cancel.
+    await page.hover('[aria-label="Lines"]')
     await page.click('[aria-label="Curved line"]')
 
     // Each click is a mousedown that pushes one vertex (mouseup is a no-op in
