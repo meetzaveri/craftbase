@@ -242,6 +242,10 @@ let isDrawing: boolean = false
 // previously committed element and the redo stack gets clobbered when the
 // current stroke commits, losing that earlier element for good.
 let isPencilStrokeActive: boolean = false
+// Length (surface units) of the segment a click-without-drag becomes, so the
+// pencil's round caps paint it as a dot. See the dot branch in the pencil
+// mouseup handler.
+const PENCIL_DOT_SEGMENT = 0.5
 let defaultLinewidthValue: number = 1
 let defaultStrokeTypeValue: string | null = null
 let defaultStrokeColorValue: string = PENCIL_DEFAULT_COLOR
@@ -780,7 +784,15 @@ function addZUI(
     }
 
     window.addEventListener('cancelGeoDraw', () => {
-        if (geoDrawType) cancelGeoDraw()
+        // Not gated on geoDrawType: the multi-click hint banner is shown as
+        // soon as the tool is ARMED (handleMultiClickDraw writes
+        // GEO_DRAW_TYPE_KEY to localStorage), but geoDrawType itself is only
+        // populated lazily on the first canvas mousedown. Switching tools
+        // before ever clicking the canvas left geoDrawType null, so this
+        // guard skipped cancelGeoDraw() entirely and the hint stuck around
+        // forever. cancelGeoDraw()'s steps are all no-ops when nothing was
+        // drawn, so it's safe to always run.
+        cancelGeoDraw()
     })
 
     // Mobile ✓ button (board.tsx) — finish the in-progress multi-click draw,
@@ -3369,6 +3381,14 @@ function addZUI(
                     const arrowGroup = arrowDrawElement
                     const arrowLineShape = arrowGroup.children[0]
                     setArrowEndpointsVisible(arrowGroup, true)
+                    // getSelectedGroup() (used by copy/paste) falls back to
+                    // lastSelectedShape when selectionController has nothing
+                    // attached — which is always the case here, since arrows
+                    // and plain lines have no SHAPE_ADAPTERS entry. Without
+                    // this, Cmd+C right after finishing a draw silently no-ops
+                    // (getSelectedGroup() returns null) even though the
+                    // endpoint handles are visibly "selected".
+                    lastSelectedShape = arrowGroup
                     setSelectedComponentInBoard({
                         element: {
                             [arrowLineShape.id]: arrowLineShape,
@@ -3537,8 +3557,26 @@ function addZUI(
                 pencilGroup = null
                 pencilPath = null
 
+                // A click with no drag is a deliberate dot, not a failed
+                // stroke. Emit a hair-length horizontal segment centred on the
+                // click: the pencil's round caps then paint it as a single dot
+                // the width of the stroke. The length has to be non-zero —
+                // Two.js collapses two identical anchors into one `M` command,
+                // which draws nothing. DOT_SEGMENT is far below one screen
+                // pixel at normal zoom, so the mark reads as round, and
+                // everything downstream (persistence, undo, group move,
+                // export) just sees an ordinary 2-point stroke.
+                if (pencilRawPoints.length === 1) {
+                    const dot = pencilRawPoints[0]
+                    const half = PENCIL_DOT_SEGMENT / 2
+                    pencilRawPoints = [
+                        { ...dot, x: dot.x - half },
+                        { ...dot, x: dot.x + half },
+                    ]
+                }
+
                 if (pencilRawPoints.length < 2) {
-                    // Too few points to form a stroke — remove preview immediately
+                    // No points at all — remove preview immediately
                     if (capturedPencilGroup) {
                         two.remove(capturedPencilGroup)
                         two.update()
