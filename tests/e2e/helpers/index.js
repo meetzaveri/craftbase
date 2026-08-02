@@ -170,7 +170,7 @@ export async function setDefaultStrokeWidth(page, label) {
 }
 
 /**
- * Clicks any top-level toolbar button by aria-label (e.g. "Pencil", "Pointer",
+ * Clicks any top-level toolbar button by aria-label (e.g. "Pencil", "Select",
  * "Eraser"). Used by tests that need to switch the active draw mode so the
  * unified properties toolbar swaps to the matching set before tweaking a
  * default.
@@ -351,11 +351,12 @@ export async function triggerUndoKeyboard(page) {
 }
 
 /**
- * Clicks the Undo button in the shapes toolbar. The button is a div carrying
- * title="Undo"; the inner SVG also has aria-label="Undo".
+ * Clicks the Undo button in the shapes toolbar. The button is a div wrapping
+ * an SVG with aria-label="Undo" (hover tooltip is a separate Tooltip
+ * component, not a title attribute).
  */
 export async function clickUndoButton(page) {
-    await page.click('[title="Undo"]')
+    await page.click('[aria-label="Undo"]')
 }
 
 /**
@@ -367,20 +368,20 @@ export async function triggerRedoKeyboard(page) {
 }
 
 /**
- * Clicks the Redo button in the shapes toolbar (title="Redo").
+ * Clicks the Redo button in the shapes toolbar (aria-label="Redo").
  */
 export async function clickRedoButton(page) {
-    await page.click('[title="Redo"]')
+    await page.click('[aria-label="Redo"]')
 }
 
 /**
- * Switches the toolbar to select/pan (Pointer) mode. Clears any draw-mode
+ * Switches the toolbar to select/pan (Select) mode. Clears any draw-mode
  * flags left over by drawArrow/drawPencilStroke/placeText (they each set
  * localStorage flags during their flow), so the next mousedown on empty canvas
  * is interpreted as the start of a marquee group selection.
  */
 export async function clickPointerTool(page) {
-    await page.click('[aria-label="Pointer"]')
+    await page.click('[aria-label="Select"]')
 }
 
 /**

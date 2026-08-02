@@ -6,6 +6,7 @@ import {
     type PrimaryElement,
 } from '../../utils/constants'
 import { useBoardContext } from '../../views/Board/boardContext'
+import Tooltip from '../common/tooltip'
 import UndoIcon from '../../assets/undo_amber.svg?react'
 import RedoIcon from '../../assets/redo.svg?react'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
@@ -185,44 +186,50 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
 
     const btnSize = isMobile ? 'w-8 h-8' : 'w-9 h-9'
     const iconSize = isMobile ? 'w-4 h-4' : 'w-5 h-5'
+    // The toolbar is pinned to the bottom of the screen on mobile and the top
+    // on desktop — point every tooltip away from the nearer edge so it never
+    // has to clamp back over its own trigger.
+    const tooltipPlacement = isMobile ? 'top' : 'bottom'
 
     const shapeDrawerElements =
         allElements.find((el) => el.elementName === openDrawer)?.drawerData ??
         []
 
     const undoButton = (
-        <div
-            title="Undo"
-            className={`
-                ${btnSize} flex items-center justify-center rounded cursor-pointer
-                transition-all ease-in-out duration-200 text-ink-muted
-                ${historyLog.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-accent/50 hover:text-ink'}
-            `}
-            onClick={(): void => {
-                if (historyLog.length > 0) {
-                    undoLastAction()
-                }
-            }}
-        >
-            <UndoIcon className={iconSize} aria-label="Undo" />
-        </div>
+        <Tooltip label="Undo" placement={tooltipPlacement}>
+            <div
+                className={`
+                    ${btnSize} flex items-center justify-center rounded cursor-pointer
+                    transition-all ease-in-out duration-200 text-ink-muted
+                    ${historyLog.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-accent/50 hover:text-ink'}
+                `}
+                onClick={(): void => {
+                    if (historyLog.length > 0) {
+                        undoLastAction()
+                    }
+                }}
+            >
+                <UndoIcon className={iconSize} aria-label="Undo" />
+            </div>
+        </Tooltip>
     )
     const redoButton = (
-        <div
-            title="Redo"
-            className={`
-                ${btnSize} flex items-center justify-center rounded cursor-pointer
-                transition-all ease-in-out duration-200 text-ink-muted
-                ${bucketLog.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-accent/50 hover:text-ink'}
-            `}
-            onClick={(): void => {
-                if (bucketLog.length > 0) {
-                    redoLastAction()
-                }
-            }}
-        >
-            <RedoIcon className={iconSize} aria-label="Redo" />
-        </div>
+        <Tooltip label="Redo" placement={tooltipPlacement}>
+            <div
+                className={`
+                    ${btnSize} flex items-center justify-center rounded cursor-pointer
+                    transition-all ease-in-out duration-200 text-ink-muted
+                    ${bucketLog.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-accent/50 hover:text-ink'}
+                `}
+                onClick={(): void => {
+                    if (bucketLog.length > 0) {
+                        redoLastAction()
+                    }
+                }}
+            >
+                <RedoIcon className={iconSize} aria-label="Redo" />
+            </div>
+        </Tooltip>
     )
 
     return (
@@ -257,10 +264,13 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                 (d) => d.elementName === currentElement
                             ))
                     return (
-                        <div
+                        <Tooltip
                             key={element.elementName}
-                            title={element.elementDisplayName}
-                            className={`
+                            label={element.elementDisplayName}
+                            placement={tooltipPlacement}
+                        >
+                            <div
+                                className={`
                                 ${btnSize} flex items-center justify-center rounded cursor-pointer
                                 transition-all ease-in-out duration-200
                                 ${
@@ -269,44 +279,19 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
                                 }
                             `}
-                            onMouseEnter={(e): void => {
-                                if (isMobile) return
-                                if (
-                                    !(
-                                        element.elementName in
-                                        HOVER_DRAWER_DEFAULT_TOOL
-                                    )
-                                ) {
-                                    // Sliding onto any other tool dismisses an
-                                    // open hover drawer.
-                                    closeHoverDrawer()
-                                    return
-                                }
-                                const rect =
-                                    e.currentTarget.getBoundingClientRect()
-                                setDrawerAnchor({
-                                    left: rect.left,
-                                    top: rect.bottom,
-                                    rectTop: rect.top,
-                                })
-                                setOpenDrawer(element.elementName)
-                            }}
-                            onMouseLeave={(e): void => {
-                                if (isMobile) return
-                                if (movingIntoHoverDrawer(e)) return
-                                closeHoverDrawer()
-                            }}
-                            onClick={(e): void => {
-                                // Hover-menu tools (e.g. Lines): a bare click
-                                // picks the default child — the drawer is for
-                                // switching to the alternative, not a required
-                                // step. It stays open so that switch is one
-                                // move away.
-                                const defaultTool =
-                                    HOVER_DRAWER_DEFAULT_TOOL[
-                                        element.elementName
-                                    ]
-                                if (defaultTool) {
+                                onMouseEnter={(e): void => {
+                                    if (isMobile) return
+                                    if (
+                                        !(
+                                            element.elementName in
+                                            HOVER_DRAWER_DEFAULT_TOOL
+                                        )
+                                    ) {
+                                        // Sliding onto any other tool dismisses an
+                                        // open hover drawer.
+                                        closeHoverDrawer()
+                                        return
+                                    }
                                     const rect =
                                         e.currentTarget.getBoundingClientRect()
                                     setDrawerAnchor({
@@ -315,60 +300,88 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         rectTop: rect.top,
                                     })
                                     setOpenDrawer(element.elementName)
-                                    addElement(defaultTool)
-                                    setCurrentElementInBoard(defaultTool)
-                                    return
-                                }
-                                // Point opens a category drawer rather than
-                                // drawing immediately — the chosen category
-                                // seeds the new point (or recolors a selected
-                                // one). Don't touch currentElement here so a
-                                // focused point stays selected for re-skinning.
-                                if (element.elementName === 'point') {
-                                    const rect =
-                                        e.currentTarget.getBoundingClientRect()
-                                    setDrawerAnchor({
-                                        left: rect.left,
-                                        top: rect.bottom,
-                                        rectTop: rect.top,
-                                    })
-                                    setOpenDrawer(
-                                        openDrawer === 'point' ? null : 'point'
-                                    )
-                                } else if (element.hasDrawer) {
-                                    const rect =
-                                        e.currentTarget.getBoundingClientRect()
-                                    setDrawerAnchor({
-                                        left: rect.left,
-                                        top: rect.bottom,
-                                        rectTop: rect.top,
-                                    })
-                                    const isToggleClose =
-                                        openDrawer === element.elementName
-                                    setOpenDrawer(
-                                        isToggleClose
-                                            ? null
-                                            : element.elementName
-                                    )
-                                    setCurrentElementInBoard(
-                                        isToggleClose
-                                            ? homeTool
-                                            : element.elementName
-                                    )
-                                } else {
-                                    setOpenDrawer(null)
-                                    addElement(element.elementName)
-                                    setCurrentElementInBoard(
-                                        element.elementName
-                                    )
-                                }
-                            }}
-                        >
-                            <Icon
-                                className={iconSize}
-                                aria-label={element.elementDisplayName}
-                            />
-                        </div>
+                                }}
+                                onMouseLeave={(e): void => {
+                                    if (isMobile) return
+                                    if (movingIntoHoverDrawer(e)) return
+                                    closeHoverDrawer()
+                                }}
+                                onClick={(e): void => {
+                                    // Hover-menu tools (e.g. Lines): a bare click
+                                    // picks the default child — the drawer is for
+                                    // switching to the alternative, not a required
+                                    // step. It stays open so that switch is one
+                                    // move away.
+                                    const defaultTool =
+                                        HOVER_DRAWER_DEFAULT_TOOL[
+                                            element.elementName
+                                        ]
+                                    if (defaultTool) {
+                                        const rect =
+                                            e.currentTarget.getBoundingClientRect()
+                                        setDrawerAnchor({
+                                            left: rect.left,
+                                            top: rect.bottom,
+                                            rectTop: rect.top,
+                                        })
+                                        setOpenDrawer(element.elementName)
+                                        addElement(defaultTool)
+                                        setCurrentElementInBoard(defaultTool)
+                                        return
+                                    }
+                                    // Point opens a category drawer rather than
+                                    // drawing immediately — the chosen category
+                                    // seeds the new point (or recolors a selected
+                                    // one). Don't touch currentElement here so a
+                                    // focused point stays selected for re-skinning.
+                                    if (element.elementName === 'point') {
+                                        const rect =
+                                            e.currentTarget.getBoundingClientRect()
+                                        setDrawerAnchor({
+                                            left: rect.left,
+                                            top: rect.bottom,
+                                            rectTop: rect.top,
+                                        })
+                                        setOpenDrawer(
+                                            openDrawer === 'point'
+                                                ? null
+                                                : 'point'
+                                        )
+                                    } else if (element.hasDrawer) {
+                                        const rect =
+                                            e.currentTarget.getBoundingClientRect()
+                                        setDrawerAnchor({
+                                            left: rect.left,
+                                            top: rect.bottom,
+                                            rectTop: rect.top,
+                                        })
+                                        const isToggleClose =
+                                            openDrawer === element.elementName
+                                        setOpenDrawer(
+                                            isToggleClose
+                                                ? null
+                                                : element.elementName
+                                        )
+                                        setCurrentElementInBoard(
+                                            isToggleClose
+                                                ? homeTool
+                                                : element.elementName
+                                        )
+                                    } else {
+                                        setOpenDrawer(null)
+                                        addElement(element.elementName)
+                                        setCurrentElementInBoard(
+                                            element.elementName
+                                        )
+                                    }
+                                }}
+                            >
+                                <Icon
+                                    className={iconSize}
+                                    aria-label={element.elementDisplayName}
+                                />
+                            </div>
+                        </Tooltip>
                     )
                 })}
                 {!isMobile && (
@@ -418,10 +431,13 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                             const Icon = item.elementIcon
                             const isActive = currentElement === item.elementName
                             return (
-                                <div
+                                <Tooltip
                                     key={item.elementName}
-                                    title={item.elementDisplayName}
-                                    className={`
+                                    label={item.elementDisplayName}
+                                    placement={tooltipPlacement}
+                                >
+                                    <div
+                                        className={`
                                     ${btnSize} flex items-center justify-center rounded cursor-pointer
                                     transition-all ease-in-out duration-200
                                     ${
@@ -430,19 +446,20 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                             : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
                                     }
                                 `}
-                                    onClick={(): void => {
-                                        addElement(item.elementName)
-                                        setCurrentElementInBoard(
-                                            item.elementName
-                                        )
-                                        setOpenDrawer(null)
-                                    }}
-                                >
-                                    <Icon
-                                        className={iconSize}
-                                        aria-label={item.elementDisplayName}
-                                    />
-                                </div>
+                                        onClick={(): void => {
+                                            addElement(item.elementName)
+                                            setCurrentElementInBoard(
+                                                item.elementName
+                                            )
+                                            setOpenDrawer(null)
+                                        }}
+                                    >
+                                        <Icon
+                                            className={iconSize}
+                                            aria-label={item.elementDisplayName}
+                                        />
+                                    </div>
+                                </Tooltip>
                             )
                         })}
                     </div>
@@ -475,46 +492,53 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                     {Object.values(POINT_CATEGORIES).map((cat) => {
                         const isActive = activePointCategory === cat.id
                         return (
-                            <button
+                            <Tooltip
                                 key={cat.id}
-                                title={cat.label}
-                                aria-label={cat.label}
-                                className={`${btnSize} flex items-center justify-center rounded-lg cursor-pointer transition-transform duration-150 hover:scale-105 ${
-                                    isActive ? 'scale-105' : ''
-                                }`}
-                                style={{
-                                    background: cat.bg,
-                                    border: cat.border
-                                        ? `2px solid ${cat.border}`
-                                        : 'none',
-                                    boxShadow: isActive
-                                        ? '0 0 0 2px #E8C87A'
-                                        : '2px 2px 0 #C4B89A',
-                                }}
-                                onClick={(): void => {
-                                    if (isPointSelected) {
-                                        // Recolor the focused point in place.
-                                        applyProperty?.('pointCategory', cat.id)
-                                    } else {
-                                        // Seed + arm a fresh point placement.
-                                        setPointCategory(cat.id)
-                                        addElement('point', cat.id)
-                                        setCurrentElementInBoard('point')
-                                    }
-                                    setOpenDrawer(null)
-                                }}
+                                label={cat.label}
+                                placement={tooltipPlacement}
                             >
-                                <span
-                                    className="flex items-center justify-center pointer-events-none"
-                                    // Category icons are pre-colored SVG strings.
-                                    dangerouslySetInnerHTML={{
-                                        __html: sizedCategoryIcon(
-                                            cat.svgIcon,
-                                            isMobile ? 16 : 18
-                                        ),
+                                <button
+                                    aria-label={cat.label}
+                                    className={`${btnSize} flex items-center justify-center rounded-lg cursor-pointer transition-transform duration-150 hover:scale-105 ${
+                                        isActive ? 'scale-105' : ''
+                                    }`}
+                                    style={{
+                                        background: cat.bg,
+                                        border: cat.border
+                                            ? `2px solid ${cat.border}`
+                                            : 'none',
+                                        boxShadow: isActive
+                                            ? '0 0 0 2px #E8C87A'
+                                            : '2px 2px 0 #C4B89A',
                                     }}
-                                />
-                            </button>
+                                    onClick={(): void => {
+                                        if (isPointSelected) {
+                                            // Recolor the focused point in place.
+                                            applyProperty?.(
+                                                'pointCategory',
+                                                cat.id
+                                            )
+                                        } else {
+                                            // Seed + arm a fresh point placement.
+                                            setPointCategory(cat.id)
+                                            addElement('point', cat.id)
+                                            setCurrentElementInBoard('point')
+                                        }
+                                        setOpenDrawer(null)
+                                    }}
+                                >
+                                    <span
+                                        className="flex items-center justify-center pointer-events-none"
+                                        // Category icons are pre-colored SVG strings.
+                                        dangerouslySetInnerHTML={{
+                                            __html: sizedCategoryIcon(
+                                                cat.svgIcon,
+                                                isMobile ? 16 : 18
+                                            ),
+                                        }}
+                                    />
+                                </button>
+                            </Tooltip>
                         )
                     })}
                 </div>
