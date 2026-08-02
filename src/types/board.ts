@@ -12,6 +12,7 @@
 
 import type { ReactNode, MutableRefObject } from 'react'
 import type Two from 'two.js'
+import type { EraserSize } from '../constants/misc'
 
 // --- DB shape (mirrors CLAUDE.md "Component schema (from DB)") ----------
 
@@ -191,6 +192,7 @@ export interface BoardContextValue {
     isTextDrawMode: boolean
     isArrowSelected: boolean
     isRubberMode: boolean
+    eraserSize: EraserSize
     isPanMode: boolean
     togglePencilMode: (value: boolean) => void
     togglePointer: (value: boolean) => void
@@ -198,6 +200,7 @@ export interface BoardContextValue {
     setArrowDrawModeInBoard: (value: boolean) => void
     setTextDrawModeInBoard: (value: boolean) => void
     setRubberModeInBoard: (value: boolean) => void
+    setEraserSizeInBoard: (value: EraserSize) => void
     cancelPendingElement: () => void
     enableTextDrawMode: (componentType?: 'newText' | 'geoText') => void
     createTextAtSurface: (x: number, y: number) => void

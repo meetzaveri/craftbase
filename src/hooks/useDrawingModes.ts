@@ -9,6 +9,10 @@ import {
     LAST_ADDED_ELEMENT_ID_KEY,
     PENCIL_MODE_KEY,
     PAN_MODE_KEY,
+    ERASER_SIZE_KEY,
+    DEFAULT_ERASER_SIZE,
+    ERASER_SIZES,
+    type EraserSize,
 } from '../constants/misc'
 
 // Toggle helpers accept an optional options bag that lets the caller plug
@@ -31,6 +35,7 @@ export interface DrawingModesApi {
     isTextDrawMode: boolean
     setIsTextDrawMode: Dispatch<SetStateAction<boolean>>
     isRubberMode: boolean
+    eraserSize: EraserSize
     isPanMode: boolean
     setPanMode: Dispatch<SetStateAction<boolean>>
     togglePointer: (
@@ -49,6 +54,7 @@ export interface DrawingModesApi {
         options?: DrawingModeToggleOptions
     ) => void
     setRubberModeInBoard: (val: boolean) => void
+    setEraserSizeInBoard: (val: EraserSize) => void
     setArrowDrawModeInBoard: (val: boolean) => void
     setTextDrawModeInBoard: (val: boolean) => void
     clearDrawModesFromStorage: () => void
@@ -71,6 +77,16 @@ export function useDrawingModes(): DrawingModesApi {
             return localStorage.getItem(PAN_MODE_KEY) === 'true'
         } catch {
             return false
+        }
+    })
+    const [eraserSize, setEraserSize] = useState<EraserSize>(() => {
+        try {
+            const stored = localStorage.getItem(ERASER_SIZE_KEY)
+            return (ERASER_SIZES as string[]).includes(stored ?? '')
+                ? (stored as EraserSize)
+                : DEFAULT_ERASER_SIZE
+        } catch {
+            return DEFAULT_ERASER_SIZE
         }
     })
 
@@ -180,6 +196,15 @@ export function useDrawingModes(): DrawingModesApi {
         }
     }
 
+    const setEraserSizeInBoard = (val: EraserSize): void => {
+        setEraserSize(val)
+        try {
+            localStorage.setItem(ERASER_SIZE_KEY, val)
+        } catch {
+            /* noop */
+        }
+    }
+
     const setArrowDrawModeInBoard = (val: boolean): void =>
         setIsArrowDrawMode(val)
     const setTextDrawModeInBoard = (val: boolean): void =>
@@ -219,12 +244,14 @@ export function useDrawingModes(): DrawingModesApi {
         isTextDrawMode,
         setIsTextDrawMode,
         isRubberMode,
+        eraserSize,
         isPanMode,
         setPanMode,
         togglePointer,
         togglePencilMode,
         togglePanMode,
         setRubberModeInBoard,
+        setEraserSizeInBoard,
         setArrowDrawModeInBoard,
         setTextDrawModeInBoard,
         clearDrawModesFromStorage,

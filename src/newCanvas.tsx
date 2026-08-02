@@ -51,7 +51,13 @@ import {
     GEO_POINT_PLACE_MODE_KEY,
     GEO_MIN_VERTICES,
     DEFAULT_TEXT_FONT_FAMILY,
+    ERASER_SIZE_KEY,
+    ERASER_SIZE_RADIUS,
+    ERASER_DOT_PX,
+    DEFAULT_ERASER_SIZE,
+    type EraserSize,
 } from './constants/misc'
+import { createEraserTrail } from './utils/eraserTrail'
 import Spinner from './components/common/spinner'
 
 // Shared lazy-element glob (single source of truth) so the chunk warmed by
@@ -1534,19 +1540,82 @@ function addZUI(
         }
     }
 
-    function eraseElementAtPoint(x: number, y: number) {
+    // eraseElementAtPoint deletes whole elements via a point hit test, not
+    // pixel painting — so "eraser size" widens the hit-test tolerance radius
+    // around the cursor rather than a stroke width. Read live (not via a ref)
+    // because, like RUBBER_MODE_KEY elsewhere in this file, the value is only
+    // ever needed synchronously inside a DOM event handler.
+    function getEraserSize(): EraserSize {
+        const stored = localStorage.getItem(
+            ERASER_SIZE_KEY
+        ) as EraserSize | null
+        return stored && stored in ERASER_SIZE_RADIUS
+            ? stored
+            : DEFAULT_ERASER_SIZE
+    }
+
+    function getEraserRadius(): number {
+        return ERASER_SIZE_RADIUS[getEraserSize()]
+    }
+
+    // The trail is the eraser's cursor made visible, so it's drawn at the same
+    // diameter as the dot in the size selector — pick the big dot, get a big
+    // circle on the board. (The hit-test radius above reaches further; the
+    // trail shows the tool, not the blast radius.)
+    const eraserTrail = createEraserTrail(
+        two,
+        () => ERASER_DOT_PX[getEraserSize()],
+        () => zui.scale || 1
+    )
+
+    function componentIdAtPoint(x: number, y: number): string | null {
         const el = document.elementFromPoint(x, y)
-        if (!el) return
+        if (!el) return null
 
         let target: Element | null = el
-        let componentId: string | null = null
         while (target && target !== document.body) {
-            componentId = target.getAttribute?.('data-component-id') ?? null
-            if (componentId) break
+            const componentId =
+                target.getAttribute?.('data-component-id') ?? null
+            if (componentId) return componentId
             target = target.parentElement
         }
-        if (!componentId || pendingDeletionSet.has(componentId)) return
+        return null
+    }
 
+    // Eraser hit-test samples points around a circle of the configured radius
+    // (plus the center) rather than just the raw cursor point, so a larger
+    // size gives a more forgiving catch area for thin strokes / small shapes.
+    const ERASER_SAMPLE_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]
+
+    function eraseElementAtPoint(x: number, y: number) {
+        const radius = getEraserRadius()
+        const points: Array<[number, number]> =
+            radius > 0
+                ? [
+                      [x, y],
+                      ...ERASER_SAMPLE_ANGLES.map((deg): [number, number] => {
+                          const rad = (deg * Math.PI) / 180
+                          return [
+                              x + radius * Math.cos(rad),
+                              y + radius * Math.sin(rad),
+                          ]
+                      }),
+                  ]
+                : [[x, y]]
+
+        const componentIds = new Set<string>()
+        for (const [px, py] of points) {
+            const id = componentIdAtPoint(px, py)
+            if (id && !pendingDeletionSet.has(id)) componentIds.add(id)
+        }
+        if (componentIds.size === 0) return
+
+        for (const componentId of componentIds) {
+            eraseComponent(componentId)
+        }
+    }
+
+    function eraseComponent(componentId: string) {
         const group = two.scene.children.find(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (c: any) => c?.elementData?.id === componentId
@@ -2602,6 +2671,10 @@ function addZUI(
                 domElement.addEventListener('mousemove', mousemove, false)
                 domElement.addEventListener('mouseup', mouseup, false)
                 eraseElementAtPoint(e.clientX, e.clientY)
+                {
+                    const p = toSurface(e)
+                    eraserTrail.addPoint(p.x, p.y)
+                }
                 break
             }
             default:
@@ -3031,9 +3104,12 @@ function addZUI(
                 two.update()
                 break
             }
-            case SCENARIO_RUBBER_MODE:
+            case SCENARIO_RUBBER_MODE: {
                 eraseElementAtPoint(e.clientX, e.clientY)
+                const p = toSurface(e)
+                eraserTrail.addPoint(p.x, p.y)
                 break
+            }
             default:
                 /**
                     Currently "resize" event handling is at component level.
@@ -3638,6 +3714,10 @@ function addZUI(
             case SCENARIO_RUBBER_MODE:
                 domElement.removeEventListener('mousemove', mousemove, false)
                 domElement.removeEventListener('mouseup', mouseup, false)
+                // Drop the anchor so the next sweep starts a fresh beam
+                // instead of drawing a line from where this one ended. Live
+                // segments carry on fading.
+                eraserTrail.end()
                 break
             default:
                 // diff to check new x,y and prev x,y
@@ -4424,6 +4504,9 @@ function addZUI(
         syncBackgroundToCamera,
         syncDotGridClass,
         mousemove,
+        // Stops the trail's rAF loop so it can't keep ticking against a
+        // torn-down Two.js instance after unmount.
+        disposeEraserTrail: () => eraserTrail.dispose(),
         resetDragState: () => {
             dragging = false
             shape = {}
@@ -4820,6 +4903,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // them, so the whiteboard's no-scroll behavior is unchanged.
         return () => {
             zui_instance?.disconnectThemeObserver?.()
+            zui_instance?.disposeEraserTrail?.()
             for (const prop of [
                 'overflow',
                 'position',
