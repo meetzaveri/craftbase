@@ -56,7 +56,7 @@ import {
     shapeTextStyleFromMeta,
     readOpacity,
 } from '../../utils/canvasUtils'
-import { reflowTextForShape } from '../../utils/shapeTextFit'
+import { resolveHeightForTextStyleChange } from '../../utils/shapeTextFit'
 import { themeDefaultInk } from '../../utils/themeColorFlip'
 import { lineHeightFor } from '../../utils/textLayout'
 import {
@@ -1636,16 +1636,23 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         syncOpenTextarea({ fontSize: textSize })
     }
 
-    // After a text style change (size/family) on a shape-with-text, re-wrap
-    // the text to the shape's current width at the NEW style and grow the
-    // shape's height to fit the resulting line count — then persist height +
-    // metadata together. This keeps the live scene and a post-reload render
-    // identical (a bigger font re-wraps to more lines and the box grows
-    // vertically, instead of the text spilling out). Width stays user-driven.
+    // After a text style change (size/family) on a shape-with-text, re-wrap the
+    // text to the shape's current width at the NEW style and re-fit the shape's
+    // height to the resulting line count — then persist height + metadata
+    // together. This keeps the live scene and a post-reload render identical (a
+    // bigger font re-wraps to more lines and the box grows vertically, instead
+    // of the text spilling out; switching back reclaims that height rather than
+    // leaving the box stuck at its tallest-ever size). A height the user set by
+    // dragging is preserved — see `resolveHeightForTextStyleChange`. Width
+    // stays user-driven either way.
     const reflowShapeTextAfterStyleChange = (
         componentId: string,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updatedMetadata: any
+        updatedMetadata: any,
+        // Metadata as it was BEFORE this change — the style the current height
+        // was fitted to, needed to tell auto-fit from a user-dragged height.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        previousMetadata: any
     ) => {
         const group = sel?.group?.data
         const shapePath = sel?.shape?.data
@@ -1668,21 +1675,41 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         const width = shapePath.width
         // Re-render the wrapped multiline layer at the new style.
         applyShapeText(twoJSInstance, group, kind, width, updatedMetadata)
-        const { font } = shapeTextStyleFromMeta(updatedMetadata)
-        const { requiredHeight } = reflowTextForShape(
+        const { font: nextFont } = shapeTextStyleFromMeta(updatedMetadata)
+        const { font: prevFont } = shapeTextStyleFromMeta(previousMetadata)
+        const newH = resolveHeightForTextStyleChange({
             kind,
             width,
             rawText,
-            font
-        )
-        const newH = Math.max(shapePath.height, requiredHeight)
-        if (newH !== shapePath.height) shapePath.height = newH
+            prevFont,
+            nextFont,
+            currentHeight: shapePath.height,
+        })
+        const heightChanged = newH !== shapePath.height
+        if (heightChanged) shapePath.height = newH
         twoJSInstance?.update()
         updateComponentBulkPropertiesInLocalStore(componentId, {
             metadata: updatedMetadata,
             width: Math.round(width),
             height: Math.round(newH),
         })
+        // A height change moves the n/e/s/w edge midpoints, so any connector
+        // docked to this shape has to re-glue. Restacking an edge with nothing
+        // docked to it is a no-op, so fire all four rather than scanning.
+        if (heightChanged) {
+            window.dispatchEvent(
+                new CustomEvent('restackPorts', {
+                    detail: {
+                        ports: [
+                            'n-resize',
+                            'e-resize',
+                            's-resize',
+                            'w-resize',
+                        ].map((edge) => ({ shapeId: componentId, edge })),
+                    },
+                })
+            )
+        }
     }
 
     const handleRectangleTextSizeChange = (newLabel: string) => {
@@ -1709,7 +1736,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             sel.group.data.elementData.metadata = updatedMetadata
         }
 
-        reflowShapeTextAfterStyleChange(componentId, updatedMetadata)
+        reflowShapeTextAfterStyleChange(
+            componentId,
+            updatedMetadata,
+            existingMetadata
+        )
         syncOpenTextarea({ fontSize: textSize })
     }
 
@@ -1764,9 +1795,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (sel?.group?.data?.elementData) {
             sel.group.data.elementData.metadata = updatedMetadata
         }
-        // Re-wrap + grow height: some families (e.g. Fraunces) render wider
-        // than Caveat at the same size, changing the wrap.
-        reflowShapeTextAfterStyleChange(componentId, updatedMetadata)
+        // Re-wrap + re-fit height: some families (e.g. Fraunces) render wider
+        // than Caveat at the same size, changing the wrap — and switching back
+        // to the narrower family must give the height back.
+        reflowShapeTextAfterStyleChange(
+            componentId,
+            updatedMetadata,
+            existingMetadata
+        )
         syncOpenTextarea({ fontFamily })
         // Make selection universal: future new elements pick up this family.
         setDefaultTextFontFamily(fontFamily)

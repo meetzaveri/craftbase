@@ -182,7 +182,10 @@ export function useCanvasClipboard({
                     relativeX: 0,
                     relativeY: 0,
                 }
-                if (elementData.componentType === 'arrowLine') {
+                if (
+                    elementData.componentType === 'arrowLine' ||
+                    elementData.componentType === 'line'
+                ) {
                     const line = liveGroup.children?.[0]
                     if (line?.vertices?.length >= 2) {
                         item.x1 = parseInt(String(line.vertices[0].x))
@@ -274,7 +277,10 @@ export function useCanvasClipboard({
                     py
                 )
                 let arrowPorts: { shapeId: string; edge: string }[] = []
-                if (src.componentType === 'arrowLine') {
+                if (
+                    src.componentType === 'arrowLine' ||
+                    src.componentType === 'line'
+                ) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const s = src as any
                     const dx = (s.x2 ?? 0) - (s.x1 ?? 0)
@@ -283,8 +289,12 @@ export function useCanvasClipboard({
                     newItem.y1 = 0
                     newItem.x2 = dx
                     newItem.y2 = dy
+                }
+                if (src.componentType === 'arrowLine') {
                     // Keep the copy attached to whatever the original was
                     // docked to (no same-paste counterparts on a single copy).
+                    // Plain lines never dock to ports, so this stays
+                    // arrowLine-only.
                     arrowPorts = rebindClonedArrow(newItem, new Map())
                 }
                 if (

@@ -3,7 +3,16 @@
     <head>
         <meta charset="utf-8" />
         <meta name="google" content="notranslate" />
-        <link rel="icon" href="/favicon.svg" />
+        <link
+            rel="icon"
+            href="/craftbase_favicon_espresso.svg"
+            media="(prefers-color-scheme: light)"
+        />
+        <link
+            rel="icon"
+            href="/craftbase_favicon_amber.svg"
+            media="(prefers-color-scheme: dark)"
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#000000" />
         <meta
@@ -18,7 +27,7 @@
             property="og:description"
             content="instant whiteboard without signup"
         />
-        <link rel="apple-touch-icon" href="/favicon.svg" />
+        <link rel="apple-touch-icon" href="/craftbase_favicon_espresso.svg" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -99,25 +108,45 @@
                 height: 72px;
                 overflow: visible;
             }
-            #cb-boot polyline {
+            #cb-boot .cb-mark-stroke {
                 fill: none;
-                stroke: #c9a84c;
-                stroke-width: 2.5;
-                stroke-linecap: square;
-                stroke-linejoin: miter;
-                stroke-dasharray: 11;
-                stroke-dashoffset: 11;
-                animation: cbBootDraw 2.2s ease-in-out infinite;
+                stroke: #1a1612;
+                stroke-dasharray: 1;
+                stroke-dashoffset: 1;
+                animation: cbBootDraw 2.6s ease-in-out infinite;
             }
-            #cb-boot polyline:nth-child(2) {
-                animation-delay: 0.18s;
+            #cb-boot .cb-mark-s1 {
+                animation-delay: 0s;
             }
-            #cb-boot polyline:nth-child(3) {
+            #cb-boot .cb-mark-s2 {
+                animation-delay: 0.12s;
+            }
+            #cb-boot .cb-mark-s3 {
+                animation-delay: 0.24s;
+            }
+            #cb-boot .cb-mark-s4 {
                 animation-delay: 0.36s;
+            }
+            #cb-boot .cb-mark-s5 {
+                animation-delay: 0.48s;
+            }
+            #cb-boot .cb-mark-glyph {
+                fill: #1a1612;
+                opacity: 0;
+                transform-box: fill-box;
+                transform-origin: center;
+                animation: cbBootGlyphIn 2.6s ease-out infinite;
+                animation-delay: 0.6s;
+            }
+            .dark #cb-boot .cb-mark-stroke {
+                stroke: #c4901a;
+            }
+            .dark #cb-boot .cb-mark-glyph {
+                fill: #c4901a;
             }
             @keyframes cbBootDraw {
                 0% {
-                    stroke-dashoffset: 11;
+                    stroke-dashoffset: 1;
                 }
                 40% {
                     stroke-dashoffset: 0;
@@ -126,7 +155,29 @@
                     stroke-dashoffset: 0;
                 }
                 100% {
-                    stroke-dashoffset: -11;
+                    stroke-dashoffset: -1;
+                }
+            }
+            @keyframes cbBootGlyphIn {
+                0% {
+                    opacity: 0;
+                    transform: scale(0.85);
+                }
+                15% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                55% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+                75% {
+                    opacity: 0;
+                    transform: scale(0.9);
+                }
+                100% {
+                    opacity: 0;
+                    transform: scale(0.85);
                 }
             }
             #cb-boot .cb-wordmark {
@@ -164,9 +215,14 @@
                 }
             }
             @media (prefers-reduced-motion: reduce) {
-                #cb-boot polyline {
+                #cb-boot .cb-mark-stroke {
                     animation: none;
                     stroke-dashoffset: 0;
+                }
+                #cb-boot .cb-mark-glyph {
+                    animation: none;
+                    opacity: 1;
+                    transform: scale(1);
                 }
                 #cb-boot .cb-caption::after {
                     animation: none;
@@ -179,10 +235,82 @@
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root">
             <div id="cb-boot" role="status" aria-label="Loading Craftbase">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <polyline points="4,9 4,4 9,4" />
-                    <polyline points="15,4 20,4 20,9" />
-                    <polyline points="4,15 4,20 9,20" />
+                <svg viewBox="2000.06 1216.63 104.81 104.81" aria-hidden="true">
+                    <g transform="matrix(1 0 0 1 2047 1263)">
+                        <g transform="matrix(1 0 0 1 -39 -38)">
+                            <path
+                                class="cb-mark-stroke cb-mark-s1"
+                                d="M 0.681217 3.541016 L 0.681217 82.731942 "
+                                fill="none"
+                                stroke-width="7.709961012220989"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-miterlimit="4"
+                                pathLength="1"
+                            />
+                        </g>
+                        <g transform="matrix(1 0 0 1 -39 43)">
+                            <path
+                                class="cb-mark-stroke cb-mark-s2"
+                                d="M 0.681217 2.863241 L 82.134741 3.99454 "
+                                fill="none"
+                                stroke-width="7.709961012220989"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-miterlimit="4"
+                                pathLength="1"
+                            />
+                        </g>
+                        <g transform="matrix(1 0 0 1 -16 5)">
+                            <!-- The CSS scale animation on .cb-mark-glyph would
+                                 override an SVG transform attribute on the same
+                                 element, so the 19.53 offset lives on this
+                                 wrapping <g> instead of on the path. -->
+                            <g transform="matrix(1 0 0 1 0 19.53)">
+                                <path
+                                    class="cb-mark-glyph"
+                                    d="M6.60 -31.06Q6.60 -32.27 7.81 -33.11Q7.81 -33.20 7.81 -33.29Q7.81 -33.95 9.25 -35.62Q10.70 -37.29 10.88 -37.66Q12.93 -38.87 13.58 -39.06Q14.32 -38.87 14.60 -38.87H14.79Q17.48 -39.52 20.97 -38.69Q24.46 -37.85 25.85 -35.71Q26.60 -34.32 27.34 -31.99Q28.46 -28.74 28.46 -27.25Q29.02 -24.83 28.55 -22.79L28.46 -21.86Q28.46 -21.48 27.99 -21.11Q27.53 -20.74 26.92 -20.79Q26.32 -20.83 25.85 -20.32Q25.39 -19.81 23.95 -19.81Q22.51 -19.81 22.41 -20.65Q22.13 -20.74 21.53 -21.30Q20.93 -21.86 20.93 -22.13L20.46 -22.79Q20.46 -22.97 20.09 -23.34Q19.25 -25.02 19.44 -25.95Q19.90 -28.36 19.72 -28.55Q19.72 -29.95 18.79 -31.34Q18.69 -31.43 18.46 -31.48Q18.23 -31.53 17.86 -31.62Q17.67 -32.27 17.48 -32.27Q16.83 -32.09 16.09 -31.25Q14.79 -27.62 14.51 -26.41L13.95 -20.74V-16.46Q14.14 -13.11 14.69 -12.37Q14.69 -12.00 15.07 -11.07Q15.16 -9.86 17.02 -6.79L17.48 -6.23Q17.95 -4.93 19.07 -4.93Q20.18 -4.93 22.23 -7.53Q22.13 -7.81 23.44 -9.77Q24.74 -11.53 27.53 -11.16Q28.74 -10.97 28.74 -9.77Q28.83 -8.93 28.18 -5.58Q27.25 -4.65 27.25 -3.72Q26.60 -2.05 26.60 -1.86Q26.32 -1.86 26.04 -1.58L25.57 -0.65Q25.20 -0.65 25.11 -0.28Q24.09 0.93 23.71 0.93Q23.44 1.21 22.23 1.21Q20.46 1.95 19.62 1.95L18.04 2.05L17.02 1.67L16.18 1.58Q15.07 1.12 14.46 1.16Q13.86 1.21 13.58 1.07Q13.30 0.93 12.83 0.56Q11.72 -0.37 11.39 -0.37Q11.07 -0.37 10.32 -0.93Q9.58 -1.12 9.11 -1.58L8.74 -2.51Q8.93 -3.16 8.56 -3.25Q7.35 -3.25 7.16 -3.72L6.60 -4.46Q6.60 -5.21 5.86 -6.42L4.74 -9.77Q4.56 -9.95 4.74 -10.42V-12.09L3.63 -19.34V-20.65Q4.46 -23.71 4.46 -23.81Q4.37 -25.85 5.39 -27.43Q5.39 -29.20 6.60 -31.06Z"
+                                    fill-rule="nonzero"
+                                />
+                            </g>
+                        </g>
+                        <g transform="matrix(1 0 0 1 -35 -34)">
+                            <path
+                                class="cb-mark-stroke cb-mark-s3"
+                                d="M 2.337712 2.934926 L 78.134741 2.934926 "
+                                fill="none"
+                                stroke-width="15.419922024441979"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-miterlimit="4"
+                                pathLength="1"
+                            />
+                        </g>
+                        <g transform="matrix(1 0 0 1 42 -30)">
+                            <path
+                                class="cb-mark-stroke cb-mark-s4"
+                                d="M 3.397339 4.591421 L 3.397339 69.07546 "
+                                fill="none"
+                                stroke-width="15.419922024441979"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-miterlimit="4"
+                                pathLength="1"
+                            />
+                        </g>
+                        <g transform="matrix(1 0 0 1 46 12)">
+                            <path
+                                class="cb-mark-stroke cb-mark-s5"
+                                d="M 2.339158 5.977443 L 2.339158 33.926049 "
+                                fill="none"
+                                stroke-width="7.709961012220989"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-miterlimit="4"
+                                pathLength="1"
+                            />
+                        </g>
+                    </g>
                 </svg>
                 <div class="cb-wordmark">Craftbase</div>
                 <div class="cb-caption">setting up your canvas</div>

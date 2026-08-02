@@ -6,7 +6,7 @@ import {
     shapeTextStyleFromMeta,
     readOpacity,
 } from './canvasUtils'
-import { reflowTextForShape } from './shapeTextFit'
+import { resolveHeightForTextStyleChange } from './shapeTextFit'
 
 // Bulk-apply a property to every child of the currently-focused group whose
 // element type accepts that property. Element types that don't accept the
@@ -479,8 +479,8 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
                 // with the new size/family so it wraps inside the box instead of
                 // spilling out — never widen the box. Widening would break the
                 // group's relative horizontal spacing (shapes laid out side by
-                // side would overlap). Then grow ONLY the height to fit the
-                // reflowed block (`reflowTextForShape.requiredHeight`), which
+                // side would overlap). Then re-fit ONLY the height to the
+                // reflowed block (`resolveHeightForTextStyleChange`), which
                 // keeps every x-position untouched. This mirrors the single
                 // element resize/reflow path (canvasUtils.applyShapeText +
                 // shapeTextFit) instead of the old getBBox width-grow.
@@ -515,29 +515,32 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
                         updatedMeta
                     )
 
-                const { font } = shapeTextStyleFromMeta(updatedMeta)
-                const { requiredHeight } = reflowTextForShape(
-                    type,
+                const { font: nextFont } = shapeTextStyleFromMeta(updatedMeta)
+                const { font: prevFont } = shapeTextStyleFromMeta(existingMeta)
+                const newH = resolveHeightForTextStyleChange({
+                    kind: type,
                     width,
-                    updatedMeta.textContent ?? '',
-                    font
-                )
-                const newH = Math.max(currentH, requiredHeight)
+                    rawText: updatedMeta.textContent ?? '',
+                    prevFont,
+                    nextFont,
+                    currentHeight: currentH,
+                })
 
                 const bulkObj: Partial<ComponentRow> = { metadata: updatedMeta }
-                if (newH > currentH) {
+                if (newH !== currentH) {
                     const sceneRect = sceneEl?.children?.[0]
                     const coreRect = coreObj?.children?.[0]
                     if (sceneRect) sceneRect.height = newH
                     if (coreRect) coreRect.height = newH
 
                     // Anchor the TOP edge: the shape path + text layer are
-                    // centered on the group origin, so growing `height` alone
-                    // expands symmetrically and pushes the top edge upward
-                    // (moving the shape's visual y). Shift the group down by half
-                    // the height delta so the box only grows downward and the top
+                    // centered on the group origin, so changing `height` alone
+                    // resizes symmetrically and moves the top edge (and with it
+                    // the shape's visual y). Shift the group by half the height
+                    // delta so the box only grows/shrinks downward and the top
                     // edge — the user's "y point" — stays put. The shape center
-                    // therefore moves down by the same half-delta.
+                    // moves by the same half-delta (down when growing, up when
+                    // the new style reclaims height).
                     //
                     // Two coordinate spaces are in play: the scene element's
                     // translation + the store row are ABSOLUTE world y, while the

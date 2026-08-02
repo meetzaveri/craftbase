@@ -5,7 +5,7 @@ import { useImmer } from 'use-immer'
 import Two from 'two.js'
 
 import ElementCreator from '../../factory/arrowLine'
-import { readOpacity } from '../../utils/canvasUtils'
+import { readOpacity, focusSvgElement } from '../../utils/canvasUtils'
 
 import {
     updateX1Y1Vertices,
@@ -50,7 +50,7 @@ function ArrowLine(props: ElementProps): ReactElement {
                 ? document.getElementById(`${stateRefForGroup.current.id}`)
                 : null
             if (getGroupElementFromDOM) {
-                getGroupElementFromDOM.focus()
+                focusSvgElement(getGroupElementFromDOM)
                 getGroupElementFromDOM.addEventListener('blur', onBlurHandler)
             }
         } else {

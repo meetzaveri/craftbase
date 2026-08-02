@@ -157,7 +157,7 @@ export const staticPrimaryElementData: PrimarySection[] = [
         elements: [
             {
                 elementName: 'pointer',
-                elementDisplayName: 'Pointer',
+                elementDisplayName: 'Select',
                 elementIcon: PointerIcon,
                 hasDrawer: false,
                 noAction: true,

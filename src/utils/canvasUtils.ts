@@ -6,6 +6,8 @@ import { generateUUID } from './misc'
 import { themeDefaultInk } from './themeColorFlip'
 import { lineHeightFor, measureTextWidth, type FontSpec } from './textLayout'
 import { reflowTextForShape } from './shapeTextFit'
+import { isFontReady, runWhenFontReady } from './fontLoading'
+import { scheduleRender } from './renderScheduler'
 
 // Two.js scene/shape objects in the codebase carry extra bookkeeping fields
 // (elementData, _renderer, etc.) that aren't part of the published types. Keep
@@ -370,6 +372,29 @@ export function getShapeTextNodes(group: ShapeLike): ShapeLike[] {
  * the text node the SelectionController attaches to, and excluded from
  * `getShapeTextNodes` (no string `value`).
  */
+/**
+ * Give an element's rendered SVG node DOM focus.
+ *
+ * Blink focuses any SVG node on a bare `.focus()`; WebKit only focuses one that
+ * is explicitly focusable, and silently does nothing otherwise. Selection here
+ * rides on DOM focus/blur of the element's `<g>` — the `groupFocused` event
+ * behind group copy/paste, the delete-key handlers, deselect-on-blur — so
+ * without a tabindex every one of those events goes missing in Safari while
+ * working fine in Chrome. `-1` makes the node programmatically focusable
+ * without putting it in the tab order; the outline reset keeps Safari from
+ * painting a focus ring around the shape.
+ */
+export function focusSvgElement(el: Element | null | undefined): void {
+    if (!el) return
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1')
+    const focusable = el as Element & {
+        style?: CSSStyleDeclaration
+        focus?: () => void
+    }
+    if (focusable.style) focusable.style.outline = 'none'
+    focusable.focus?.()
+}
+
 export function syncTextHitRect(two: TwoLike, group: ShapeLike): void {
     const nodes = getShapeTextNodes(group)
     if (!nodes.length) return
@@ -558,6 +583,11 @@ export function shapeTextStyleFromMeta(meta: ShapeLike): {
  * on mount and whenever width/metadata change, so persisted boards reflow
  * deterministically from raw content + width (no wrapped text is stored).
  * Caller owns `two.update()`.
+ *
+ * If the text's webfont hasn't loaded yet, the wrap is measured against a
+ * fallback face and re-run for free once the real one lands — see
+ * `./fontLoading`. That second pass owns its own render (its caller is long
+ * gone by then).
  */
 export function applyShapeText(
     two: TwoLike,
@@ -571,4 +601,22 @@ export function applyShapeText(
     const { style, font } = shapeTextStyleFromMeta(meta)
     const { lines } = reflowTextForShape(kind, width, raw, font)
     renderShapeTextLayer(two, group, lines, style)
+
+    if (isFontReady(font)) return
+    runWhenFontReady(font, () => {
+        // The shape may have been deleted while we waited; Two.js deletes
+        // `parent` on remove, so this skips detached groups.
+        if (!group?.parent) return
+        // Re-read the width off the shape path (children[0]) rather than
+        // trusting the captured one — a resize in the meantime moved it.
+        const liveWidth = group.children?.[0]?.width ?? width
+        const { lines: reflowed } = reflowTextForShape(
+            kind,
+            liveWidth,
+            raw,
+            font
+        )
+        renderShapeTextLayer(two, group, reflowed, style)
+        scheduleRender(two)
+    })
 }

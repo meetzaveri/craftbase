@@ -170,7 +170,7 @@ export async function setDefaultStrokeWidth(page, label) {
 }
 
 /**
- * Clicks any top-level toolbar button by aria-label (e.g. "Pencil", "Pointer",
+ * Clicks any top-level toolbar button by aria-label (e.g. "Pencil", "Select",
  * "Eraser"). Used by tests that need to switch the active draw mode so the
  * unified properties toolbar swaps to the matching set before tweaking a
  * default.
@@ -245,8 +245,9 @@ export async function drawLine(page, { startX, startY, endX, endY }) {
         (els) => els.length
     )
 
-    // Open the Lines drawer, then pick the plain-line tool.
-    await page.click('[aria-label="Lines"]')
+    // Open the Lines drawer by hovering the parent icon (see drawCurvedLine),
+    // then pick the plain-line tool.
+    await page.hover('[aria-label="Lines"]')
     await page.click('[aria-label="Line"]')
 
     await page.mouse.move(startX, startY)
@@ -274,8 +275,12 @@ export async function drawCurvedLine(page, points) {
         (els) => els.length
     )
 
-    // Open the Lines drawer, then pick the curved-line tool.
-    await page.click('[aria-label="Lines"]')
+    // Open the Lines drawer by HOVERING the parent icon, then pick the
+    // curved-line tool. Hover is how the drawer is meant to be opened
+    // (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar) and it arms nothing —
+    // clicking the parent would select its default child (a plain line),
+    // arming a pending element that the curved-line click then has to cancel.
+    await page.hover('[aria-label="Lines"]')
     await page.click('[aria-label="Curved line"]')
 
     // Each click is a mousedown that pushes one vertex (mouseup is a no-op in
@@ -346,11 +351,12 @@ export async function triggerUndoKeyboard(page) {
 }
 
 /**
- * Clicks the Undo button in the shapes toolbar. The button is a div carrying
- * title="Undo"; the inner SVG also has aria-label="Undo".
+ * Clicks the Undo button in the shapes toolbar. The button is a div wrapping
+ * an SVG with aria-label="Undo" (hover tooltip is a separate Tooltip
+ * component, not a title attribute).
  */
 export async function clickUndoButton(page) {
-    await page.click('[title="Undo"]')
+    await page.click('[aria-label="Undo"]')
 }
 
 /**
@@ -362,20 +368,20 @@ export async function triggerRedoKeyboard(page) {
 }
 
 /**
- * Clicks the Redo button in the shapes toolbar (title="Redo").
+ * Clicks the Redo button in the shapes toolbar (aria-label="Redo").
  */
 export async function clickRedoButton(page) {
-    await page.click('[title="Redo"]')
+    await page.click('[aria-label="Redo"]')
 }
 
 /**
- * Switches the toolbar to select/pan (Pointer) mode. Clears any draw-mode
+ * Switches the toolbar to select/pan (Select) mode. Clears any draw-mode
  * flags left over by drawArrow/drawPencilStroke/placeText (they each set
  * localStorage flags during their flow), so the next mousedown on empty canvas
  * is interpreted as the start of a marquee group selection.
  */
 export async function clickPointerTool(page) {
-    await page.click('[aria-label="Pointer"]')
+    await page.click('[aria-label="Select"]')
 }
 
 /**

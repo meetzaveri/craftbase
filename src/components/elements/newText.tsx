@@ -253,6 +253,29 @@ function NewText(props: ElementProps): ReactElement {
                 two.scene.translation.y -
                 surfaceCenterY * scale0
 
+            // Line count the block was laid out with when editing began. The
+            // editor's top edge is pinned to THIS block's top, so typing extends
+            // the box downward instead of growing it symmetrically about the
+            // block's center (which would walk line 1 upward on every newline).
+            const startLineCount = (textValueRef.current || '').split('\n')
+                .length
+
+            // The scene keeps the line stack centered on the group origin, so a
+            // new line moves line 1 up by half a line height. Shift the origin
+            // down by that same half line whenever the count changes, and the
+            // block's TOP edge — where the user is typing — stays put. Keeps the
+            // centered layout model (selection box, font resize, group ops all
+            // rely on it) while making growth read as downward-only.
+            let laidOutLineCount = startLineCount
+            const keepBlockTopFixed = (): void => {
+                const nextCount = (textValueRef.current || '').split('\n').length
+                if (nextCount === laidOutLineCount) return
+                const lineH = lineHeightFor(twoText.size || 36)
+                group.translation.y +=
+                    ((nextCount - laidOutLineCount) * lineH) / 2
+                laidOutLineCount = nextCount
+            }
+
             // Camera-dependent geometry — recomputed each two.update (pan/zoom).
             let cssFontSize = (twoText.size || 36) * scale0
             let lineH = Math.ceil(cssFontSize * 1.6)
@@ -326,9 +349,9 @@ function NewText(props: ElementProps): ReactElement {
                 measureSpan.style.lineHeight = `${lineH}px`
             }
 
-            // Pure DOM: size + place the textarea from the current geometry.
+            // Pure DOM: size the textarea and hang it from its fixed top anchor.
             // No two.update here (so it's safe to call from the update handler).
-            const autoSizeAndCenter = (): void => {
+            const autoSizeAndPlace = (): void => {
                 const val = input.value || 'M'
                 measureSpan.textContent = val
 
@@ -344,17 +367,23 @@ function NewText(props: ElementProps): ReactElement {
                     measuredH + vertPad * 2,
                     lineH + vertPad * 2
                 )
+                // Height the box had when editing began. `centerY` tracks the
+                // center of THAT block, so subtracting half of this height gives
+                // its top edge — a fixed anchor the box grows down from. Both
+                // terms scale with the camera, so it stays glued under pan/zoom.
+                const anchorHeight =
+                    Math.max(startLineCount, 1) * lineH + vertPad * 2
 
                 input.style.width = `${contentWidth}px`
                 input.style.height = `${contentHeight}px`
                 input.style.left = `${leftAnchor}px`
-                input.style.top = `${centerY - contentHeight / 2}px`
+                input.style.top = `${centerY - anchorHeight / 2}px`
             }
 
             // Re-glue the editor to the text after any render (pan/zoom/content).
             const repositionEditor = (): void => {
                 recomputeGeometry()
-                autoSizeAndCenter()
+                autoSizeAndPlace()
             }
 
             // On typing: push the value into the hidden Two.js text nodes so the
@@ -362,6 +391,7 @@ function NewText(props: ElementProps): ReactElement {
             // syncMultilineLayout's two.update fires 'update' → repositionEditor.
             const onTextInput = (): void => {
                 textValueRef.current = input.value
+                keepBlockTopFixed()
                 syncMultilineLayout()
                 repositionEditor()
             }
@@ -428,6 +458,9 @@ function NewText(props: ElementProps): ReactElement {
                 setTextValue(newContent)
                 textValueRef.current = newContent
 
+                // Idempotent — a no-op unless the final value changed the line
+                // count without an `input` event (e.g. a programmatic set).
+                keepBlockTopFixed()
                 syncMultilineLayout()
 
                 const bRect = blockRect()
@@ -449,14 +482,21 @@ function NewText(props: ElementProps): ReactElement {
                     ...baseMetadata,
                     content: textValueRef.current,
                 }
+                // `y` rides along because keeping the block's top edge fixed
+                // moves the origin (the block stays centered on it). Without
+                // persisting it, a reload would re-center the block on the old
+                // origin and the text would jump back up.
+                const newY = Math.round(group.translation.y)
                 updateComponentBulkPropertiesInLocalStore(props.id, {
                     width: newWidth,
                     height: newHeight,
+                    y: newY,
                     metadata: updatedMetadata,
                 })
 
                 if (group.elementData) {
                     group.elementData.metadata = updatedMetadata
+                    group.elementData.y = newY
                 }
 
                 input.remove()

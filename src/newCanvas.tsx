@@ -242,6 +242,10 @@ let isDrawing: boolean = false
 // previously committed element and the redo stack gets clobbered when the
 // current stroke commits, losing that earlier element for good.
 let isPencilStrokeActive: boolean = false
+// Length (surface units) of the segment a click-without-drag becomes, so the
+// pencil's round caps paint it as a dot. See the dot branch in the pencil
+// mouseup handler.
+const PENCIL_DOT_SEGMENT = 0.5
 let defaultLinewidthValue: number = 1
 let defaultStrokeTypeValue: string | null = null
 let defaultStrokeColorValue: string = PENCIL_DEFAULT_COLOR
@@ -780,7 +784,15 @@ function addZUI(
     }
 
     window.addEventListener('cancelGeoDraw', () => {
-        if (geoDrawType) cancelGeoDraw()
+        // Not gated on geoDrawType: the multi-click hint banner is shown as
+        // soon as the tool is ARMED (handleMultiClickDraw writes
+        // GEO_DRAW_TYPE_KEY to localStorage), but geoDrawType itself is only
+        // populated lazily on the first canvas mousedown. Switching tools
+        // before ever clicking the canvas left geoDrawType null, so this
+        // guard skipped cancelGeoDraw() entirely and the hint stuck around
+        // forever. cancelGeoDraw()'s steps are all no-ops when nothing was
+        // drawn, so it's safe to always run.
+        cancelGeoDraw()
     })
 
     // Mobile ✓ button (board.tsx) — finish the in-progress multi-click draw,
@@ -859,6 +871,27 @@ function addZUI(
         setSelectedComponentInBoard(null)
     }
     window.addEventListener('keydown', onCurvedLineDeleteKeyDown, false)
+
+    // An element can leave the scene without the selection ever being cleared —
+    // undoing its ADD is the common case (history's applyRemove just drops the
+    // group). The selection overlay lives at scene level, so it survives the
+    // element it was framing and would keep painting (and stay hit-testable) at
+    // the dead shape's last position. Drop any selection state pointing at the
+    // removed id. Idempotent: detach() no-ops when nothing is selected, so the
+    // delete paths that already detach are unaffected.
+    window.addEventListener('elementRemoved', ((e: CustomEvent) => {
+        const id = e.detail?.id
+        if (!id) return
+        if (selectionController.currentGroup?.elementData?.id === id) {
+            selectionController.detach()
+        }
+        if (lastSelectedShape?.elementData?.id === id) {
+            lastSelectedShape = null
+        }
+        if (activeGroupRef.current?.elementData?.id === id) {
+            activeGroupRef.current = null
+        }
+    }) as EventListener)
 
     domElement.addEventListener('mousedown', mousedown, false)
     domElement.addEventListener('mousemove', hoverDetectMove, false)
@@ -1141,7 +1174,9 @@ function addZUI(
                 | HTMLElement
                 | undefined
             if (layerElem) layerElem.style.display = 'none'
-            selectionController.ui.visible = false
+            // The selection box stays visible while editing (same as the solo
+            // text editor) — it re-syncs on every render, so it tracks the
+            // shape as it auto-grows with the text.
             two.update()
 
             const rawLiveMeta =
@@ -1203,6 +1238,13 @@ function addZUI(
             input.style.overflowWrap = 'anywhere'
             input.style.boxSizing = 'border-box'
             input.className = 'temp-input-area'
+
+            // Where the shape sat and how tall it was before typing began.
+            // Growing a rectangle downward moves its origin (see
+            // growShapeToFit), so the commit below has to persist the new y —
+            // compared against these.
+            const startTranslationY = group.translation.y
+            const startHeight = rectChild?.height
 
             // Anchor point: the SVG shape's screen-space center. The shape stays
             // VISIBLE during edit (only the text layer is hidden), so its rect is
@@ -1308,8 +1350,8 @@ function addZUI(
             }
 
             // Grow ONLY the shape height to fit the wrapped lines (width is
-            // user-driven). Symmetric growth keeps the centre fixed. Only on
-            // typing — NOT from the update handler (it calls two.update).
+            // user-driven). Only on typing — NOT from the update handler (it
+            // calls two.update).
             const growShapeToFit = () => {
                 if (!rectChild) return
                 const val = input.value || 'M'
@@ -1324,7 +1366,20 @@ function addZUI(
                     textSurfaceH
                 )
                 if (rectChild.height < nextH) {
+                    const dh = nextH - rectChild.height
                     rectChild.height = nextH
+                    // The shape path sits on the group origin, so growing
+                    // `height` alone expands symmetrically and lifts the TOP
+                    // edge — the box would swell around the text instead of
+                    // below it, walking line 1 upward on every newline. Shift
+                    // the origin down by half the delta so the top edge stays
+                    // put and the box only extends downward (matching the
+                    // standalone text editor). Rectangles only: a diamond or
+                    // circle reads as a centered figure, so symmetric growth is
+                    // the right behavior there.
+                    if (shapeKind === componentTypes.rectangle) {
+                        group.translation.y += dh / 2
+                    }
                     two.update()
                 }
             }
@@ -1423,6 +1478,12 @@ function addZUI(
                         persistPayload.width = Math.round(rectChild.width)
                         persistPayload.height = Math.round(rectChild.height)
                     }
+                    // Keeping the top edge fixed moved the origin; without
+                    // persisting it a reload would re-center the grown box on
+                    // the old origin and the shape would jump upward.
+                    if (group.translation.y !== startTranslationY) {
+                        persistPayload.y = Math.round(group.translation.y)
+                    }
                     updateComponentBulkPropertiesInLocalStore(
                         componentId,
                         persistPayload
@@ -1436,6 +1497,23 @@ function addZUI(
                             group.elementData.width = persistPayload.width
                             group.elementData.height = persistPayload.height
                         }
+                        if (persistPayload.y !== undefined) {
+                            group.elementData.y = persistPayload.y
+                        }
+                    }
+
+                    // Typing resized the box (and, for a rectangle, moved it),
+                    // so every edge port shifted — re-glue anything docked to
+                    // them. Restacking an edge with nothing docked is a no-op,
+                    // so fire all four rather than scanning for bindings.
+                    if (
+                        persistPayload.y !== undefined ||
+                        (rectChild && rectChild.height !== startHeight)
+                    ) {
+                        ;['n-resize', 'e-resize', 's-resize', 'w-resize'].forEach(
+                            (edge) => restackPortConnectors(componentId, edge)
+                        )
+                        two.update()
                     }
                 }
 
@@ -3127,8 +3205,9 @@ function addZUI(
                         // code block condition to handle normal component's dragging
                         else {
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const node = (shape as any)._renderer
-                                ?.elem as SVGGraphicsElement | undefined
+                            const node = (shape as any)._renderer?.elem as
+                                | SVGGraphicsElement
+                                | undefined
                             // CSS-transform move: eligible for non-rotated
                             // elements, including the group overlay — its member
                             // copies and selector chrome live inside its own SVG
@@ -3302,6 +3381,14 @@ function addZUI(
                     const arrowGroup = arrowDrawElement
                     const arrowLineShape = arrowGroup.children[0]
                     setArrowEndpointsVisible(arrowGroup, true)
+                    // getSelectedGroup() (used by copy/paste) falls back to
+                    // lastSelectedShape when selectionController has nothing
+                    // attached — which is always the case here, since arrows
+                    // and plain lines have no SHAPE_ADAPTERS entry. Without
+                    // this, Cmd+C right after finishing a draw silently no-ops
+                    // (getSelectedGroup() returns null) even though the
+                    // endpoint handles are visibly "selected".
+                    lastSelectedShape = arrowGroup
                     setSelectedComponentInBoard({
                         element: {
                             [arrowLineShape.id]: arrowLineShape,
@@ -3470,8 +3557,26 @@ function addZUI(
                 pencilGroup = null
                 pencilPath = null
 
+                // A click with no drag is a deliberate dot, not a failed
+                // stroke. Emit a hair-length horizontal segment centred on the
+                // click: the pencil's round caps then paint it as a single dot
+                // the width of the stroke. The length has to be non-zero —
+                // Two.js collapses two identical anchors into one `M` command,
+                // which draws nothing. DOT_SEGMENT is far below one screen
+                // pixel at normal zoom, so the mark reads as round, and
+                // everything downstream (persistence, undo, group move,
+                // export) just sees an ordinary 2-point stroke.
+                if (pencilRawPoints.length === 1) {
+                    const dot = pencilRawPoints[0]
+                    const half = PENCIL_DOT_SEGMENT / 2
+                    pencilRawPoints = [
+                        { ...dot, x: dot.x - half },
+                        { ...dot, x: dot.x + half },
+                    ]
+                }
+
                 if (pencilRawPoints.length < 2) {
-                    // Too few points to form a stroke — remove preview immediately
+                    // No points at all — remove preview immediately
                     if (capturedPencilGroup) {
                         two.remove(capturedPencilGroup)
                         two.update()
@@ -5203,6 +5308,12 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     useEffect(() => {
         const onUndoRedoKeyDown = (evt: KeyboardEvent) => {
             if (evt.key.toLowerCase() === 'z' && (evt.ctrlKey || evt.metaKey)) {
+                // Live text editing (solo text component, shape inline text —
+                // both are .temp-input-area textareas — or any other text
+                // field): let the browser's native text undo handle the key
+                // instead of popping a canvas action out from under the editor.
+                const tag = document.activeElement?.tagName
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return
                 evt.preventDefault()
                 // Don't undo/redo mid-stroke — the in-progress pencil stroke
                 // isn't in history yet, so undoing here would pop the wrong
@@ -5582,7 +5693,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
 
     return (
         <>
-            {import.meta.env.DEV && <PerfOverlay />}
+            {/* {import.meta.env.DEV && <PerfOverlay />} */}
             <div id="selector-rect"></div>
             {props.renderBackground?.()}
             <div id="main-two-root"></div>

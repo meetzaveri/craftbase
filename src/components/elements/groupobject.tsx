@@ -29,6 +29,7 @@ import {
     getGroupFill,
     layoutStandaloneText,
     readOpacity,
+    focusSvgElement,
 } from '../../utils/canvasUtils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -585,7 +586,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             groupEl.addEventListener('focus', onFocusHandler)
             groupEl.addEventListener('blur', onBlurHandler)
             groupEl.addEventListener('keydown', onKeyDown)
-            groupEl.focus()
+            focusSvgElement(groupEl)
         }
 
         // simulating click behavior

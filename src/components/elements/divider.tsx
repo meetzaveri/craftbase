@@ -6,7 +6,7 @@ import { useImmer } from 'use-immer'
 import { strokeTypeToDashes } from '../../utils/misc'
 
 import ElementCreator from '../../factory/divider'
-import { readOpacity } from '../../utils/canvasUtils'
+import { readOpacity, focusSvgElement } from '../../utils/canvasUtils'
 import { scheduleRender } from '../../utils/renderScheduler'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,7 +35,7 @@ function Divider(props: ElementProps): ReactElement {
                 ? document.getElementById(`${stateRefForGroup.current.id}`)
                 : null
             if (el) {
-                el.focus()
+                focusSvgElement(el)
                 el.addEventListener('blur', onBlurHandler)
             }
         } else {
