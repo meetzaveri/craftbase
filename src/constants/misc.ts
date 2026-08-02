@@ -9,6 +9,37 @@ export const GROUP_COMPONENT = 'groupobject'
 export const DEFAULT_TEXT_FONT_FAMILY = 'Caveat Brush'
 
 export const RUBBER_MODE_KEY = 'rubberMode'
+
+// Eraser size: the eraser deletes whole elements via a point hit test, not
+// pixel painting, so size is a tolerance around the cursor — a bigger size
+// widens the forgiving radius for catching thin strokes/small shapes.
+// Persisted like the other draw mode keys so re-opening eraser mode remembers
+// the last pick.
+export type EraserSize = 'small' | 'medium' | 'large'
+export const ERASER_SIZE_KEY = 'eraserSize'
+export const DEFAULT_ERASER_SIZE: EraserSize = 'medium'
+export const ERASER_SIZES: readonly EraserSize[] = ['small', 'medium', 'large']
+
+// On-screen DIAMETER in px of the dot the size selector shows for each size.
+// This is the eraser's visual identity: the trail drawn on the board uses the
+// exact same number, so the beam is the same circle as the swatch that was
+// picked. Change it here and both move together.
+export const ERASER_DOT_PX: Record<EraserSize, number> = {
+    small: 6,
+    medium: 10,
+    large: 14,
+}
+
+// Hit-test tolerance RADIUS in px, deliberately separate from the dot above:
+// the dot is what the eraser looks like, this is how far it reaches. It runs
+// wider than the dot on purpose so sweeping feels forgiving rather than
+// pixel-exact (small stays a bare point test).
+export const ERASER_SIZE_RADIUS: Record<EraserSize, number> = {
+    small: 0,
+    medium: 10,
+    large: 20,
+}
+
 export const VIEWPORT_KEY_PREFIX = 'craftbase_viewport_'
 export const MOBILE_VIEWPORT_KEY_PREFIX = 'craftbase_mobile_viewport_'
 export const VIEWPORT_TTL_MS = 30 * 24 * 60 * 60 * 1000

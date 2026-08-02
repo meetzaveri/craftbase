@@ -14,7 +14,19 @@ import {
     POINT_CATEGORIES,
     DEFAULT_POINT_CATEGORY,
     sizedCategoryIcon,
+    ERASER_SIZES,
+    ERASER_DOT_PX,
+    type EraserSize,
 } from '../../constants/misc'
+
+// Hover labels for the eraser size dots. The dots' pixel sizes come from
+// ERASER_DOT_PX rather than living here, because the trail drawn on the board
+// reads the same map — that's what keeps the swatch and the beam identical.
+const ERASER_SIZE_LABEL: Record<EraserSize, string> = {
+    small: 'Small',
+    medium: 'Medium',
+    large: 'Large',
+}
 
 const allElementsRaw = staticPrimaryElementData.flatMap(
     (section) => section.elements
@@ -90,6 +102,8 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         geoObjectsEnabled,
         selectedComponent,
         applyProperty,
+        eraserSize,
+        setEraserSizeInBoard,
     } = useBoardContext()
     const { isMobile } = useMediaQueryUtils()
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
@@ -117,6 +131,11 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     // stays available so points can be selected (to edit category / tooltip);
     // otherwise the usual pointer/select default.
     const homeTool = geoObjectsEnabled ? 'pan' : 'pointer'
+
+    // Eraser size selector: only while the eraser is the active tool and
+    // nothing on canvas is selected — a selection competing for the same
+    // toolbar space would be confusing, so it steps aside.
+    const showEraserSizes = currentElement === 'rubber' && !selectedComponent
 
     const allElements = (() => {
         const list = (
@@ -268,6 +287,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                             key={element.elementName}
                             label={element.elementDisplayName}
                             placement={tooltipPlacement}
+                            disabled={element.hasDrawer}
                         >
                             <div
                                 className={`
@@ -369,6 +389,18 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         )
                                     } else {
                                         setOpenDrawer(null)
+                                        if (element.elementName === 'rubber') {
+                                            // Anchor for the mobile size
+                                            // drawer, which renders above the
+                                            // toolbar off this icon's rect.
+                                            const rect =
+                                                e.currentTarget.getBoundingClientRect()
+                                            setDrawerAnchor({
+                                                left: rect.left,
+                                                top: rect.bottom,
+                                                rectTop: rect.top,
+                                            })
+                                        }
                                         addElement(element.elementName)
                                         setCurrentElementInBoard(
                                             element.elementName
@@ -384,6 +416,53 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                         </Tooltip>
                     )
                 })}
+                {/* Eraser size selector — desktop only, inline in the same
+                    pill right next to the eraser icon (separated by the same
+                    divider style used before undo/redo). Hidden on mobile in
+                    favour of the above-toolbar drawer rendered below, since
+                    the fixed-width bottom bar has no room to grow inline. */}
+                {!isMobile && showEraserSizes && (
+                    <>
+                        <div className="bg-border-panel w-px h-6 mx-1" />
+                        {ERASER_SIZES.map((size) => {
+                            const label = ERASER_SIZE_LABEL[size]
+                            const dotPx = ERASER_DOT_PX[size]
+                            const isActive = eraserSize === size
+                            return (
+                                <Tooltip
+                                    key={size}
+                                    label={label}
+                                    placement={tooltipPlacement}
+                                >
+                                    <button
+                                        type="button"
+                                        aria-label={`Eraser size: `}
+                                        className={`
+                                        ${btnSize} flex items-center justify-center rounded cursor-pointer
+                                        transition-all ease-in-out duration-200
+                                        ${
+                                            isActive
+                                                ? 'bg-accent/50 text-ink dark:bg-accent/50/30 dark:text-white'
+                                                : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
+                                        }
+                                    `}
+                                        onClick={(): void =>
+                                            setEraserSizeInBoard(size)
+                                        }
+                                    >
+                                        <span
+                                            className="rounded-full bg-current pointer-events-none"
+                                            style={{
+                                                width: dotPx,
+                                                height: dotPx,
+                                            }}
+                                        />
+                                    </button>
+                                </Tooltip>
+                            )
+                        })}
+                    </>
+                )}
                 {!isMobile && (
                     <>
                         <div className="bg-border-panel w-px h-6 mx-1" />
@@ -535,6 +614,59 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                                 cat.svgIcon,
                                                 isMobile ? 16 : 18
                                             ),
+                                        }}
+                                    />
+                                </button>
+                            </Tooltip>
+                        )
+                    })}
+                </div>
+            )}
+
+            {/* Eraser size selector — mobile only. Reuses the same
+                above-toolbar drawer anchoring as the point-category drawer
+                above; desktop instead renders the sizes inline (see the
+                divider-separated segment next to the eraser icon). */}
+            {isMobile && showEraserSizes && drawerAnchor && (
+                <div
+                    className="fixed bg-card-bg border border-border-panel rounded-card flex items-center flex-row px-1 py-1 gap-0.5"
+                    style={{
+                        bottom: window.innerHeight - drawerAnchor.rectTop + 6,
+                        left: drawerAnchor.left,
+                        zIndex: 11,
+                    }}
+                >
+                    {ERASER_SIZES.map((size) => {
+                        const label = ERASER_SIZE_LABEL[size]
+                        const dotPx = ERASER_DOT_PX[size]
+                        const isActive = eraserSize === size
+                        return (
+                            <Tooltip
+                                key={size}
+                                label={label}
+                                placement={tooltipPlacement}
+                            >
+                                <button
+                                    type="button"
+                                    aria-label={`Eraser size: `}
+                                    className={`
+                                    ${btnSize} flex items-center justify-center rounded cursor-pointer
+                                    transition-all ease-in-out duration-200
+                                    ${
+                                        isActive
+                                            ? 'bg-accent/50 text-ink dark:bg-accent/50/30 dark:text-white'
+                                            : 'text-ink-muted hover:bg-accent/50 dark:hover:bg-accent/50/30 hover:text-ink'
+                                    }
+                                `}
+                                    onClick={(): void =>
+                                        setEraserSizeInBoard(size)
+                                    }
+                                >
+                                    <span
+                                        className="rounded-full bg-current pointer-events-none"
+                                        style={{
+                                            width: dotPx,
+                                            height: dotPx,
                                         }}
                                     />
                                 </button>
