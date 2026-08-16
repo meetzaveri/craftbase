@@ -291,7 +291,9 @@ export interface BoardContextValue {
 
     // Mobile toolbar panel
     showMobileToolbarPanel: boolean
-    setShowMobileToolbarPanel: (value: boolean | ((prev: boolean) => boolean)) => void
+    setShowMobileToolbarPanel: (
+        value: boolean | ((prev: boolean) => boolean)
+    ) => void
 
     // Undo history
     historyLog: HistoryEntry[]
@@ -312,6 +314,12 @@ export interface BoardContextValue {
      * rather than `baseProvider` when deciding which tools to show.
      */
     toolset: {
+        /**
+         * The base this toolset was derived from. It trails `activeBase` across
+         * a switch, because providers are dynamically imported — compare the
+         * two before acting on a switch.
+         */
+        baseId: BaseId
         hiddenTools: ReadonlySet<string>
         extraTools: readonly PrimaryElement[]
         homeTool: string

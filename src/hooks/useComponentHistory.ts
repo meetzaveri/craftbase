@@ -12,13 +12,13 @@ import {
     pollUntilElement,
 } from '../utils/canvasUtils'
 import { lineHeightFor } from '../utils/textLayout'
-import {
-    buildPointVisual,
-    pointColorOf,
-    pointLabelOf,
-} from '../factory/point'
+import { buildPointVisual, pointColorOf, pointLabelOf } from '../factory/point'
 import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
 import type { ComponentRecord, ComponentStore } from '../types/board'
+import {
+    VERTEX_PATH_TYPES,
+    VERTEX_PATH_REVERTED_EVENT,
+} from '../components/utils/vertexHandles'
 
 // Two.js scene-group shapes are typed loosely until the canvas internals
 // converge (Stages 7–9). Bulk-prop bags are also row-shaped; we accept
@@ -114,11 +114,7 @@ interface BatchEntry {
 }
 
 export type HistoryEntry =
-    | AddEntry
-    | DeleteEntry
-    | UpdateVerticesEntry
-    | UpdateBulkEntry
-    | BatchEntry
+    AddEntry | DeleteEntry | UpdateVerticesEntry | UpdateBulkEntry | BatchEntry
 
 // ---- hook options ----
 
@@ -212,11 +208,7 @@ function applyPropertyToTwoJSGroup(
             }
             break
         case 'metadata':
-            if (
-                value &&
-                typeof value === 'object' &&
-                !Array.isArray(value)
-            ) {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
                 // Fallback single node for legacy/non-multiline shapes where
                 // getShapeTextNodes finds no text layer.
                 const fallbackTextNode: ShapeLike =
@@ -244,10 +236,7 @@ function applyPropertyToTwoJSGroup(
                                     (n: ShapeLike) => (n.opacity = 1)
                                 )
                             }
-                        } else if (
-                            k === 'textFontSize' ||
-                            k === 'fontSize'
-                        ) {
+                        } else if (k === 'textFontSize' || k === 'fontSize') {
                             // Standalone text stores size as `fontSize`,
                             // shape-with-text as `textFontSize` — honor both.
                             applyToText((n) => {
@@ -259,12 +248,11 @@ function applyPropertyToTwoJSGroup(
                             if (isStandaloneText && textNodes.length > 1) {
                                 const lh = lineHeightFor(Number(v))
                                 const cnt = textNodes.length
-                                textNodes.forEach(
-                                    (n: ShapeLike, i: number) =>
-                                        n.translation.set(
-                                            0,
-                                            (i - (cnt - 1) / 2) * lh
-                                        )
+                                textNodes.forEach((n: ShapeLike, i: number) =>
+                                    n.translation.set(
+                                        0,
+                                        (i - (cnt - 1) / 2) * lh
+                                    )
                                 )
                             }
                         } else if (k === 'textFontFamily') {
@@ -622,8 +610,22 @@ export function useComponentHistory({
                     const y1 = props.y1 ?? line.vertices[0].y
                     const x2 = props.x2 ?? line.vertices[1].x
                     const y2 = props.y2 ?? line.vertices[1].y
-                    updateX1Y1Vertices(Two, line, x1, y1, pointCircle1Group, two)
-                    updateX2Y2Vertices(Two, line, x2, y2, pointCircle2Group, two)
+                    updateX1Y1Vertices(
+                        Two,
+                        line,
+                        x1,
+                        y1,
+                        pointCircle1Group,
+                        two
+                    )
+                    updateX2Y2Vertices(
+                        Two,
+                        line,
+                        x2,
+                        y2,
+                        pointCircle2Group,
+                        two
+                    )
                 }
             }
 
@@ -635,17 +637,18 @@ export function useComponentHistory({
                 reapplyTextFromMeta(group, props.metadata)
             }
 
-            // curvedLine stores an absolute vertex array in metadata and owns
-            // its path + vertex handles (frozen props, so no re-render). Sync
-            // elementData for later drags/reload, then let the component re-flow
-            // through its own refs via this event (works for undo AND redo).
+            // The multi-point path family (curved line + geo route/area) stores
+            // an absolute vertex array in metadata and owns its path + vertex
+            // handles (frozen props, so no re-render). Sync elementData for
+            // later drags/reload, then let the component re-flow through its own
+            // refs via this event (works for undo AND redo).
             if (
                 Array.isArray(props.metadata) &&
-                group.elementData?.componentType === 'curvedLine'
+                VERTEX_PATH_TYPES.has(group.elementData?.componentType)
             ) {
                 group.elementData.metadata = props.metadata
                 window.dispatchEvent(
-                    new CustomEvent('curvedLineVertsReverted', {
+                    new CustomEvent(VERTEX_PATH_REVERTED_EVENT, {
                         detail: { id, metadata: props.metadata },
                     })
                 )
@@ -905,10 +908,7 @@ export function useComponentHistory({
                         typeof propsToApply.metadata === 'object' &&
                         !Array.isArray(propsToApply.metadata)
                     ) {
-                        reapplyTextFromMeta(
-                            sceneGroup,
-                            propsToApply.metadata
-                        )
+                        reapplyTextFromMeta(sceneGroup, propsToApply.metadata)
                     }
                     if (
                         propsToApply.width !== undefined ||
@@ -1006,9 +1006,7 @@ export function useComponentHistory({
             // Re-read the live store here (still present, since undo's
             // applyRemove runs after this) so redo re-inserts the final geometry.
             const current = stateRefForComponentStore.current[entry.id]
-            return current
-                ? { ...entry, componentInfo: { ...current } }
-                : entry
+            return current ? { ...entry, componentInfo: { ...current } } : entry
         }
         if (entry.action === 'UPDATE_VERTICES') {
             const current = stateRefForComponentStore.current[entry.id]
@@ -1105,7 +1103,10 @@ export function useComponentHistory({
         delete cleanEntry.nextX
         delete cleanEntry.nextY
         delete cleanEntry.nextProps
-        const updatedLog = [...historyLogRef.current, cleanEntry as HistoryEntry]
+        const updatedLog = [
+            ...historyLogRef.current,
+            cleanEntry as HistoryEntry,
+        ]
         writeHistory(updatedLog)
 
         // See undoLastAction: dismiss any active group overlay so it can't show

@@ -35,6 +35,13 @@ import OkIcon from '../../assets/ok.svg?react'
 import CloseIcon from '../../assets/close.svg?react'
 import PermissionErrorModal from '../../components/modals/PermissionErrorModal'
 import StorageLimitModal from '../../components/modals/StorageLimitModal'
+import MapStartLocationModal from '../../components/modals/MapStartLocationModal'
+import MobileDeleteButton from '../../components/sidebar/mobileDeleteButton'
+import {
+    resolveTimezoneCity,
+    DEFAULT_ANCHOR_ZOOM,
+} from '../../utils/timezoneCities'
+import { zoomLimitsForBase } from '../../bases/zoomLimits'
 import {
     BoardFullModal,
     BoardTooLargeModal,
@@ -325,6 +332,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         captureBackdrop,
         readConfig: readBaseConfigForExport,
         setMapAnchor,
+        hadStoredMapAnchor,
     } = useActiveBase({ boardId, defaultBase: props.defaultBase })
 
     /**
@@ -341,12 +349,19 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const toolset = useMemo(() => {
         if (!props.geoObjectsEnabled) {
             return {
+                // Which base this toolset was actually built from. Providers are
+                // dynamically imported, so `baseProvider` lags `activeBase` by
+                // however long the chunk takes to load — anything acting on a
+                // base switch has to wait for these two to agree, or it acts on
+                // the OUTGOING base's tools.
+                baseId: baseProvider.id,
                 hiddenTools: baseProvider.hiddenTools,
                 extraTools: baseProvider.extraTools,
                 homeTool: baseProvider.homeTool,
             }
         }
         return {
+            baseId: baseProvider.id,
             hiddenTools: GEO_HIDDEN_TOOLS,
             extraTools: geoElementData,
             homeTool: 'pan',
@@ -636,9 +651,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // Hand the camera the incoming base's zoom range BEFORE restoring its
         // viewport — the map's range reaches far below the board's floor, and a
         // stale floor would clamp a wide map camera on the way in.
+        //
+        // Read from the static table, NOT `baseProvider`: providers load through
+        // a dynamic import, so on a switch `baseProvider` still describes the
+        // base being LEFT. Using it here would install the board's floor and
+        // clamp the very map camera this line exists to protect.
+        const incomingLimits = zoomLimitsForBase(activeBase)
         zuiInBoardRef.current?.setZoomLimits?.(
-            baseProvider.zoomLimits.min,
-            baseProvider.zoomLimits.max
+            incomingLimits.min,
+            incomingLimits.max
         )
 
         restoreImportedViewport(
@@ -648,18 +669,21 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // The backdrop tracks onCameraChange, and this camera move happens
         // outside addZUI's handlers — announce it or the map stays put.
         zuiInBoardRef.current?.notifyCameraChange?.()
-    }, [activeBase, baseProvider, boardId, isMobile, restoreImportedViewport])
+    }, [activeBase, boardId, isMobile, restoreImportedViewport])
 
-    // The camera is created inside newCanvas with the board default, so the
-    // active base's range has to be applied once it exists too — otherwise a
-    // board that OPENS on the map (a saved base, or defaultBase="map") keeps the
-    // whiteboard's floor until the user switches away and back.
+    // Belt-and-braces re-apply once the camera exists. newCanvas already
+    // installs the active base's range before restoring the saved viewport;
+    // this covers any later path that recreates the camera.
+    //
+    // Keyed on `activeBase` via the static table rather than on `baseProvider`.
+    // It used to read the provider, which meant this effect fired on first
+    // render with the still-unresolved board base and re-clamped a just-restored
+    // map camera back to the whiteboard's 6% floor — undoing the restore it was
+    // meant to complete.
     useEffect(() => {
-        zuiInBoardRef.current?.setZoomLimits?.(
-            baseProvider.zoomLimits.min,
-            baseProvider.zoomLimits.max
-        )
-    }, [baseProvider, zuiInBoard])
+        const limits = zoomLimitsForBase(activeBase)
+        zuiInBoardRef.current?.setZoomLimits?.(limits.min, limits.max)
+    }, [activeBase, zuiInBoard])
 
     // Re-glue every docked connector whose bound shape is present in `store`.
     // The listener in newCanvas polls for fresh mounts, so dispatching now
@@ -1153,6 +1177,89 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         },
         [readBaseConfigForExport, setMapAnchor]
     )
+
+    /**
+     * First-visit "where are you mapping?" prompt.
+     *
+     * Deliberately narrow — it may only fire while re-anchoring is still a free
+     * action. Three conditions, all necessary:
+     *
+     *  1. We are on the map base (nothing to ask otherwise).
+     *  2. The board has never persisted an anchor. Note this reads the value
+     *     snapshotted at load, not the live one: the provider fills in a
+     *     timezone guess the moment it mounts, so the live config always has an
+     *     anchor and would never let the prompt through.
+     *  3. Nothing is on the map yet. This is the one that really matters —
+     *     re-anchoring moves the geography UNDER the ink (element coordinates
+     *     never change across an anchor change), so asking after something has
+     *     been drawn would offer to silently relocate it. Same predicate
+     *     goToPlace uses to decide re-anchor vs. fly-the-camera, for exactly
+     *     the same reason.
+     *
+     * `askedRef` keeps it to once per session, so toggling bases repeatedly
+     * before answering doesn't re-open it. Across sessions, answering EITHER
+     * way persists an anchor, which retires condition 2 permanently — that is
+     * what makes "Skip" stick rather than nag on the next visit.
+     */
+    const [showMapStartModal, setShowMapStartModal] = useState(false)
+    const askedMapStartRef = useRef(false)
+    // True only between opening the prompt and the user answering it. Both
+    // answers write persisted state, so neither may run on a stray invocation —
+    // and one already did: a leaked Escape handler in Modal (since fixed) called
+    // onSkip long after the dialog was gone, re-anchoring a map the user had
+    // already placed. Defence in depth, because "a dismissed dialog silently
+    // moved my map" is not a failure the user can diagnose.
+    const mapStartPendingRef = useRef(false)
+    const [timezoneCity] = useState(() => resolveTimezoneCity())
+
+    useEffect(() => {
+        if (askedMapStartRef.current) return
+        if (activeBase !== 'map') return
+        if (hadStoredMapAnchor) return
+        // Wait for the map provider to actually be live, so a "Skip" has
+        // something to persist against.
+        if (baseProvider.id !== 'map') return
+
+        const store = stateRefForComponentStore.current ?? {}
+        const mapHasContent = Object.values(store).some(
+            (record) =>
+                record?.componentType !== GROUP_COMPONENT &&
+                isRecordVisibleOnBase(record, 'map')
+        )
+        if (mapHasContent) return
+
+        askedMapStartRef.current = true
+        mapStartPendingRef.current = true
+        setShowMapStartModal(true)
+    }, [activeBase, hadStoredMapAnchor, baseProvider, componentStore])
+
+    const handleMapStartPick = useCallback(
+        (place: MapAnchor): void => {
+            if (!mapStartPendingRef.current) return
+            mapStartPendingRef.current = false
+            setShowMapStartModal(false)
+            // The map is empty (that is the gate), so this re-anchors rather
+            // than flying the camera — which is what we want: the whole zoom
+            // window re-centres on the chosen place.
+            goToPlace(place)
+        },
+        [goToPlace]
+    )
+
+    const handleMapStartSkip = useCallback((): void => {
+        if (!mapStartPendingRef.current) return
+        mapStartPendingRef.current = false
+        setShowMapStartModal(false)
+        // Persist the timezone city they are already looking at. Declining is a
+        // decision, so we record it and stop asking, rather than treating it as
+        // "unanswered" and re-prompting forever.
+        setMapAnchor({
+            lngLat: [...timezoneCity.lngLat],
+            zoom:
+                readBaseConfigForExport().mapAnchor?.zoom ??
+                DEFAULT_ANCHOR_ZOOM,
+        })
+    }, [setMapAnchor, timezoneCity, readBaseConfigForExport])
 
     // Creates a board in the background on first interaction (non-blocking).
     // Stores the server board ID in state + ref + localStorage for later use.
@@ -2376,6 +2483,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                             </button>
                         </div>
                     )}
+                    <MobileDeleteButton
+                        drawInProgress={showMultiClickDrawControls}
+                    />
                     {!isRubberMode && isMobile && (
                         <button
                             title="Element properties"
@@ -2439,6 +2549,12 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                     </div>
                 </div>
             ) : null} */}
+            <MapStartLocationModal
+                open={showMapStartModal}
+                fallbackCity={timezoneCity.city}
+                onPick={handleMapStartPick}
+                onSkip={handleMapStartSkip}
+            />
             <PermissionErrorModal
                 open={showPermissionErrorModal}
                 onClose={() => setShowPermissionErrorModal(false)}

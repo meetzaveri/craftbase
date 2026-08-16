@@ -23,6 +23,10 @@ import type {
 import type { CameraChangeEvent } from '../types/board'
 import { geoElementData } from '../utils/constants'
 import { GEO_HIDDEN_TOOLS } from '../constants/misc'
+import {
+    resolveTimezoneCity,
+    DEFAULT_ANCHOR_ZOOM,
+} from '../utils/timezoneCities'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type MapLibreMap = any
@@ -46,38 +50,10 @@ type MapLibreMap = any
 export const BASEMAP_STYLE_URL =
     'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
-/**
- * The map zoom that ZUI `scale = 1` (craftbase's "100%") represents. Ink renders
- * at its nominal size at scale 1 and grows/shrinks from there, so this should be
- * the zoom you draw at most. z16 is shop/area detail. The window spans roughly
- * [zoom - 4.1, zoom + 3] given the ZUI scale limits (0.06, 8) — i.e. z11.9-z19,
- * all of it renderable, since vector tiles overzoom past their z14 source cap.
- */
-const DEFAULT_ANCHOR_ZOOM = 16
+// DEFAULT_ANCHOR_ZOOM lives in utils/timezoneCities — see the note there.
 
-/**
- * The map zoom range the camera can reach, and — through
- * `mapZoom = anchor.zoom + log2(zuiScale)` — the ZUI scale limits that produce
- * it. z1 is the whole world in view; z19 is OSM's deepest tile.
- *
- * This is why the map can't just inherit the board's 6%–800%: that range spans
- * only ~7 zoom levels, which pins a z16-anchored board to roughly z12–z19 and
- * makes "zoom out to see another continent" impossible. The relation between
- * the two zooms is fixed (it's what keeps ink glued to the map), so the only
- * way to widen what the user can see is to widen the scale range itself.
- */
-const MIN_MAP_ZOOM = 1
-const MAX_MAP_ZOOM = 19
-
-/**
- * Where to land when geolocation is unavailable (denied, incognito, timeout).
- * Without this we'd fall back to the [0,0] world view, which — combined with the
- * zoom-window math above — caps zoom-in at ~z5 and is useless for annotating.
- * [lng, lat], MapLibre's order.
- */
-const DEFAULT_ANCHOR_CENTER: [number, number] = [72.63, 23.03] // Ahmedabad
-
-const GEOLOCATION_TIMEOUT_MS = 5000
+// Zoom limits live in ./zoomLimits — the camera needs them before this
+// (dynamically imported) provider exists. See the note there.
 
 const OPAQUE_BACKDROP_CLASS = 'cb-base-opaque-backdrop'
 const MAP_CONTAINER_ID = 'cb-map-bg'
@@ -91,8 +67,24 @@ interface MapBaseHandle extends BaseHandle {
     disposed: boolean
 }
 
+/**
+ * Where a board opens the map when it has never been told a place.
+ *
+ * Derived from the browser's IANA timezone — no permission prompt, no network,
+ * available synchronously so the map's very first frame is already in roughly
+ * the right part of the world. It is only a *starting* view: the host offers
+ * the user a place to search on first visit (MapStartLocationModal), and the
+ * place search stays available forever after.
+ *
+ * This deliberately replaced a `navigator.geolocation` call, which prompted the
+ * user unbidden the instant they switched base, never fired at all on some
+ * mobile browsers, and left everyone else on a hard-coded city.
+ */
 function defaultAnchor(): MapAnchor {
-    return { lngLat: [...DEFAULT_ANCHOR_CENTER], zoom: DEFAULT_ANCHOR_ZOOM }
+    return {
+        lngLat: [...resolveTimezoneCity().lngLat],
+        zoom: DEFAULT_ANCHOR_ZOOM,
+    }
 }
 
 /**
@@ -128,21 +120,6 @@ function syncMapToZui(handle: MapBaseHandle, camera: CameraChangeEvent): void {
     map.jumpTo({ center: desiredCenter, zoom: targetZoom })
 }
 
-/** Browser geolocation as a promise; resolves null rather than rejecting. */
-function locate(): Promise<[number, number] | null> {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve(null)
-            return
-        }
-        navigator.geolocation.getCurrentPosition(
-            (p) => resolve([p.coords.longitude, p.coords.latitude]),
-            () => resolve(null),
-            { timeout: GEOLOCATION_TIMEOUT_MS }
-        )
-    })
-}
-
 export const mapBase: BaseProvider = {
     id: 'map',
     label: 'Map',
@@ -150,20 +127,22 @@ export const mapBase: BaseProvider = {
     hiddenTools: GEO_HIDDEN_TOOLS,
     extraTools: geoElementData,
 
-    zoomLimits: {
-        min: Math.pow(2, MIN_MAP_ZOOM - DEFAULT_ANCHOR_ZOOM),
-        max: Math.pow(2, MAX_MAP_ZOOM - DEFAULT_ANCHOR_ZOOM),
-    },
     // One whole map zoom level per click: 2^1 = double the scale. At 0.2 a user
     // would need ~70 clicks to cross the range.
     zoomStep: 1,
-    // Dragging the canvas should pan the world, not rubber-band a selection.
-    homeTool: 'pan',
+    // Select, same as the board base. The map is a *substrate* to draw on, not a
+    // map viewer — so the resting gesture is "work with what I drew", and
+    // reaching for pan is the explicit act. Pan stays one click away in the
+    // toolbar (it is not in GEO_HIDDEN_TOOLS), and scroll still pans regardless
+    // of the active tool.
+    homeTool: 'pointer',
 
     async mount(
         container: HTMLElement,
         config: BaseConfig,
-        ctx: BaseMountContext
+        // Unused: the anchor is resolved synchronously from the timezone, and a
+        // real choice arrives later via setAnchor (the host persists it).
+        _ctx: BaseMountContext
     ): Promise<BaseHandle> {
         const [{ default: maplibregl }] = await Promise.all([
             import('maplibre-gl'),
@@ -178,7 +157,8 @@ export const mapBase: BaseProvider = {
 
         // A persisted anchor is authoritative: the saved Two.js viewport was
         // recorded against it, so reusing it is what makes a refresh land on the
-        // same view. Only a board that has never been on the map geolocates.
+        // same view. Only a board that has never picked a place falls back to
+        // the timezone guess — and the host then offers to replace it.
         const saved = config.mapAnchor
         const anchor: MapAnchor = saved
             ? { lngLat: [...saved.lngLat], zoom: saved.zoom }
@@ -226,20 +206,6 @@ export const mapBase: BaseProvider = {
         if (import.meta.env.DEV) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ;(window as any).__cbMap = handle
-        }
-
-        if (!saved) {
-            // First time on the map for this board: try for the user's actual
-            // location, but don't block the mount on it — the map is already
-            // showing the fallback city, and we re-sync when the answer lands.
-            void locate().then((lngLat) => {
-                if (handle.disposed || !lngLat) return
-                handle.anchor = { lngLat, zoom: DEFAULT_ANCHOR_ZOOM }
-                // Persist only a real geolocation success, so a denied prompt
-                // is retried on the next visit rather than baked in.
-                ctx.saveConfig({ mapAnchor: handle.anchor })
-                if (handle.lastCamera) syncMapToZui(handle, handle.lastCamera)
-            })
         }
 
         return handle

@@ -47,7 +47,9 @@ const Content = styled.div`
     min-width: 50px;
     max-height: 80%;
     max-width: 80%;
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.16),
+        0 3px 6px rgba(0, 0, 0, 0.23);
     background-color: white;
     border-radius: 2px;
 `
@@ -97,7 +99,21 @@ export default function Modal(props: ModalProps): ReactElement {
             }
             window.removeEventListener('keyup', keyHandler)
         }
-    }, [open, locked, onClose])
+        // `active` MUST be a dependency even though the body only reads `open`.
+        //
+        // The backdrop is rendered while `open || active`, so closing goes
+        // open:false (still rendered, listeners re-attached) → transitionend →
+        // active:false (unmounted). That last step changes no dependency, so
+        // without `active` here the effect never re-runs, its cleanup never
+        // runs, and the window-level Escape handler survives the modal it
+        // belonged to — for the whole session, holding the old `onClose`.
+        //
+        // Harmless while every onClose merely set some state to false. It
+        // stopped being harmless once one of them had a side effect: the map's
+        // first-run location prompt writes an anchor on dismiss, so a stray
+        // Escape long after it closed (finishing an area/route draw, say)
+        // silently moved the user's map.
+    }, [open, active, locked, onClose])
 
     return (
         <React.Fragment>

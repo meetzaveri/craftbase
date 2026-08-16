@@ -28,8 +28,13 @@ export interface PointProperties {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ShapeLike = any
 
-/** Index of the circle inside a point group — the node a recolour targets. */
-const CIRCLE_INDEX = 0
+/**
+ * Set on the selection overlay that `point.tsx` parks inside the point's group.
+ * `buildPointVisual` wipes the group to redraw, and the overlay is not part of
+ * the drawing — without this marker every recolour would silently delete the
+ * selector out from under a selected point.
+ */
+export const POINT_CHROME_FLAG = '__cbPointChrome'
 
 /**
  * The colour a point's circle should render in.
@@ -66,9 +71,13 @@ export function buildPointVisual(
 ): void {
     const color = opts.color || POINT_COLOR
 
-    // Snapshot first — the collection mutates as we remove.
+    // Snapshot first — the collection mutates as we remove. Selection chrome is
+    // left in place: it belongs to the component, not the drawing.
     const existing: ShapeLike[] = [...(group.children || [])]
-    existing.forEach((child: ShapeLike) => group.remove(child))
+    existing.forEach((child: ShapeLike) => {
+        if (child?.[POINT_CHROME_FLAG]) return
+        group.remove(child)
+    })
 
     const circle = new (Two as ShapeLike).Circle(0, 0, POINT_RADIUS)
     circle.fill = color
@@ -90,9 +99,18 @@ export function buildPointVisual(
     group.add(label)
 }
 
-/** The circle node of a built point group (for in-place recolouring). */
+/**
+ * The circle node of a built point group (for in-place recolouring) — the first
+ * *content* child.
+ *
+ * Not a fixed index: a rebuild leaves any selection chrome in place and appends
+ * the new circle and label after it, so the chrome ends up at index 0 and a
+ * plain `children[0]` would hand a recolour the overlay instead of the pin.
+ */
 export function getPointCircle(group: ShapeLike): ShapeLike | null {
-    return group?.children?.[CIRCLE_INDEX] ?? null
+    const children = group?.children ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return children.find((c: any) => !c?.[POINT_CHROME_FLAG]) ?? null
 }
 
 /** The label node of a built point group (for in-place text edits). */

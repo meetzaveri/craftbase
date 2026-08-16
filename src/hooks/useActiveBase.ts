@@ -37,6 +37,16 @@ export interface ActiveBaseOptions {
 
 export interface ActiveBaseApi {
     activeBase: BaseId
+    /**
+     * Did this board arrive with a map anchor already persisted?
+     *
+     * Snapshotted at init and never updated, on purpose: it answers "has this
+     * board ever settled on a place", which is what the first-visit location
+     * prompt gates on. Reading the LIVE config would answer "is an anchor set
+     * right now", which is always true once the map mounts (the provider fills
+     * in a timezone guess), so the prompt would never appear.
+     */
+    hadStoredMapAnchor: boolean
     /** The mounted provider. Falls back to the board base until one resolves. */
     provider: BaseProvider
     switchBase: (id: BaseId) => void
@@ -72,9 +82,8 @@ export function useActiveBase({
 
     const configRef = useRef<BaseConfig>(initialConfig)
 
-    // Providers report async state back through this (the map base resolves its
-    // anchor from geolocation long after mount). Merged into the live config and
-    // persisted, so the next load reuses it instead of re-geolocating.
+    // Providers report async state back through this. Merged into the live
+    // config and persisted, so the next load reuses it.
     const saveConfig = useCallback(
         (patch: Partial<BaseConfig>): void => {
             const merged = { ...configRef.current, ...patch }
@@ -86,32 +95,32 @@ export function useActiveBase({
 
     const mountBase = useCallback(
         async (id: BaseId): Promise<void> => {
-        const token = ++mountTokenRef.current
-        const container = document.getElementById(BASE_ROOT_ID)
-        if (!container) return
+            const token = ++mountTokenRef.current
+            const container = document.getElementById(BASE_ROOT_ID)
+            if (!container) return
 
-        const next = await loadBaseProvider(id)
-        if (token !== mountTokenRef.current) return
+            const next = await loadBaseProvider(id)
+            if (token !== mountTokenRef.current) return
 
-        const previous = handleRef.current
-        if (previous) providerRef.current.unmount(previous)
+            const previous = handleRef.current
+            if (previous) providerRef.current.unmount(previous)
 
-        const handle = await next.mount(container, configRef.current, {
-            saveConfig,
-        })
-        if (token !== mountTokenRef.current) {
-            next.unmount(handle)
-            return
-        }
+            const handle = await next.mount(container, configRef.current, {
+                saveConfig,
+            })
+            if (token !== mountTokenRef.current) {
+                next.unmount(handle)
+                return
+            }
 
-        handleRef.current = handle
-        providerRef.current = next
-        setProvider(next)
+            handleRef.current = handle
+            providerRef.current = next
+            setProvider(next)
 
-        // Land on the current camera immediately, so switching doesn't show a
-        // backdrop at the origin for a frame before the next pan.
-        const camera = lastCameraRef.current
-        if (camera) next.syncCamera(handle, camera)
+            // Land on the current camera immediately, so switching doesn't show a
+            // backdrop at the origin for a frame before the next pan.
+            const camera = lastCameraRef.current
+            if (camera) next.syncCamera(handle, camera)
         },
         [saveConfig]
     )
@@ -189,6 +198,7 @@ export function useActiveBase({
 
     return {
         activeBase,
+        hadStoredMapAnchor: Boolean(initialConfig.mapAnchor),
         provider,
         switchBase,
         handleCameraChange,

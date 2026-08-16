@@ -53,6 +53,7 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     GEO_MIN_VERTICES,
+    DEFAULT_GEO_RESIST,
     GEO_PREVIEW_DOT_PX,
     GEO_PREVIEW_MIN_STROKE_PX,
     GEO_PREVIEW_SEGMENT_OPACITY,
@@ -134,6 +135,8 @@ import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
 import { scheduleRender } from './utils/renderScheduler'
 import { isRecordVisibleOnBase } from './utils/geoVisibility'
 import { SELECTION_CHROME_ATTR } from './utils/svgExportShared'
+import { computeCounterScale } from './utils/counterScale'
+import { zoomLimitsForBase } from './bases/zoomLimits'
 import { useCanvasClipboard } from './hooks/useCanvasClipboard'
 import type { HistoryEntry } from './hooks/useComponentHistory'
 import { exportSelectionAsSvg } from './utils/exportSelectionAsSvg'
@@ -639,6 +642,27 @@ function addZUI(
         if (root) root.style.cursor = cursor
     }
 
+    /**
+     * Stroke width the pencil PREVIEW must be painted at so the live stroke
+     * looks exactly like the element it becomes.
+     *
+     * The committed record stores the LOGICAL width (`defaultLinewidthValue`),
+     * and on a geographic base the mounted element counter-scales it — see
+     * `isStrokeScaled` / pencil.tsx — so the painted path ends up carrying
+     * `base / scale^resist`. The preview is a bare scene path with no component
+     * behind it, so it has to apply that factor itself. Without this the stroke
+     * draws thin and visibly thickens the instant the element mounts.
+     *
+     * The base test mirrors the `objectClass: 'geo'` stamp on the committed
+     * record below — the two must agree, or the jump comes straight back.
+     */
+    const pencilPreviewLinewidth = (): number => {
+        const base = defaultLinewidthValue
+        if (activeBaseRef.current === 'board') return base
+        const scale = zui.scale || two.scene.scale || 1
+        return base * computeCounterScale(scale, DEFAULT_GEO_RESIST)
+    }
+
     // ── Multi-click draw helpers (area / route / curvedLine) ─────────────────
     // Preview artifacts live in two.scene, so the ZUI scales them along with the
     // world. Dividing the screen-pixel sizes by the live scale cancels that out
@@ -864,7 +888,7 @@ function addZUI(
         )
         setSelectedComponentInBoard(null)
         // After finishing an area/route draw, land in pointer/select mode so the
-        // shape can be tweaked immediately (instead of pan, the geo home tool).
+        // shape can be tweaked immediately, whatever the base's home tool is.
         setRootCursor('auto')
         setPointerElement('pointer', { select: true })
     }
@@ -2759,7 +2783,7 @@ function addZUI(
                 )
                 pencilPath.noFill()
                 pencilPath.stroke = defaultStrokeColorValue
-                pencilPath.linewidth = defaultLinewidthValue
+                pencilPath.linewidth = pencilPreviewLinewidth()
                 pencilPath.cap = 'round'
                 pencilPath.join = 'round'
                 pencilPath.closed = false
@@ -3784,6 +3808,17 @@ function addZUI(
                     id: pencilId,
                     boardId: props.boardId,
                     componentType: 'pencil',
+                    // Which base this stroke belongs to, decided once at
+                    // creation. The pencil is the one whiteboard tool offered on
+                    // every base, so the *record* has to carry the answer —
+                    // `componentType` alone can no longer say where it lives.
+                    // `objectClass: 'geo'` is the existing marker the visibility
+                    // rule already checks ahead of BOARD_ONLY_TYPES, so a map
+                    // scribble hides on the board and vice versa with no new
+                    // rule. Board strokes stay untagged, exactly as before.
+                    ...(activeBaseRef.current !== 'board'
+                        ? { objectClass: 'geo' }
+                        : {}),
                     children: {},
                     metadata: simplifiedPoints,
                     x: 0,
@@ -4850,11 +4885,16 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     } = useBoardContext()
 
     // addZUI's post-draw resets funnel a 'pointer' through setPointerElement.
-    // On a base whose home tool is pan (the map), a generic reset re-activates
-    // pan instead of stranding the user in select mode. The exception is
-    // finishing a geo draw (point/area/route): we want the user dropped
-    // straight into pointer/select so the just-placed object can be tweaked —
-    // callers signal that with { select: true }.
+    // On a base whose home tool is pan, a generic reset re-activates pan instead
+    // of stranding the user in select mode. The exception is finishing a geo
+    // draw (point/area/route): we want the user dropped straight into
+    // pointer/select so the just-placed object can be tweaked — callers signal
+    // that with { select: true }.
+    //
+    // No shipped base sets pan as its home tool any more (the map moved to
+    // select), so this redirect is currently inert — kept because homeTool is
+    // per-base by design and the deprecated `geoObjectsEnabled` overlay still
+    // forces 'pan'.
     // resetToHomeTool is handed to addZUI, which runs once on mount — so it
     // must not close over `baseProvider` directly. The base is switchable at
     // runtime now, and a captured provider would keep reporting the base the
@@ -5050,7 +5090,22 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             }
         }
 
-        if (props.boardId) restoreViewport(isMobile)
+        if (props.boardId) {
+            // Widen the camera to the ACTIVE base's range FIRST. addZUI opens
+            // on the board's 6%–800% (it has no idea which base this is), and
+            // the map reaches far below that floor — so restoring a saved map
+            // camera against the board floor silently clamps it. That is what
+            // made a board saved at map z8 reopen at ~z11: scale 0.0039 was
+            // pinned to 0.06, and nothing re-applied the saved value once
+            // board.tsx installed the real limits a beat later.
+            //
+            // Read from the static table, not `baseProvider`: providers load
+            // through a dynamic import, so at this point the resolved provider
+            // is still the board base no matter which base the board opens on.
+            const limits = zoomLimitsForBase(activeBaseRef.current)
+            zui_instance.setZoomLimits(limits.min, limits.max)
+            restoreViewport(isMobile)
+        }
 
         // Auto-fit-on-load: a board can land showing empty space — either the
         // camera is at the origin (no seeded/saved viewport) while content sits

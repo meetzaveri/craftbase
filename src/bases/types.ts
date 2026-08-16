@@ -87,16 +87,14 @@ export interface BaseProvider {
     readonly homeTool: string
 
     /**
-     * How far the camera may zoom on this base, as ZUI scale.
-     *
-     * A base decides its own range because the range *means* something
-     * different on each one. On the board it's how big a whiteboard can get; on
-     * the map the ZUI scale is locked to the map's zoom
-     * (`mapZoom = anchor.zoom + log2(scale)`, the relation that keeps ink glued
-     * to geography), so the scale range IS the span of map zoom levels the user
-     * can reach — a narrow one strands them at city level with no way out.
+     * NOTE: zoom limits are NOT a provider field. They live in
+     * `./zoomLimits.ts`, because the camera has to be given the right range
+     * before any provider is loaded — providers are dynamic imports, so on a
+     * page load the saved viewport is restored while this one is still the
+     * board base, and a map camera would be clamped to the whiteboard's floor.
+     * `BASE_ZOOM_LIMITS` is keyed `Record<BaseId, ...>`, so a new base cannot
+     * forget to declare its range: the type checker demands an entry.
      */
-    readonly zoomLimits: { min: number; max: number }
 
     /**
      * Zoom-button step, in ZUI zoom units (log2 of scale — 1 doubles the

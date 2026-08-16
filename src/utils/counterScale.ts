@@ -20,6 +20,9 @@
 
 import { DEFAULT_GEO_RESIST } from '../constants/misc'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ShapeLike = any
+
 export function computeCounterScale(
     zuiScale: number,
     resist: number = DEFAULT_GEO_RESIST
@@ -27,9 +30,6 @@ export function computeCounterScale(
     if (!Number.isFinite(zuiScale) || zuiScale <= 0) return 1
     return 1 / Math.pow(zuiScale, resist)
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ShapeLike = any
 
 /**
  * The two ways an element resists zoom. A point counter-scales its whole group
@@ -42,6 +42,18 @@ type ShapeLike = any
  */
 const GROUP_SCALED_TYPES: ReadonlySet<string> = new Set(['point'])
 const STROKE_SCALED_TYPES: ReadonlySet<string> = new Set(['area', 'route'])
+
+/**
+ * Stroke-resist applies to a pencil only when the stroke was drawn on a
+ * geographic base. Freehand is offered on every base, so unlike area/route its
+ * `componentType` does not settle the question — `objectClass` does. A board
+ * scribble must keep scaling with the world like every other whiteboard mark.
+ */
+export function isStrokeScaled(item: ShapeLike): boolean {
+    const type = item?.componentType
+    if (STROKE_SCALED_TYPES.has(type)) return true
+    return type === 'pencil' && item?.objectClass === 'geo'
+}
 
 /**
  * Apply zoom-resistance to a *detached copy* of an element — the member copies
@@ -65,7 +77,7 @@ export function applyCounterScaleToCopy(
 ): void {
     if (!copy || !zuiScale) return
     const type = item?.componentType
-    if (!GROUP_SCALED_TYPES.has(type) && !STROKE_SCALED_TYPES.has(type)) return
+    if (!GROUP_SCALED_TYPES.has(type) && !isStrokeScaled(item)) return
 
     const factor = computeCounterScale(
         zuiScale,

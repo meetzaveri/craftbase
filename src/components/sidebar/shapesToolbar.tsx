@@ -90,9 +90,10 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
     const [drawerAnchor, setDrawerAnchor] = useState<DrawerAnchor | null>(null)
     const drawerRef = useRef<HTMLDivElement | null>(null)
-    // The active base decides the resting tool: the map base makes pan the home
-    // tool (dragging should move the world), while the pointer stays available
-    // so geo objects can still be selected. The board base keeps pointer.
+    // The active base decides the resting tool. Both shipped bases rest on
+    // 'pointer' — a map is a substrate to draw on, so the resting gesture is
+    // still select — but it stays per-base because that is a base's call to
+    // make, and the deprecated `geoObjectsEnabled` overlay still asks for pan.
     const homeTool = toolset.homeTool
 
     // Eraser size selector: only while the eraser is the active tool and
@@ -125,8 +126,21 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     // Re-runs on every base switch, not just on mount: switching to the map has
     // to actually move the user onto pan, and switching back has to release it.
     // (This was mount-only while the base was a fixed build-time prop.)
+    //
+    // Gated on the toolset having caught up with the base. Providers load
+    // through a dynamic import, so `activeBase` flips the instant the user
+    // picks — while `toolset.homeTool` still belongs to the base being left.
+    // Firing on `activeBase` alone therefore applied the OUTGOING base's home
+    // tool: switching to the map left you on pointer, and back to the board
+    // left you on pan. `appliedForBase` keeps it to one application per switch
+    // once they agree.
     const isFirstBaseRun = useRef(true)
+    const appliedForBase = useRef<string | null>(null)
     useEffect(() => {
+        if (toolset.baseId !== activeBase) return
+        if (appliedForBase.current === activeBase) return
+        appliedForBase.current = activeBase
+
         if (isFirstBaseRun.current) {
             isFirstBaseRun.current = false
             // Mount: pan needs activating (addElement) to become the live mode;
@@ -140,8 +154,9 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         // releases pan (`if (label !== 'pan') togglePanMode(false)`) on the way
         // back to the board base. Highlighting alone would leave pan live.
         addElement(homeTool)
+        setCurrentElementInBoard(homeTool)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeBase])
+    }, [activeBase, toolset.baseId])
 
     useEffect(() => {
         if (!openDrawer) return

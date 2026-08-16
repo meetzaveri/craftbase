@@ -5,6 +5,16 @@ import { useBoardContext } from '../../views/Board/boardContext'
 import RouteFactory from '../../factory/route'
 import { computeCounterScale } from '../../utils/counterScale'
 import { DEFAULT_GEO_RESIST } from '../../constants/misc'
+import {
+    attachVertexHandles,
+    setVertexHandlesVisible,
+    applyRevertedVertices,
+    VERTEX_PATH_REVERTED_EVENT,
+} from '../utils/vertexHandles'
+import type {
+    VertexHandles,
+    VertexPathRevertedDetail,
+} from '../utils/vertexHandles'
 
 // See circle.tsx for the rationale on the loose prop bag.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,11 +23,33 @@ type ElementProps = any
 type ShapeLike = any
 
 function Route(props: ElementProps): ReactElement {
-    const { isPencilMode, isArrowDrawMode, isArrowSelected, zuiInBoard } =
-        useBoardContext()
+    const {
+        isPencilMode,
+        isArrowDrawMode,
+        isArrowSelected,
+        zuiInBoard,
+        selectedComponent,
+        updateComponentBulkPropertiesInLocalStore,
+    } = useBoardContext()
 
     const groupRef = useRef<ShapeLike>(null)
     const shapeRef = useRef<ShapeLike>(null)
+    const handlesRef = useRef<ShapeLike[]>([])
+
+    // Live values read inside DOM drag handlers registered once at mount — keep
+    // them in refs to dodge the stale-closure trap (see CLAUDE.md).
+    const zuiRef = useRef<ShapeLike>(zuiInBoard)
+    const persistRef = useRef(updateComponentBulkPropertiesInLocalStore)
+    const idRef = useRef<string>(props.id)
+    useEffect(() => {
+        zuiRef.current = zuiInBoard
+    }, [zuiInBoard])
+    useEffect(() => {
+        persistRef.current = updateComponentBulkPropertiesInLocalStore
+    }, [updateComponentBulkPropertiesInLocalStore])
+    useEffect(() => {
+        idRef.current = props.id
+    }, [props.id])
 
     const two = props.twoJSInstance
     // metadata for route is the vertex array, so `.resist` is undefined and we
@@ -30,6 +62,7 @@ function Route(props: ElementProps): ReactElement {
     useEffect(() => {
         const prevX = props.x
         const prevY = props.y
+        let vertexHandles: VertexHandles | null = null
 
         const elementFactory = new RouteFactory(two, prevX, prevY, {
             ...props,
@@ -60,6 +93,22 @@ function Route(props: ElementProps): ReactElement {
 
             two.update()
 
+            // Per-vertex handles + the fat hit band, shared with the curved
+            // line — all three are absolute-metadata multi-point paths, so
+            // they get the same editing model.
+            vertexHandles = attachVertexHandles({
+                two,
+                group,
+                path,
+                componentId: props.id,
+                zuiRef,
+                persistRef,
+                idRef,
+                groupRef,
+                pathRef: shapeRef,
+            })
+            handlesRef.current = vertexHandles.handles
+
             const groupEl = document.getElementById(group.id)
             if (groupEl) {
                 groupEl.setAttribute('class', 'dragger-picker')
@@ -72,6 +121,7 @@ function Route(props: ElementProps): ReactElement {
         }
 
         return (): void => {
+            vertexHandles?.destroy()
             two.remove(group)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,6 +149,40 @@ function Route(props: ElementProps): ReactElement {
             window.removeEventListener('zoomChanged', onZoom as EventListener)
         }
     }, [two, resist, baseLinewidth])
+
+    // Show the vertex handles only while this route is the active selection.
+    useEffect(() => {
+        const group = groupRef.current
+        if (!group) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const selectedId = (selectedComponent as any)?.group?.id
+        const isSelected = selectedId != null && selectedId === group.id
+        setVertexHandlesVisible(handlesRef.current, isSelected, two)
+    }, [selectedComponent, two])
+
+    // Undo/redo of a vertex edit reverts our `metadata` in the store, but
+    // ElementRenderWrapper freezes our props at mount so no effect re-fires.
+    // The history hook dispatches this event instead.
+    useEffect(() => {
+        const handleReverted = ((
+            e: CustomEvent<VertexPathRevertedDetail>
+        ): void => {
+            if (e.detail?.id !== idRef.current) return
+            applyRevertedVertices(
+                two,
+                groupRef.current,
+                shapeRef.current,
+                handlesRef.current,
+                e.detail.metadata
+            )
+        }) as EventListener
+        window.addEventListener(VERTEX_PATH_REVERTED_EVENT, handleReverted)
+        return () =>
+            window.removeEventListener(
+                VERTEX_PATH_REVERTED_EVENT,
+                handleReverted
+            )
+    }, [two])
 
     useEffect(() => {
         const group = groupRef.current

@@ -50,6 +50,12 @@ export const VIEWPORT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 // desktop-flattened children. 'lines' is the line/curvedLine drawer. 'text' is
 // replaced by 'geoText'. Note this hides the *tools* only: shapes already drawn
 // keep rendering and stay editable after a switch.
+//
+// 'pencil' is deliberately ABSENT: freehand is the one whiteboard tool that
+// means the same thing over a map — circling a district, scribbling a route by
+// hand — so it is offered on both bases. A stroke drawn here is tagged
+// `objectClass: 'geo'` at creation, which is what keeps map scribbles off the
+// board and board scribbles off the map. See newCanvas's pencil commit.
 export const GEO_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
     'shapes',
     'rectangle',
@@ -57,7 +63,6 @@ export const GEO_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
     'diamond',
     'lines',
     'arrowLine',
-    'pencil',
     'text',
 ])
 

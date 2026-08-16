@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useBoardContext } from '../../views/Board/boardContext'
-import { useMediaQueryUtils } from '../../constants/exportHooks'
-import { MENU_BUTTON_ID } from './shapesToolbarId'
+import { MENU_BUTTON_ID, BASE_SWITCHER_ID } from './shapesToolbarId'
 import Dropdown from '../common/dropdown'
 import type { DropdownOption } from '../common/dropdown'
 import SwapIcon from '../../assets/swap-horizontal.svg?react'
@@ -40,19 +39,23 @@ const GAP = 8
 /**
  * Base picker — the control that says which substrate the board is drawn on.
  *
- * Sits immediately right of the hamburger menu, and its left edge is *measured*
- * from that button rather than set by a constant: the two must stay flush, and
- * a hard-coded offset silently drifts the moment the button's size or padding
- * changes.
+ * Sits immediately right of the hamburger menu on every screen size, and its
+ * left edge is *measured* from that button rather than set by a constant: the
+ * two must stay flush, and a hard-coded offset silently drifts the moment the
+ * button's size or padding changes.
+ *
+ * Top-left on mobile too, deliberately. This is configuration — which surface
+ * am I drawing on — and it used to sit bottom-right, in the band mobile
+ * reserves for *acting on what you are doing*: the properties button, and the
+ * ✓/✗ that finish or discard a multi-click draw. Config living in the action
+ * band both crowded those controls and misrepresented what it does.
  */
 const BaseSwitcher = (): ReactElement | null => {
     const { activeBase, switchBase, baseSwitcherEnabled } = useBoardContext()
-    const { isMobile } = useMediaQueryUtils()
     const selfRef = useRef<HTMLDivElement | null>(null)
     const [left, setLeft] = useState<number | null>(null)
 
     useLayoutEffect(() => {
-        if (isMobile) return
         const position = (): void => {
             const anchor = document.getElementById(MENU_BUTTON_ID)
             if (!anchor) return
@@ -68,7 +71,7 @@ const BaseSwitcher = (): ReactElement | null => {
             observer.disconnect()
             window.removeEventListener('resize', position)
         }
-    }, [isMobile, activeBase])
+    }, [activeBase])
 
     // Switching bases tears down and remounts a backdrop renderer, so ignore
     // repeat picks until the new base is live rather than queueing mounts.
@@ -77,30 +80,9 @@ const BaseSwitcher = (): ReactElement | null => {
         setBusy(false)
     }, [activeBase])
 
-    // A multi-click draw (area / route / curved line) puts the mobile ✓/✗
-    // controls at this exact spot — bottom 64px, right 10px — so the switcher
-    // steps aside for the duration. Yielding rather than nudging either control
-    // to a new offset: mid-draw is the wrong moment to change the substrate
-    // anyway, since the preview vertices are in surface space and the backdrop
-    // would slide out from under them.
-    const [drawing, setDrawing] = useState(false)
-    useEffect(() => {
-        const onStart = (): void => setDrawing(true)
-        const onEnd = (): void => setDrawing(false)
-        window.addEventListener('multiClickDrawStart', onStart)
-        window.addEventListener('multiClickDrawEnd', onEnd)
-        return (): void => {
-            window.removeEventListener('multiClickDrawStart', onStart)
-            window.removeEventListener('multiClickDrawEnd', onEnd)
-        }
-    }, [])
-
     // A consumer painting its own backdrop owns the substrate — offering the
     // switcher would let the user stack craftbase's map under theirs.
     if (!baseSwitcherEnabled) return null
-    // Desktop keeps it: the switcher is top-left there, nowhere near the draw
-    // controls, and hiding chrome mid-draw would just make the corner jump.
-    if (isMobile && drawing) return null
 
     const handleChange = (id: BaseOptionId): void => {
         // The unbuilt base is already `disabled` in the list; this is the type
@@ -114,20 +96,16 @@ const BaseSwitcher = (): ReactElement | null => {
     return (
         <div
             ref={selfRef}
-            id="cb-base-switcher"
+            id={BASE_SWITCHER_ID}
             className="fixed bg-card-bg border border-border-panel rounded-card"
-            style={
-                isMobile
-                    ? { bottom: '64px', right: '10px', zIndex: 10 }
-                    : {
-                          top: '8px',
-                          // Hidden until measured, so it never flashes at the
-                          // viewport edge on first paint.
-                          left: left ?? -9999,
-                          visibility: left === null ? 'hidden' : 'visible',
-                          zIndex: 10,
-                      }
-            }
+            style={{
+                top: '8px',
+                // Hidden until measured, so it never flashes at the viewport
+                // edge on first paint.
+                left: left ?? -9999,
+                visibility: left === null ? 'hidden' : 'visible',
+                zIndex: 10,
+            }}
         >
             <Dropdown<BaseOptionId>
                 value={activeBase}
@@ -142,10 +120,8 @@ const BaseSwitcher = (): ReactElement | null => {
                 // Match the hamburger's 40px inner box so the two boxes line up
                 // exactly, rather than sitting a few px off each other.
                 triggerClassName="h-10 px-2.5"
-                // On mobile the switcher lives near the bottom-right corner, so
-                // the panel has to open upward and hug the right edge.
-                align={isMobile ? 'right' : 'left'}
-                placement={isMobile ? 'top' : 'bottom'}
+                align="left"
+                placement="bottom"
                 panelMinWidth={168}
             />
         </div>

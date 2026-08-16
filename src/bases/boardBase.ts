@@ -25,9 +25,6 @@ export const boardBase: BaseProvider = {
     extraTools: [],
     homeTool: 'pointer',
 
-    // The pre-bases range, kept exactly: 6%–800%. Existing boards' saved
-    // viewports all sit inside it.
-    zoomLimits: { min: 0.06, max: 8 },
     zoomStep: 0.2,
 
     // Null hands the export path back to its existing parchment + dot-grid

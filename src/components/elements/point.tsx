@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
+import interact from 'interactjs'
 import { useBoardContext } from '../../views/Board/boardContext'
 
 import PointFactory, {
     getPointLabelNode,
     pointLabelOf,
+    POINT_CHROME_FLAG,
 } from '../../factory/point'
+import getEditComponents from '../utils/editWrapper'
 import { computeCounterScale } from '../../utils/counterScale'
 import {
     DEFAULT_GEO_RESIST,
@@ -13,7 +16,11 @@ import {
     POINT_LABEL_COLOR,
     POINT_LABEL_FONT_SIZE,
     POINT_LABEL_GAP,
+    POINT_RADIUS,
 } from '../../constants/misc'
+
+// Clear space between the point's ink and its selection box, in surface units.
+const SELECTOR_PAD = 5
 
 // See circle.tsx for the rationale on the loose prop bag.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,6 +42,16 @@ function Point(props: ElementProps): ReactElement {
     } = useBoardContext()
 
     const groupRef = useRef<ShapeLike>(null)
+    const selectorRef = useRef<ShapeLike>(null)
+    // Re-fits the selection box. Held in a ref so the zoom handler and the label
+    // editor — both registered once — always call the live one.
+    const syncSelectorRef = useRef<(() => void) | null>(null)
+    // Should committing the label editor put the selection box back? Set when
+    // the editor opens over a selected point, and cleared if the user clicks
+    // away — because a click-away deselects on mousedown but only commits the
+    // editor on the blur that follows, so an unconditional restore would draw a
+    // box around a point that is no longer selected.
+    const restoreSelectorAfterEditRef = useRef(false)
     // Live label text, mirrored to a ref so the DOM editor (registered once, in
     // the mount effect) always reads the current value rather than the one
     // frozen into its closure.
@@ -64,6 +81,18 @@ function Point(props: ElementProps): ReactElement {
 
         groupRef.current = group
 
+        /**
+         * On-screen scale of anything inside this group: the camera's scale
+         * times the group's own zoom-resist counter-scale. The selector needs
+         * it to keep its outline a constant screen width — inside the group,
+         * both multiplications apply to it too.
+         */
+        const effectiveScale = (): number => {
+            const sceneScale = two?.scene?.scale || 1
+            const groupScale = typeof group.scale === 'number' ? group.scale : 1
+            return sceneScale * groupScale || 1
+        }
+
         // Seed the counter-scale from the current camera so the pin is
         // sized correctly before the first zoom event fires. The board
         // context holds the addZUI wrapper ({ zui, ... }) — the live scale
@@ -82,6 +111,82 @@ function Point(props: ElementProps): ReactElement {
             groupEl.setAttribute('data-component-id', props.id)
         }
 
+        // Selection box. `0` = no corner handles: a point is a fixed-size pin,
+        // so there is nothing to resize — the box is purely "this is selected".
+        //
+        // It lives INSIDE the point's group, which is what makes it track the
+        // pin for free: the group carries both the translation and the
+        // zoom-resist counter-scale, so the box follows a drag and stays the
+        // same apparent size as the pin at every zoom, with no per-frame work.
+        const { selector } = getEditComponents(two, group, 0)
+        selectorRef.current = selector
+        selector.areaGroup[POINT_CHROME_FLAG] = true
+        selector.hide()
+
+        /** Is this point's label editor currently on screen? */
+        const isEditingLabel = (): boolean =>
+            !!document.getElementById(`point-label-input-${props.id}`)
+
+        /**
+         * Show the selection box, fitted to the CIRCLE only.
+         *
+         * The label is deliberately outside the box. The pin is the object; the
+         * label is an annotation hanging off it, and its width is whatever the
+         * user typed — so boxing both would make the selection jump and stretch
+         * as the name changes, and read as a text field rather than a point.
+         * A fixed square around the circle is also constant in group-local
+         * coordinates, which is why it needs no re-measuring.
+         */
+        const syncSelector = (): void => {
+            const sel = selectorRef.current
+            if (!sel) return
+            // Editing owns the point — never draw the box over an open editor.
+            //
+            // A guard rather than careful ordering, because the ordering is not
+            // ours to control: placing a point creates it on MOUSEDOWN, so the
+            // matching `click` lands afterwards, on the element that did not
+            // exist when the press began. Hold the mouse down for longer than
+            // the editor's open delay and that click arrives after the editor
+            // is already up, re-showing a box we had just hidden.
+            if (isEditingLabel()) return
+            const half = POINT_RADIUS + SELECTOR_PAD
+            sel.update(-half, half, -half, half, effectiveScale())
+        }
+        syncSelectorRef.current = syncSelector
+
+        // Show on click rather than mousedown: the canvas dispatches
+        // `clearSelector` during mousedown (and, on mobile, during touchstart),
+        // so anything shown earlier in the gesture is hidden again a moment
+        // later. Click lands after all of that has settled. Same reason
+        // geoText.tsx binds its selector here.
+        interact(`#${group.id}`).on('click', syncSelector)
+
+        // Clicking away hides it. `clearSelector` already covers bare-canvas
+        // clicks; this covers landing on *another* element, which does not
+        // dispatch that event.
+        const onGlobalMouseDown = (e: MouseEvent): void => {
+            const path: EventTarget[] = e.composedPath ? e.composedPath() : []
+            const onSelf = path.some(
+                (el) => (el as HTMLElement)?.id === group.id
+            )
+            const onToolbar = path.some(
+                (el) => (el as HTMLElement)?.id === 'floating-toolbar'
+            )
+            // The label editor is an overlay on <body>, not a child of the
+            // group, so typing in it would otherwise read as clicking away.
+            const onLabelEditor = path.some(
+                (el) =>
+                    (el as HTMLElement)?.id === `point-label-input-${props.id}`
+            )
+            if (onSelf || onToolbar || onLabelEditor) return
+            // Deselecting mid-edit: the editor's own commit runs later, on
+            // blur, and must not resurrect the box this click just dismissed.
+            restoreSelectorAfterEditRef.current = false
+            selectorRef.current?.hide()
+            two.update()
+        }
+        window.addEventListener('mousedown', onGlobalMouseDown)
+
         /**
          * Open the label editor: an absolutely-positioned input laid over the
          * label slot — the gap just right of the circle — so typing appears
@@ -97,8 +202,7 @@ function Point(props: ElementProps): ReactElement {
             const labelNode = getPointLabelNode(group)
             const circleNode = group.children?.[0]
             const circleElem = circleNode?._renderer?.elem as
-                | SVGGraphicsElement
-                | undefined
+                SVGGraphicsElement | undefined
             if (!labelNode || !circleElem) return
             // Already editing — don't stack a second input.
             if (document.getElementById(`point-label-input-${props.id}`)) return
@@ -114,6 +218,16 @@ function Point(props: ElementProps): ReactElement {
             // glyphs aren't drawn twice at slightly different metrics.
             const renderedOpacity = labelNode.opacity ?? 1
             labelNode.opacity = 0
+
+            // The selection box steps aside too. While typing, the point is in
+            // edit mode, not selection mode — leaving the box up would draw a
+            // second, competing focus ring around the caret. Its prior state is
+            // captured so committing restores exactly what was there before,
+            // rather than asserting a selection the user never made (the editor
+            // opens by itself on a freshly placed point).
+            restoreSelectorAfterEditRef.current =
+                selectorRef.current?.areaGroup?.opacity === 1
+            selectorRef.current?.hide()
             two.update()
 
             const input = document.createElement('input')
@@ -162,10 +276,21 @@ function Point(props: ElementProps): ReactElement {
                 measure.remove()
 
                 const value = input.value.trim()
+                // Tear the editor down BEFORE anything below reads whether we
+                // are still editing — syncSelector refuses to draw while the
+                // input is on screen, so restoring the box has to come after.
+                input.remove()
+
                 labelRef.current = value
                 labelNode.value = value
                 labelNode.opacity = renderedOpacity
                 two.update()
+                // Editing is over — put the box back if it was there before and
+                // the point is still selected.
+                if (restoreSelectorAfterEditRef.current) {
+                    syncSelectorRef.current?.()
+                }
+                restoreSelectorAfterEditRef.current = false
 
                 const updatedMetadata = {
                     ...(group.elementData?.metadata ?? props.metadata ?? {}),
@@ -180,8 +305,6 @@ function Point(props: ElementProps): ReactElement {
                 updateComponentBulkPropertiesInLocalStore?.(props.id, {
                     metadata: updatedMetadata,
                 })
-
-                input.remove()
             }
 
             input.addEventListener('blur', commit)
@@ -209,7 +332,12 @@ function Point(props: ElementProps): ReactElement {
         groupEl?.addEventListener('dblclick', showLabelInput)
 
         return (): void => {
-            window.removeEventListener('triggerTextInput', handleTriggerTextInput)
+            window.removeEventListener(
+                'triggerTextInput',
+                handleTriggerTextInput
+            )
+            window.removeEventListener('mousedown', onGlobalMouseDown)
+            interact(`#${group.id}`).unset()
             groupEl?.removeEventListener('dblclick', showLabelInput)
             document.getElementById(`point-label-input-${props.id}`)?.remove()
             two.remove(group)
@@ -227,6 +355,10 @@ function Point(props: ElementProps): ReactElement {
             const scale = (e as CustomEvent<{ scale: number }>).detail?.scale
             if (!scale) return
             group.scale = computeCounterScale(scale, resist)
+            // Counter-scale is near-1 in apparent terms but not exactly, so the
+            // box's outline is re-normalised too rather than drifting thick or
+            // hairline at the extremes of the zoom range.
+            selectorRef.current?.setScale(scale * group.scale)
             two.update()
         }
         window.addEventListener('zoomChanged', onZoom as EventListener)

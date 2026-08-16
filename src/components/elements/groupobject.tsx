@@ -8,8 +8,15 @@ const factoryModules: Record<string, () => Promise<any>> = import.meta.glob(
 )
 import { useBoardContext } from '../../views/Board/boardContext'
 import getEditComponents from '../utils/editWrapper'
+import {
+    VERTEX_PATH_TYPES,
+    VERTEX_PATH_REVERTED_EVENT,
+} from '../utils/vertexHandles'
 import { elementOnBlurHandler } from '../../utils/misc'
-import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertices'
+import {
+    updateX1Y1Vertices,
+    updateX2Y2Vertices,
+} from '../../utils/updateVertices'
 import { isStandaloneTextType } from '../../constants/misc'
 import {
     applyCounterScaleToCopies,
@@ -690,7 +697,10 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         // every real member: update the store, mutate the live Two.js object,
         // and record one BATCH of UPDATE_BULK entries so a single undo reverts
         // the whole resize.
-        const bakeGroupResize = (s: number, O: { x: number; y: number }): void => {
+        const bakeGroupResize = (
+            s: number,
+            O: { x: number; y: number }
+        ): void => {
             const userId = localStorage.getItem('userId')
             const childrenIds = props.children.map((i: ShapeLike) => i.id)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -864,10 +874,10 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                         )
                     }
                 }
-                if (ct === 'curvedLine' && Array.isArray(newMetadata)) {
+                if (VERTEX_PATH_TYPES.has(ct) && Array.isArray(newMetadata)) {
                     element.elementData.metadata = newMetadata
                     window.dispatchEvent(
-                        new CustomEvent('curvedLineVertsReverted', {
+                        new CustomEvent(VERTEX_PATH_REVERTED_EVENT, {
                             detail: { id, metadata: newMetadata },
                         })
                     )
@@ -987,8 +997,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 sw: selector.circle2,
             }
             const oppElem = opposite[corner]?._renderer?.elem as
-                | SVGElement
-                | undefined
+                SVGElement | undefined
             const oppRect = oppElem?.getBoundingClientRect()
             const anchorScreen = oppRect
                 ? {

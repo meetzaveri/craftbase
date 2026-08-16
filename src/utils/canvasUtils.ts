@@ -106,6 +106,13 @@ export function applyShapeStyle(
 // the local interface.
 interface ElementCloneSource {
     componentType: string
+    /**
+     * Which base the element belongs to. MUST be carried through a clone: it is
+     * the only thing marking a geo object as geo, and for the pencil — offered
+     * on every base — it is the only thing that says which base it was drawn on.
+     * Dropping it silently relocates the pasted copy to the wrong base.
+     */
+    objectClass?: 'shape' | 'geo'
     x1: number
     y1: number
     x2: number
@@ -154,6 +161,7 @@ export function cloneElementData(
         id: generateUUID(),
         boardId,
         componentType: src.componentType,
+        ...(src.objectClass ? { objectClass: src.objectClass } : {}),
         x: newX,
         y: newY,
         x1: src.x1,
