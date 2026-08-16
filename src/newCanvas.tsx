@@ -22,6 +22,9 @@ import Two from 'two.js'
 import { ZUI } from 'two.js/extras/jsm/zui'
 import { useBoardContext } from './views/Board/boardContext'
 import { useMediaQueryUtils } from './constants/exportHooks'
+import { BASE_ROOT_ID } from './hooks/useActiveBase'
+import { readViewport, writeViewport } from './utils/viewportStorage'
+import type { BaseId } from './bases/types'
 
 import {
     GROUP_COMPONENT,
@@ -50,6 +53,10 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     GEO_MIN_VERTICES,
+    GEO_PREVIEW_DOT_PX,
+    GEO_PREVIEW_MIN_STROKE_PX,
+    GEO_PREVIEW_SEGMENT_OPACITY,
+    GEO_PREVIEW_RUBBER_OPACITY,
     DEFAULT_TEXT_FONT_FAMILY,
     ERASER_SIZE_KEY,
     ERASER_SIZE_RADIUS,
@@ -125,6 +132,8 @@ import {
 } from './utils/themeColorFlip'
 import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
 import { scheduleRender } from './utils/renderScheduler'
+import { isRecordVisibleOnBase } from './utils/geoVisibility'
+import { SELECTION_CHROME_ATTR } from './utils/svgExportShared'
 import { useCanvasClipboard } from './hooks/useCanvasClipboard'
 import type { HistoryEntry } from './hooks/useComponentHistory'
 import { exportSelectionAsSvg } from './utils/exportSelectionAsSvg'
@@ -326,7 +335,11 @@ function addZUI(
     >,
     onCameraChangeRef: MutableRefObject<
         ((event: CameraChangeEvent) => void) | undefined
-    >
+    >,
+    // Live active base. addZUI runs once on mount, so the base a viewport is
+    // saved under must be read through a ref — a captured value would keep
+    // writing the camera to whichever base the board loaded with.
+    activeBaseRef: MutableRefObject<BaseId>
 ): ZuiHandle {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let shape: any = null
@@ -490,6 +503,37 @@ function addZUI(
     // it has bound connectors) so the whole drag stays on the legacy live path.
     let cssMoveRejected = false
 
+    /**
+     * The live CSS transform for one frame of a move-drag.
+     *
+     * Writing `style.transform` on an SVG node *replaces* the `transform`
+     * attribute Two.js rendered — matrix and all — so a bare `translate()`
+     * silently drops any scale the element carries in that matrix. The
+     * zoom-resistant geo elements (point pins, geoText) keep their whole
+     * counter-scale there, so dropping it snaps them to world size for the
+     * duration of the drag (a near-invisible speck when zoomed out) and pops
+     * them back on mouseup, when Two.js re-renders the real matrix.
+     *
+     * Re-emitting `scale()` after the translate reproduces Two.js's own
+     * translate → rotate → scale composition. Rotation never reaches here —
+     * rotated elements are ineligible for this path. Verified in Chrome against
+     * the attribute-rendered matrix: on a `<g>` the two compose identically,
+     * and transform-origin doesn't enter into it.
+     */
+    const cssMoveTransform = (
+        x: number,
+        y: number,
+        // Two.js `scale` is a number when uniform, a Two.Vector when not.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scale?: any
+    ): string => {
+        const translate = `translate(${x}px, ${y}px)`
+        const sx = typeof scale === 'number' ? scale : (scale?.x ?? 1)
+        const sy = typeof scale === 'number' ? scale : (scale?.y ?? 1)
+        if (sx === 1 && sy === 1) return translate
+        return `${translate} scale(${sx}, ${sy})`
+    }
+
     // Clear the live CSS transforms and drop the drag state. Called on commit
     // (mouseup) and defensively when a new gesture starts.
     const clearCssMove = (): void => {
@@ -539,6 +583,8 @@ function addZUI(
 
     const toSurface = (e: { clientX: number; clientY: number }) =>
         zui.clientToSurface(e.clientX, e.clientY)
+    // Opening range. The active base overrides this through setZoomLimits —
+    // the map needs a far wider one (see BaseProvider.zoomLimits).
     zui.addLimits(0.06, 8)
 
     // Parchment dot-grid camera sync. The grid is a CSS radial-gradient painted
@@ -594,13 +640,43 @@ function addZUI(
     }
 
     // ── Multi-click draw helpers (area / route / curvedLine) ─────────────────
-    const geoPreviewStyle = () => ({
-        stroke:
-            defaultStrokeColorValue ||
-            geoDrawProps?.stroke ||
-            SHAPE_DEFAULT_STROKE,
-        lw: defaultLinewidthValue || geoDrawProps?.linewidth || 2,
-    })
+    // Preview artifacts live in two.scene, so the ZUI scales them along with the
+    // world. Dividing the screen-pixel sizes by the live scale cancels that out
+    // and pins the drawing aid to a constant on-screen size — the committed
+    // route does the same thing via its stroke counter-scale (counterScale.ts),
+    // so what you trace matches what you get.
+    const geoPreviewStyle = () => {
+        const scale = zui.scale || two.scene.scale || 1
+        const lw = defaultLinewidthValue || geoDrawProps?.linewidth || 2
+        return {
+            stroke:
+                defaultStrokeColorValue ||
+                geoDrawProps?.stroke ||
+                SHAPE_DEFAULT_STROKE,
+            // Surface-space width that renders as `max(lw, floor)` screen px.
+            lw: Math.max(lw, GEO_PREVIEW_MIN_STROKE_PX) / scale,
+            dotRadius: GEO_PREVIEW_DOT_PX / scale,
+        }
+    }
+
+    // Zooming mid-draw changes the scale the preview was sized against, so
+    // re-derive every artifact's width/radius. Cheap: a draw in progress has a
+    // handful of vertices.
+    const refreshGeoPreviewScale = () => {
+        if (!geoDrawType) return
+        const { lw, dotRadius } = geoPreviewStyle()
+        geoDots.forEach((dot) => {
+            // Two.Circle exposes `radius`; assigning it reflows the anchors.
+            dot.radius = dotRadius
+        })
+        geoLines.forEach((line) => {
+            line.linewidth = lw
+        })
+        if (geoPreviewLine) geoPreviewLine.linewidth = lw
+        if (geoCurvedPreview) geoCurvedPreview.linewidth = lw
+        two.update()
+    }
+    window.addEventListener('zoomChanged', refreshGeoPreviewScale)
 
     // Rebuild the curved preview path so the in-transit line is smooth (matching
     // the committed shape) instead of straight segments. Runs through the placed
@@ -624,7 +700,7 @@ function addZUI(
         path.linewidth = lw
         path.cap = 'round'
         path.join = 'round'
-        path.opacity = 0.6
+        path.opacity = GEO_PREVIEW_SEGMENT_OPACITY
         two.add(path)
         geoCurvedPreview = path
     }
@@ -635,8 +711,8 @@ function addZUI(
         // stroke/width change made in the panel mid-draw is reflected
         // immediately — same contract as pencil. Falls back to the props
         // stashed at tool-pick, then the global shape default.
-        const { stroke, lw } = geoPreviewStyle()
-        const dot = two.makeCircle(x, y, 4)
+        const { stroke, lw, dotRadius } = geoPreviewStyle()
+        const dot = two.makeCircle(x, y, dotRadius)
         dot.fill = stroke
         dot.noStroke()
         geoDots.push(dot)
@@ -648,7 +724,8 @@ function addZUI(
             const line = two.makeLine(prev.x, prev.y, x, y)
             line.stroke = stroke
             line.linewidth = lw
-            line.opacity = 0.6
+            line.cap = 'round'
+            line.opacity = GEO_PREVIEW_SEGMENT_OPACITY
             geoLines.push(line)
         }
         two.update()
@@ -670,9 +747,12 @@ function addZUI(
         } else {
             geoPreviewLine = two.makeLine(last.x, last.y, sx, sy)
             geoPreviewLine.stroke = stroke
-            geoPreviewLine.linewidth = lw
-            geoPreviewLine.opacity = 0.35
+            geoPreviewLine.cap = 'round'
+            geoPreviewLine.opacity = GEO_PREVIEW_RUBBER_OPACITY
         }
+        // Re-applied every move, not just on creation: a zoom mid-draw changes
+        // the scale this width was derived from.
+        geoPreviewLine.linewidth = lw
         two.update()
     }
 
@@ -850,13 +930,23 @@ function addZUI(
         },
     })
 
-    // Delete/Backspace for a selected curved line. The selection controller's
-    // own delete only covers SHAPE_ADAPTERS shapes (rect/circle/diamond/text);
-    // arrow and plain line carry their own focus-based key handler. The curved
-    // line (cloned from the geo route, which is never key-deletable) had no
-    // delete path, so wire one here. Scoped to `curvedLine` to avoid
-    // double-deleting the arrow/line that already handle their own key.
-    const onCurvedLineDeleteKeyDown = (e: KeyboardEvent): void => {
+    // Delete/Backspace for element types no other delete path covers.
+    //
+    // The board's delete key is spread across three owners: the selection
+    // controller handles SHAPE_ADAPTERS shapes (rect/circle/diamond/text);
+    // arrow, plain line, divider and geoText each carry their own focus-based
+    // handler. That left the whole geo family — route, area and point — plus
+    // the curved line cloned from route with no way to delete by keyboard at
+    // all: they select and show a properties panel, but the key does nothing.
+    // This is their handler, scoped to exactly those types so the shapes that
+    // already own the key are never double-deleted.
+    const KEY_DELETABLE_HERE: ReadonlySet<string> = new Set([
+        'curvedLine',
+        'route',
+        'area',
+        'point',
+    ])
+    const onOrphanDeleteKeyDown = (e: KeyboardEvent): void => {
         if (e.keyCode !== 8 && e.keyCode !== 46) return
         const tag = document.activeElement?.tagName
         if (tag === 'INPUT' || tag === 'TEXTAREA') return
@@ -867,7 +957,8 @@ function addZUI(
         // selection (its own handler fires for those).
         if (geoDrawType || selectionController.currentGroup) return
         const grp = lastSelectedShape
-        if (grp?.elementData?.componentType !== 'curvedLine') return
+        const type = grp?.elementData?.componentType
+        if (!type || !KEY_DELETABLE_HERE.has(type)) return
         const id = grp.elementData.id
         if (!id) return
         deleteComponentFromLocalStore(id)
@@ -876,7 +967,7 @@ function addZUI(
         lastSelectedShape = null
         setSelectedComponentInBoard(null)
     }
-    window.addEventListener('keydown', onCurvedLineDeleteKeyDown, false)
+    window.addEventListener('keydown', onOrphanDeleteKeyDown, false)
 
     // An element can leave the scene without the selection ever being cleared —
     // undoing its ADD is the common case (history's applyRemove just drops the
@@ -932,8 +1023,7 @@ function addZUI(
     window.addEventListener('restackPorts', ((e: CustomEvent) => {
         if (!getConnectorsEnabled()) return
         const ports = e.detail?.ports as
-            | { shapeId: string; edge: string }[]
-            | undefined
+            { shapeId: string; edge: string }[] | undefined
         if (!ports?.length) return
         ports.forEach(({ shapeId, edge }) => {
             pollUntilElement(
@@ -1177,8 +1267,7 @@ function addZUI(
             // Hide the text layer (not the shape) while the textarea overlays.
             const textLayer = findShapeTextLayer(group)
             const layerElem = textLayer?._renderer?.elem as
-                | HTMLElement
-                | undefined
+                HTMLElement | undefined
             if (layerElem) layerElem.style.display = 'none'
             // The selection box stays visible while editing (same as the solo
             // text editor) — it re-syncs on every render, so it tracks the
@@ -1516,8 +1605,13 @@ function addZUI(
                         persistPayload.y !== undefined ||
                         (rectChild && rectChild.height !== startHeight)
                     ) {
-                        ;['n-resize', 'e-resize', 's-resize', 'w-resize'].forEach(
-                            (edge) => restackPortConnectors(componentId, edge)
+                        ;[
+                            'n-resize',
+                            'e-resize',
+                            's-resize',
+                            'w-resize',
+                        ].forEach((edge) =>
+                            restackPortConnectors(componentId, edge)
                         )
                         two.update()
                     }
@@ -2518,6 +2612,14 @@ function addZUI(
                                 surfaceCoords.x,
                                 surfaceCoords.y
                             )
+                            // A point is a circle plus a name, so placing one
+                            // opens its label editor straight away — the same
+                            // event the text tools use, answered by point.tsx.
+                            window.dispatchEvent(
+                                new CustomEvent('triggerTextInput', {
+                                    detail: { elementId: pointId },
+                                })
+                            )
                         },
                         { maxRetries: 30 }
                     )
@@ -2533,10 +2635,7 @@ function addZUI(
                 // First click of this draw — capture type/props from storage.
                 if (!geoDrawType) {
                     geoDrawType = localStorage.getItem(GEO_DRAW_TYPE_KEY) as
-                        | 'area'
-                        | 'route'
-                        | 'curvedLine'
-                        | null
+                        'area' | 'route' | 'curvedLine' | null
                     geoDrawProps = JSON.parse(
                         localStorage.getItem(GEO_DRAW_PROPS_KEY) ?? 'null'
                     )
@@ -3282,8 +3381,7 @@ function addZUI(
                         else {
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             const node = (shape as any)._renderer?.elem as
-                                | SVGGraphicsElement
-                                | undefined
+                                SVGGraphicsElement | undefined
                             // CSS-transform move: eligible for non-rotated
                             // elements, including the group overlay — its member
                             // copies and selector chrome live inside its own SVG
@@ -3335,15 +3433,26 @@ function addZUI(
                                 }
                                 cssMoveLastDxWorld += dx / zui.scale
                                 cssMoveLastDyWorld += dy / zui.scale
-                                cssMoveNode!.style.transform = `translate(${
-                                    cssMoveBaseX + cssMoveLastDxWorld
-                                }px, ${cssMoveBaseY + cssMoveLastDyWorld}px)`
+                                // Read `scale` fresh each frame rather than
+                                // caching it at drag start, so a zoom landing
+                                // mid-drag (which re-counter-scales the element)
+                                // is picked up on the next move.
+                                cssMoveNode!.style.transform = cssMoveTransform(
+                                    cssMoveBaseX + cssMoveLastDxWorld,
+                                    cssMoveBaseY + cssMoveLastDyWorld,
+                                    shape.scale
+                                )
                                 if (cssMoveChrome) {
-                                    cssMoveChrome.node.style.transform = `translate(${
-                                        cssMoveChrome.baseX + cssMoveLastDxWorld
-                                    }px, ${
-                                        cssMoveChrome.baseY + cssMoveLastDyWorld
-                                    }px)`
+                                    // The selection chrome is never scaled (it
+                                    // sizes itself in screen px), so this stays
+                                    // a pure translate.
+                                    cssMoveChrome.node.style.transform =
+                                        cssMoveTransform(
+                                            cssMoveChrome.baseX +
+                                                cssMoveLastDxWorld,
+                                            cssMoveChrome.baseY +
+                                                cssMoveLastDyWorld
+                                        )
                                 }
                                 didCssMove = true
                             } else {
@@ -4060,15 +4169,11 @@ function addZUI(
         if (!props.boardId) return
         if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
         viewportSaveTimer = setTimeout(() => {
-            localStorage.setItem(
-                `${VIEWPORT_KEY_PREFIX}${props.boardId}`,
-                JSON.stringify({
-                    tx: two.scene.translation.x,
-                    ty: two.scene.translation.y,
-                    scale: two.scene.scale,
-                    savedAt: Date.now(),
-                })
-            )
+            writeViewport(props.boardId!, activeBaseRef.current, false, {
+                tx: two.scene.translation.x,
+                ty: two.scene.translation.y,
+                scale: two.scene.scale,
+            })
         }, 300)
     }
 
@@ -4151,19 +4256,41 @@ function addZUI(
                     lastTouch.clientY
                 )
 
+            const underFinger = document.elementFromPoint(
+                lastTouch.clientX,
+                lastTouch.clientY
+            ) as Element | null
+
             // A multi-element group uses the older objectSelector path (not
             // selectionController), so handleHit is false for it. Without this,
             // the clearSelector below hides the group's dashed box the instant
             // the drag begins on mobile. Skip the clear when the finger lands on
             // the group object so its selector stays visible through the drag.
-            const groupHit = (
-                document.elementFromPoint(
-                    lastTouch.clientX,
-                    lastTouch.clientY
-                ) as Element | null
-            )?.closest('[data-label="groupobject_coord"]')
+            const groupHit = underFinger?.closest(
+                '[data-label="groupobject_coord"]'
+            )
 
-            if (!handleHit && !groupHit) {
+            // Same idea, for the *other* legacy selector: elements that draw
+            // their own edit chrome inside their group (objectSelector) rather
+            // than through selectionController — geoText being the one with
+            // resize handles on it.
+            //
+            // Those handles gate themselves on the selector being visible
+            // (`areaGroup.opacity === 0 → return`), so clearing the selection
+            // here disarmed them a moment before the synthetic mousedown
+            // reached them: the handler bailed out without stopping
+            // propagation, the event fell through to the drag path, and the
+            // text moved instead of resizing. Desktop never saw it because
+            // nothing dispatches clearSelector on a plain mousedown.
+            //
+            // Visibility is checked because opacity:0 SVG still hit-tests — an
+            // unselected element's dormant chrome must not swallow the clear.
+            const chromeEl = underFinger?.closest(`[${SELECTION_CHROME_ATTR}]`)
+            const chromeHit =
+                !!chromeEl &&
+                parseFloat(window.getComputedStyle(chromeEl).opacity || '1') > 0
+
+            if (!handleHit && !groupHit && !chromeHit) {
                 // Clear any previous selection before processing the new tap.
                 // On desktop this happens via focus/blur, but synthetic mouse events
                 // don't transfer browser focus on mobile, so we do it explicitly here
@@ -4176,12 +4303,7 @@ function addZUI(
             // For handle hits, target domElement directly — elementFromPoint may
             // resolve to bare canvas (which would re-trigger clearSelector inside
             // mousedown at the `two-0` branch).
-            const target = handleHit
-                ? domElement
-                : document.elementFromPoint(
-                      lastTouch.clientX,
-                      lastTouch.clientY
-                  ) || domElement
+            const target = handleHit ? domElement : underFinger || domElement
             target.dispatchEvent(
                 new MouseEvent('mousedown', {
                     bubbles: true,
@@ -4271,17 +4393,11 @@ function addZUI(
             if (isSinglePanning) {
                 isSinglePanning = false
                 if (props.boardId) {
-                    try {
-                        localStorage.setItem(
-                            `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
-                            JSON.stringify({
-                                tx: two.scene.translation.x,
-                                ty: two.scene.translation.y,
-                                scale: two.scene.scale,
-                                savedAt: Date.now(),
-                            })
-                        )
-                    } catch (_) {}
+                    writeViewport(props.boardId, activeBaseRef.current, true, {
+                        tx: two.scene.translation.x,
+                        ty: two.scene.translation.y,
+                        scale: two.scene.scale,
+                    })
                 }
                 const root = document.getElementById('main-two-root')
                 if (root) root.style.cursor = 'grab'
@@ -4363,15 +4479,11 @@ function addZUI(
         // distance > 0 means twoFingerStart ran (a real 2-finger gesture was active).
         if (e.touches.length < 2) {
             if (distance > 0 && props.boardId) {
-                localStorage.setItem(
-                    `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
-                    JSON.stringify({
-                        tx: two.scene.translation.x,
-                        ty: two.scene.translation.y,
-                        scale: two.scene.scale,
-                        savedAt: Date.now(),
-                    })
-                )
+                writeViewport(props.boardId, activeBaseRef.current, true, {
+                    tx: two.scene.translation.x,
+                    ty: two.scene.translation.y,
+                    scale: two.scene.scale,
+                })
             }
             touches = {}
             distance = 0
@@ -4503,6 +4615,22 @@ function addZUI(
         zui,
         syncBackgroundToCamera,
         syncDotGridClass,
+        /**
+         * Announce the current camera to `onCameraChange` subscribers (the
+         * active base's backdrop, plus any consumer callback).
+         *
+         * Camera changes driven from *outside* addZUI's own event handlers —
+         * ZoomControls' buttons being the one case today — have to call this,
+         * or the backdrop silently stops tracking. Previously only the dot grid
+         * needed syncing, so it was easy to miss; a map base makes it obvious.
+         */
+        notifyCameraChange: (): void => {
+            onCameraChangeRef?.current?.({
+                scale: two.scene.scale as number,
+                tx: two.scene.translation.x,
+                ty: two.scene.translation.y,
+            })
+        },
         mousemove,
         // Stops the trail's rAF loop so it can't keep ticking against a
         // torn-down Two.js instance after unmount.
@@ -4581,14 +4709,18 @@ function addZUI(
             const vh = domElement.clientHeight || two.height
             if (!vw || !vh) return false
 
-            // Leave a margin; clamp to the same limits addLimits(0.06, 8) enforces
-            // so a huge or tiny board doesn't overshoot the zoom range.
+            // Leave a margin; clamp to the ACTIVE base's zoom limits so a huge
+            // or tiny board doesn't overshoot the range (the map's is far wider
+            // than the board's — see BaseProvider.zoomLimits).
             const bboxW = right - left
             const bboxH = bottom - top
             const padding = opts?.padding ?? 0.8
             const scale = Math.max(
-                0.06,
-                Math.min(8, Math.min(vw / bboxW, vh / bboxH) * padding)
+                zui.limits.scale.min,
+                Math.min(
+                    zui.limits.scale.max,
+                    Math.min(vw / bboxW, vh / bboxH) * padding
+                )
             )
 
             // reset → zoomSet establishes the scale from a known identity camera;
@@ -4621,6 +4753,74 @@ function addZUI(
             })
             return true
         },
+        /**
+         * Replace the camera's zoom range, and pull the current zoom inside it
+         * if the new range excludes where we are.
+         *
+         * Not `zui.addLimits` — that one only ever *tightens* (it Math.max's a
+         * new min against the existing one), so it can raise a floor but never
+         * lower it, and a base switch has to be able to do both.
+         */
+        setZoomLimits: (min: number, max: number): void => {
+            zui.limits.scale.min = min
+            zui.limits.scale.max = max
+            const clamped = Math.max(min, Math.min(max, zui.scale))
+            if (clamped !== zui.scale) {
+                const vw = domElement.clientWidth || two.width
+                const vh = domElement.clientHeight || two.height
+                zui.zoomSet(clamped, vw / 2, vh / 2)
+                two.update()
+                window.dispatchEvent(
+                    new CustomEvent('zoomChanged', {
+                        detail: { scale: zui.scale },
+                    })
+                )
+                syncBackgroundToCamera()
+                onCameraChangeRef?.current?.({
+                    scale: two.scene.scale as number,
+                    tx: two.scene.translation.x,
+                    ty: two.scene.translation.y,
+                })
+            }
+        },
+        /**
+         * Put a surface point in the middle of the viewport, keeping the
+         * current zoom unless `scale` is given.
+         *
+         * This is how you travel on a georeferenced base: the map base ties
+         * surface (0,0) to the board's anchor lng/lat, so "go to this place"
+         * means "move the CAMERA to that place's surface coordinate" — never
+         * "move the anchor", which would slide the whole world under ink that
+         * stays where it is.
+         */
+        centerOnSurface: (x: number, y: number, scale?: number): void => {
+            const vw = domElement.clientWidth || two.width
+            const vh = domElement.clientHeight || two.height
+            if (!vw || !vh) return
+
+            const nextScale = Math.max(
+                zui.limits.scale.min,
+                Math.min(zui.limits.scale.max, scale ?? zui.scale)
+            )
+            zui.reset()
+            zui.zoomSet(nextScale, 0, 0)
+            const [curX, curY] = zui.surfaceMatrix.multiply(x, y, 1)
+            zui.translateSurface(vw / 2 - curX, vh / 2 - curY)
+            two.update()
+
+            // Same notification trio every other camera driver fires — without
+            // it the zoom readout, the dot grid and the map backdrop all keep
+            // the pre-jump camera.
+            window.dispatchEvent(
+                new CustomEvent('zoomChanged', { detail: { scale: zui.scale } })
+            )
+            syncBackgroundToCamera()
+            onCameraChangeRef?.current?.({
+                scale: two.scene.scale as number,
+                tx: two.scene.translation.x,
+                ty: two.scene.translation.y,
+            })
+        },
         disconnectThemeObserver: () => themeObserver.disconnect(),
     }
 }
@@ -4640,7 +4840,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         setTextDrawModeInBoard,
         setCurrentElementInBoard,
         togglePanMode,
-        geoObjectsEnabled,
+        toolset,
+        activeBase,
         undoLastAction,
         redoLastAction,
         recordBatchToHistoryLog,
@@ -4649,16 +4850,31 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     } = useBoardContext()
 
     // addZUI's post-draw resets funnel a 'pointer' through setPointerElement.
-    // With geo objects enabled the home tool is pan, so a generic reset
-    // re-activates pan instead of stranding the user in select mode. The
-    // exception is finishing a geo draw (point/area/route): we want the user
-    // dropped straight into pointer/select so the just-placed object can be
-    // tweaked — callers signal that with { select: true }.
+    // On a base whose home tool is pan (the map), a generic reset re-activates
+    // pan instead of stranding the user in select mode. The exception is
+    // finishing a geo draw (point/area/route): we want the user dropped
+    // straight into pointer/select so the just-placed object can be tweaked —
+    // callers signal that with { select: true }.
+    // resetToHomeTool is handed to addZUI, which runs once on mount — so it
+    // must not close over `baseProvider` directly. The base is switchable at
+    // runtime now, and a captured provider would keep reporting the base the
+    // board loaded with. See the stale-closure section in CLAUDE.md.
+    const homeToolRef = useRef<string>(toolset.homeTool)
+    useEffect(() => {
+        homeToolRef.current = toolset.homeTool
+    }, [toolset])
+
+    // Same reason: viewport saves inside addZUI must key off the *live* base.
+    const activeBaseRef = useRef<BaseId>(activeBase)
+    useEffect(() => {
+        activeBaseRef.current = activeBase
+    }, [activeBase])
+
     const resetToHomeTool = (
         element: CurrentElement | null,
         options?: { select?: boolean }
     ): void => {
-        if (element === 'pointer' && geoObjectsEnabled) {
+        if (element === 'pointer' && homeToolRef.current === 'pan') {
             if (options?.select) {
                 togglePanMode(false)
                 setCurrentElementInBoard('pointer')
@@ -4746,7 +4962,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             deleteComponentFromLocalStore,
             isPencilModeRef,
             createTextAtSurfaceRef,
-            onCameraChangeRef
+            onCameraChangeRef,
+            activeBaseRef
         )
 
         // Dev-only handles for profiling the camera from the console or a
@@ -4767,16 +4984,16 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // Use ZUI's own API so its internal zScale stays in sync with the
         // scene — setting two.scene.scale directly desynchronises ZUI and
         // causes the first pan gesture to jump back to the origin.
-        const restoreViewport = (storageKey: string): boolean => {
-            const saved = localStorage.getItem(storageKey)
-            if (!saved) return false
+        const restoreViewport = (mobile: boolean): boolean => {
+            if (!props.boardId) return false
+            const parsed = readViewport(
+                props.boardId,
+                activeBaseRef.current,
+                mobile
+            )
+            if (!parsed) return false
             try {
-                const parsed = JSON.parse(saved)
-                const { tx, ty, scale, savedAt } = parsed
-                if (!savedAt || Date.now() - savedAt > VIEWPORT_TTL_MS) {
-                    localStorage.removeItem(storageKey)
-                    return false
-                }
+                const { tx, ty, scale } = parsed
                 // zoomSet updates zui.zScale + surface.scale atomically.
                 // Centering at (0,0) with initial translation (0,0) means no
                 // translation side-effect from the zoom.
@@ -4787,7 +5004,6 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                 two.update()
                 return true
             } catch (_) {
-                localStorage.removeItem(storageKey)
                 return false
             }
         }
@@ -4813,18 +5029,19 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                     Number.isFinite(scale) &&
                     scale > 0
                 ) {
-                    const seeded = JSON.stringify({
-                        tx,
-                        ty,
-                        scale,
-                        savedAt: Date.now(),
-                    })
-                    localStorage.setItem(
-                        `${VIEWPORT_KEY_PREFIX}${props.boardId}`,
+                    // Seed both desktop+mobile keys for the base the link
+                    // opens on (sharer and opener may be on different devices).
+                    const seeded = { tx, ty, scale }
+                    writeViewport(
+                        props.boardId,
+                        activeBaseRef.current,
+                        false,
                         seeded
                     )
-                    localStorage.setItem(
-                        `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
+                    writeViewport(
+                        props.boardId,
+                        activeBaseRef.current,
+                        true,
                         seeded
                     )
                 }
@@ -4833,13 +5050,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             }
         }
 
-        if (isMobile && props.boardId) {
-            restoreViewport(`${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`)
-        }
-
-        if (!isMobile && props.boardId) {
-            restoreViewport(`${VIEWPORT_KEY_PREFIX}${props.boardId}`)
-        }
+        if (props.boardId) restoreViewport(isMobile)
 
         // Auto-fit-on-load: a board can land showing empty space — either the
         // camera is at the origin (no seeded/saved viewport) while content sits
@@ -5231,11 +5442,23 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             // group adds children in array order (groupobject.tsx) where
             // index 0 is the backmost, so feeding them sorted keeps grouped
             // elements visually consistent with their ungrouped positions.
-            const allComponentCoords = stateRefForComponentStore.current
-                ? Object.values(stateRefForComponentStore.current).sort(
-                      compareByZOrder
-                  )
-                : []
+            //
+            // Only elements that belong to the ACTIVE base are candidates. The
+            // hit-test is geometric over stored coordinates, and every element
+            // keeps its coordinates on every base — so without this filter a
+            // marquee on the map silently swallows the whiteboard shapes lying
+            // under it (hidden, but still in the store), and vice versa. The
+            // rule is the same one `applyBaseVisibility` paints with; sharing it
+            // is what keeps "what I can see" and "what I can select" in step.
+            const allComponentCoords = (
+                stateRefForComponentStore.current
+                    ? Object.values(stateRefForComponentStore.current).sort(
+                          compareByZOrder
+                      )
+                    : []
+            ).filter((record) =>
+                isRecordVisibleOnBase(record, activeBaseRef.current)
+            )
 
             // Geometric marquee hit-test on an element's stored origin.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5779,7 +6002,10 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         <>
             {/* {import.meta.env.DEV && <PerfOverlay />} */}
             <div id="selector-rect"></div>
-            {props.renderBackground?.()}
+            {/* Backdrop slot for the active base provider (see src/bases).
+                The consumer's renderBackground override renders inside it so
+                apps predating the base system keep their background layer. */}
+            <div id={BASE_ROOT_ID}>{props.renderBackground?.()}</div>
             <div id="main-two-root"></div>
             {componentsToRender.map((Component, index) => (
                 <Suspense key={index} fallback={<Loader />}>

@@ -12,6 +12,7 @@ import ShortcutsModal from './shortcutsModal'
 import SettingsIcon from '../../assets/settings.svg?react'
 import HelpIcon from '../../assets/help.svg?react'
 import ChevronRightIcon from '../../assets/chevron-right.svg?react'
+import { MENU_BUTTON_ID } from './shapesToolbarId'
 
 const HamburgerIcon = (): ReactElement => (
     <svg
@@ -134,6 +135,8 @@ const MenuDrawer = (): ReactElement => {
         stateRefForComponentStore,
         twoJSInstance,
         beginBoardImport,
+        readBaseConfig,
+        captureBaseBackdrop,
     } = useBoardContext()
 
     useEffect(() => {
@@ -175,7 +178,7 @@ const MenuDrawer = (): ReactElement => {
         setShowMenu(false)
         try {
             setIsExporting(true)
-            await downloadViewportAsImage()
+            await downloadViewportAsImage(captureBaseBackdrop)
         } catch (err) {
             console.error('Failed to export viewport as image', err)
         } finally {
@@ -194,7 +197,11 @@ const MenuDrawer = (): ReactElement => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(stateRefForComponentStore.current, viewport)
+        exportBoardAsJson(
+            stateRefForComponentStore.current,
+            viewport,
+            readBaseConfig()
+        )
         setShowExportSubmenu(false)
         setShowMenu(false)
     }
@@ -215,6 +222,7 @@ const MenuDrawer = (): ReactElement => {
         <>
             <div
                 ref={refNode}
+                id={MENU_BUTTON_ID}
                 className="relative bg-card-bg border border-border-panel rounded-card"
                 style={{
                     position: 'fixed',

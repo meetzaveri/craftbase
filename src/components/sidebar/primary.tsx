@@ -3,6 +3,8 @@ import type { ReactElement } from 'react'
 import { useQuery } from '@apollo/client'
 
 import ShapesToolbar from './shapesToolbar'
+import BaseSwitcher from './baseSwitcher'
+import PlaceSearch from './placeSearch'
 import { GET_COMPONENT_TYPES } from '../../schema/queries'
 import SpinnerWithSize from '../common/spinnerWithSize'
 import { generateUUID } from '../../utils/misc'
@@ -12,10 +14,9 @@ import { useMediaQueryUtils } from '../../constants/exportHooks'
 import type { ComponentRecord } from '../../types/board'
 import {
     GEO_TYPE_DEFAULTS,
-    POINT_CATEGORIES,
-    DEFAULT_POINT_CATEGORY,
+    POINT_COLOR,
+    POINT_RADIUS,
     DEFAULT_GEO_RESIST,
-    DEFAULT_GEO_RING_RADIUS,
     GEO_DRAW_MODE_KEY,
     GEO_DRAW_TYPE_KEY,
     GEO_DRAW_PROPS_KEY,
@@ -63,7 +64,9 @@ const PrimarySidebar = (): ReactElement => {
         defaultFill,
         defaultStrokeColor,
         defaultTextFontFamily,
+        activeBase,
     } = useBoardContext()
+    const isMapBase = activeBase === 'map'
     const [hintText, setHintText] = useState(
         'Click anywhere to place element there.'
     )
@@ -216,22 +219,15 @@ const PrimarySidebar = (): ReactElement => {
     }
 
     // Point: single click-to-place. Pre-create the element off-screen (like the
-    // text/arrow flow) then let the canvas position it on the next click.
-    const handlePointElement = (categoryArg?: string): void => {
+    // text/arrow flow) then let the canvas position it on the next click, which
+    // also opens its label editor.
+    const handlePointElement = (): void => {
         togglePencilMode(false)
         togglePointer(false)
 
         const userId = localStorage.getItem('userId')
         const generateId = generateUUID()
         const geoDef = GEO_TYPE_DEFAULTS.point
-        // Category is chosen up front from the point drawer (defaults to the
-        // generic pin). It drives the pin's fill/icon — stroke/fill mirror the
-        // category color for any legacy reads.
-        const category =
-            categoryArg && POINT_CATEGORIES[categoryArg]
-                ? categoryArg
-                : DEFAULT_POINT_CATEGORY
-        const cat = POINT_CATEGORIES[category]!
 
         const shapeData: ComponentRecord = {
             id: generateId,
@@ -239,7 +235,9 @@ const PrimarySidebar = (): ReactElement => {
             objectClass: 'geo',
             linewidth: geoDef.linewidth,
             strokeType: null,
-            stroke: cat.bg,
+            // `fill` is the circle's colour and the one the user can change;
+            // `stroke` mirrors it so anything reading either sees one colour.
+            stroke: POINT_COLOR,
             children: {},
             x: -9999,
             y: -9999,
@@ -254,14 +252,14 @@ const PrimarySidebar = (): ReactElement => {
             isDummy: null,
             createdAt: null,
             metadata: {
-                category,
-                svgIcon: cat.svgIcon,
+                // Named on placement — the canvas opens the editor as soon as
+                // the element mounts.
+                label: '',
                 resist: DEFAULT_GEO_RESIST,
-                ringRadius: DEFAULT_GEO_RING_RADIUS,
             },
-            width: DEFAULT_GEO_RING_RADIUS * 2,
-            height: DEFAULT_GEO_RING_RADIUS * 2,
-            fill: cat.bg,
+            width: POINT_RADIUS * 2,
+            height: POINT_RADIUS * 2,
+            fill: POINT_COLOR,
             textColor: null,
             updatedBy: userId,
         }
@@ -310,21 +308,23 @@ const PrimarySidebar = (): ReactElement => {
         const root = document.getElementById('main-two-root')
         if (root) root.style.cursor = 'crosshair'
 
-        // Nudge banner: only the curved line gets the "press Esc/Enter" hint
-        // (geo area/route live in the consumer's map UI with their own affordances).
+        // Nudge banner: only the curved line gets the "press Esc/Enter" hint.
         const hint = document.getElementById('multi-click-draw-hint')
         if (hint && !isGeo) {
             hint.style.opacity = '1'
             hint.style.zIndex = '20'
         }
-        // Mobile has no Esc/Enter — signal board.tsx to show the ✓/✗ draw
-        // controls for the curved-line draw (matches the nudge lifecycle).
-        if (!isGeo) {
-            window.dispatchEvent(new CustomEvent('multiClickDrawStart'))
-        }
+        // Mobile has no Esc/Enter, no double-click and no right-click, so the
+        // ✓/✗ controls (board.tsx) are the ONLY way to finish or abandon a
+        // multi-click draw there. That's true of every tool in this family, so
+        // all three raise it — area and route were left out back when they were
+        // expected to finish through a consumer's own map UI, and there is no
+        // consumer any more. The canvas already handles the `finishGeoDraw` /
+        // `cancelGeoDraw` those buttons fire for any draw type.
+        window.dispatchEvent(new CustomEvent('multiClickDrawStart'))
     }
 
-    const addElement = (label: string, category?: string): void => {
+    const addElement = (label: string): void => {
         // Warm the shape's lazy chunk NOW, while the user moves to the canvas
         // and drags (~700ms–1s). By mouseup the chunk is cached, so the
         // component mounts instantly instead of the freshly-drawn shape sitting
@@ -371,7 +371,7 @@ const PrimarySidebar = (): ReactElement => {
                 handleTextElement('geoText')
                 break
             case 'point':
-                handlePointElement(category)
+                handlePointElement()
                 break
             case 'area':
             case 'route':
@@ -535,6 +535,8 @@ const PrimarySidebar = (): ReactElement => {
     return (
         <>
             <ShapesToolbar addElement={addElement} />
+            <BaseSwitcher />
+            <PlaceSearch />
             <MenuDrawer />
             <div
                 id="show-click-anywhere-btn"
@@ -617,8 +619,12 @@ const PrimarySidebar = (): ReactElement => {
                     </div>
                 )}
 
-                {!isMobile && <ThemeSwitcher />}
-                {!isMobile && <ShareLinkPopup />}
+                {/* Both are hidden on the map base for now. They occupy the
+                    same top-right corner as the place search, and the theme
+                    switcher has nothing to switch there anyway — the basemap
+                    ships light-only (see POINT_LABEL_COLOR's note). */}
+                {!isMobile && !isMapBase && <ThemeSwitcher />}
+                {!isMobile && !isMapBase && <ShareLinkPopup />}
             </div>
         </>
     )

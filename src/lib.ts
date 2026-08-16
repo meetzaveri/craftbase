@@ -20,11 +20,15 @@ export { useCanvasClipboard } from './hooks/useCanvasClipboard'
 export { INSERT_USER_ONE } from './schema/mutations'
 export { generateRandomUsernames } from './utils/misc'
 
-// Point categories — the built-in 7-category catalog a consumer can read to
-// build its own legend/filters. The `category` lives in a point's
-// metadata.category and drives its pin look.
-export { POINT_CATEGORIES, DEFAULT_POINT_CATEGORY } from './constants/misc'
-export type { PointCategory } from './constants/misc'
+// Bases — the swappable substrate behind the canvas (board / map). Consumers
+// that are inherently map-backed pin `<Board defaultBase="map" />`; everyone
+// else gets the board base and the in-app switcher.
+export type {
+    BaseId,
+    BaseConfig,
+    BaseProvider,
+    MapAnchor,
+} from './bases/types'
 
 // Public type surface. Re-export from the canonical types module so consumers
 // can `import type { BoardProps, BoardContextValue, ComponentRecord } from 'craftbase'`.

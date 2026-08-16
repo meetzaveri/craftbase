@@ -15,25 +15,47 @@ For example:
 - Refactor code as you go to keep code clean
 - Keep file sizes small and put helper functions and components in their own files.
 
-# Craftbase as a reusable dependency
+# Craftbase is a standalone product, not a library
 
-**Craftbase is consumed as a library by other apps.** The first such consumer is `craftmaps` (sibling repo at `../craftmaps`), which imports craftbase via `"craftbase": "link:../craftbase"` and treats the `Board` as a generic whiteboarding canvas mounted behind a Mapbox basemap. More consumers are expected over time, so treat craftbase's surface as a **generic, embeddable whiteboard** — not a standalone app exclusive to its own `views/Board` route.
+**Craftbase is its own app. It has no consumers and is not published as a dependency.**
+`craftmaps` (sibling repo at `../craftmaps`) *was* the one consumer, importing craftbase
+via `"craftbase": "link:../craftbase"`. **It is being torn down.** Do not design for it,
+do not preserve its call site, and do not weigh "would this break craftmaps?" when
+evaluating a change.
+
+The map is now craftbase's own product identity — the base switcher (`src/bases/`) —
+which is exactly what made craftmaps redundant.
 
 ## Implications when editing craftbase
 
-- **Keep `Board` generic.** Don't bake in assumptions about the host app (no map concepts, no consumer-specific UI, no hard-coded routes/branding inside reusable components). If a feature is consumer-specific, it belongs in the consumer, not here.
-- **The public surface lives in `src/lib.ts`.** Anything a consumer needs (`Board`, `BoardContext`, `useBoardContext`, hooks, bootstrap helpers like `INSERT_USER_ONE`, `generateRandomUsernames`) must be exported there. Adding a new consumer-facing API? Export it from `lib.ts` and avoid breaking existing exports.
-- **Extension points over forks.** When a consumer needs to customize behavior, prefer adding an **optional prop on `Board`** (default-free, no-op when omitted) rather than letting them fork. Existing examples used by craftmaps:
-    - `onCameraChange({ scale, tx, ty })` — fires on ZUI camera updates (wired via `useRef` inside `addZUI` to dodge the stale-closure trap documented below).
-    - `renderBackground={() => <JSX />}` — render slot mounted between `#selector-rect` and `#main-two-root` for the consumer's background layer.
-    - `scaleToDisplay(scale) → string` — overrides the zoom-readout in `ZoomControls` (read from `BoardContext`).
-- **Craftbase ships `.ts`/`.tsx` source files.** Consumers must configure their bundler to handle TypeScript from `node_modules/craftbase/src/...` (craftmaps' vite glob needs to include `node_modules/craftbase/src/**/*.{ts,tsx}` and keep `craftbase` in `optimizeDeps.exclude`). The previous JSX-in-`.js` contract was retired as part of the TypeScript migration — consumers need to update their bundler config on next reload.
-- **Tailwind classes must survive consumer purging.** Consumers add `./node_modules/craftbase/src/**/*.{ts,tsx}` to their tailwind `content`. Stick to standard utility classes; avoid dynamically composed class names that purge can't see.
-- **`link:` symlink, not `file:` copy.** Edits in `craftbase/src` are picked up live in craftmaps' dev server with no reinstall. Behavior changes here ship to consumers immediately on their next dev reload — be mindful when changing existing prop shapes or context values.
+- **Build features *in* craftbase.** Map glue, geocoding, basemap controls, place search:
+    all of it belongs here now. The old rule ("if it feels consumer-specific it belongs in
+    the consumer repo") is retired — there is no consumer repo to push it to.
+- **Prefer removing an extension point to maintaining it.** These props exist only because
+    craftmaps needed them, and each one is now a fork in the code with no live caller:
+    - `geoObjectsEnabled` — **deprecated**; only ever meant "surface the geo toolset".
+        Superseded by the map base's own toolset.
+    - `renderBackground` — consumer-painted backdrop slot. Superseded by `BaseProvider`.
+    - `onCameraChange`, `scaleToDisplay` — still harmless, but no external caller.
+    Removing them is cleanup, not a breaking change. Sequence it deliberately (see
+    "Base switcher" below — `geoObjectsEnabled` still drives the toolset overlay and
+    `renderBackground` still gates `baseSwitcherEnabled`), but the destination is deletion.
+- **`src/lib.ts` is now an internal barrel, not a public API.** Nothing outside this repo
+    imports it. Adding to it no longer carries a compatibility promise; you are free to
+    change or narrow exports.
+- **No consumer-bundler constraints.** The `.ts`/`.tsx`-source contract, the
+    `optimizeDeps.exclude` note, the tailwind-purge-across-`node_modules` rule, and the
+    `link:` live-reload caveat all only mattered for craftmaps. Only this repo's own Vite
+    and tailwind configs matter now.
+- **Backward compatibility that still counts is *data*, not API.** Existing boards in
+    localStorage and Hasura, saved viewports, exported JSON files. Those users are real.
+    Keep the "no write on read", legacy-viewport-key and `formatVersion`-never-validated
+    guarantees described under "Base switcher".
 
 ## When in doubt
 
-If a change feels consumer-specific (map glue, geocoding, basemap controls, anything tying behavior to a specific host), it belongs in the consumer repo. Open an extension point in `Board` if the consumer needs a hook into craftbase, and keep craftbase ignorant of the consumer's domain.
+Ship it here. The question is no longer "whose repo does this belong in" but "does this
+make craftbase a better standalone whiteboard".
 
 # Code structure
 
@@ -71,6 +93,29 @@ useEffect(() => {
 ```
 
 This is because Two.js attaches raw DOM `addEventListener` calls outside React's reconciliation loop — React cannot re-bind them on re-render. The ref object is stable across renders; `.current` always holds the latest value at call time.
+
+## Two.js Collection `.filter()` Pitfall
+
+**`two.scene.children` is a Two.js `Collection`, not a plain array** — and
+`.filter()` on it lies about `length`.
+
+`Collection extends Array`, so `filter` builds its result via
+`ArraySpeciesCreate` → `new Collection(0)`. That constructor treats a *numeric*
+argument as an element to push, so the result starts as `[0]`. When the filter
+matches nothing, nothing overwrites it:
+
+```js
+two.scene.children.filter(() => false).length // → 1, contents [0]  ✗
+Array.from(two.scene.children).filter(() => false).length // → 0    ✓
+```
+
+This silently defeats `if (result.length > 0)` guards and can feed a bogus `0`
+into `two.remove()` — which is one more way to land in the subtractions pitfall
+below.
+
+**Rule: `Array.from(...)` (or spread) before any `.filter()`/`.map()`/`.slice()`
+on `scene.children`.** `forEach` and `find` are safe (they don't construct a new
+Collection). Fixed once in `groupobject.tsx` `handleOnDeleteGroupElements`.
 
 ## Two.js scene.subtractions Pitfall
 
@@ -305,6 +350,62 @@ See detailed notes in `.claude/context/` for feature-specific implementation det
 - `.claude/context/font-guide.md` - Font system: Geist (UI chrome), Fraunces (branding/headings), Caveat Brush (canvas sketch); CSS variables, Tailwind config, and usage rules per area
 - `.claude/context/reorder.md` - How reording/positioning of elements in Z-Axis (Z-order) works in craftbase
 - `.claude/context/v1-readiness-roadmap.md` - the roadmpa for v1 readiness of craftbase consisting of plan and promises of data durability, API stability and operational confidence.
+
+## Base switcher (board ⇄ map)
+
+A **base** is the substrate the canvas is drawn on: `board` (parchment) or `map`
+(OpenStreetMap). Lives in `src/bases/`, behind the `BaseProvider` interface
+(`types.ts`), resolved through `registry.ts` with a dynamic import.
+
+- **Element coordinates never change across a switch.** They stay in Two.js
+  surface space; only the backdrop and the camera change. The map is slaved to
+  the ZUI camera by `syncMapToZui` in `mapBase.ts` — surface (0,0) always sits
+  over `anchor.lngLat`, and `mapZoom = anchor.zoom + log2(zuiScale)`. That
+  equation is the whole contract; if the map drifts against the ink, it's wrong.
+- **Each base owns its own viewport.** A base is a workspace, not a wallpaper:
+  panning a map must not drag the whiteboard's view with it. `viewportStorage.ts`
+  keys the camera per base, `board.tsx` banks the outgoing camera and restores
+  the incoming one on every switch, and an unvisited base opens at identity.
+  The board base deliberately keeps the **unsuffixed legacy key**
+  (`craftbase_viewport_<boardId>`) so pre-bases viewports still restore.
+- **Each base shows only its own content** (`geoVisibility.ts`,
+  `applyBaseVisibility`): geo objects hide on the board base, `BOARD_ONLY_TYPES`
+  (rectangle/circle/diamond/arrowLine/curvedLine/pencil/line/divider) hide on the
+  map base, and **text stays visible on both**. Hidden via Two.js `visible`,
+  never unmounted and never deleted — the records stay in the store, draft and DB.
+- **Any camera change must reach `onCameraChange`.** Handlers inside `addZUI`
+  do this already. Anything driving the camera from *outside* — currently only
+  `ZoomControls` — must call `zui.notifyCameraChange()`, or the backdrop
+  silently freezes while the canvas keeps moving.
+- **Persistence:** `craftbase_base_<boardId>` (`baseStorage.ts`), a sidecar key
+  mirroring the viewport-key pattern, swept by the same TTL loop in `board.tsx`.
+  Never inside the draft blob, and **never written on read** — a board that has
+  never touched the switcher must leave localStorage untouched, which is what
+  keeps pre-bases boards byte-identical.
+- **Toolbar gating:** read `toolset` from `BoardContext`, not `baseProvider`.
+  `toolset` is the base's gating *unless* the deprecated `geoObjectsEnabled`
+  prop overlays the geo toolset.
+- **`geoObjectsEnabled` / `renderBackground` are dead weight awaiting removal.**
+  Both exist only for the now-defunct craftmaps consumer. `geoObjectsEnabled`
+  only ever meant "surface the geo tools" (never "use the map base" — that
+  mapping would have stacked two maps), and `renderBackground` sets
+  `baseSwitcherEnabled = false` because the caller owned the substrate. With no
+  caller left, both branches are unreachable in practice: **delete them rather
+  than extend them**, and let `toolset` come purely from the active base.
+- **maplibre-gl is dynamically imported in `mapBase.ts` only** (~1MB chunk), so
+  board-base users never fetch it. It needs
+  `canvasContextAttributes: { preserveDrawingBuffer: true }` or PNG export
+  captures a blank backdrop.
+- **The basemap is CARTO Positron vector tiles** (`BASEMAP_STYLE_URL`) — OSM
+  data, muted palette, no API key, attribution carried in the style's own
+  TileJSON. Deliberately *not* osm.org's raster tiles: those serve one baked-in
+  design capped at z19, with nothing to restyle. The style is one exported
+  constant so swapping providers stays a one-line change.
+- **Export:** JSON is `formatVersion: '1.1'` with `base`/`baseConfig`, and the
+  version is deliberately **never validated on import** — that's what keeps 1.0
+  and 1.1 files interchangeable both ways. PNG export asks the provider for a
+  raster backdrop (`captureBackdrop`) and injects it as an SVG `<image>`;
+  returning `null` falls back to the original parchment path.
 
 ## Port connectors (connectable arrows)
 

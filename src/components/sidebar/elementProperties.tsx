@@ -5,7 +5,11 @@ import { useMediaQueryUtils } from '../../constants/exportHooks'
 import ColorPicker from '../utils/colorPicker'
 import OpacitySlider from '../utils/opacitySlider'
 import Tooltip from '../common/tooltip'
-import { TEXT_SIZES_ARRAY, fillEssentialShades } from '../../utils/constants'
+import {
+    TEXT_SIZES_ARRAY,
+    fillEssentialShades,
+    pointFillEssentialShades,
+} from '../../utils/constants'
 import { MIXED, inspectGroupValues } from '../../utils/groupInspect'
 import { readOpacity } from '../../utils/canvasUtils'
 import { isStandaloneTextType } from '../../constants/misc'
@@ -84,8 +88,9 @@ const SETS = {
     TEXT: ['textColor', 'textSize', 'textFont', 'opacity'],
     // Geo objects: stroke-centric. Area's fill is auto-derived from stroke, so
     // no fill control — but its outline still takes width/type like a route.
-    // Point has no edit-area set: its category is chosen from the point drawer
-    // in the shapes toolbar (resolveSetKey returns null for points).
+    // A point is just a filled circle plus a fixed-colour label, so the only
+    // thing to edit is that fill.
+    GEO_POINT: ['fill'],
     GEO_AREA: ['stroke', 'strokeWidth', 'strokeType'],
     GEO_ROUTE: ['stroke', 'strokeWidth', 'strokeType'],
     RECT_WITH_TEXT: [
@@ -121,6 +126,7 @@ const SET_LABELS = {
     TEXT: 'Text',
     RECT_WITH_TEXT: 'Shape',
     GROUP: 'Group',
+    GEO_POINT: 'Point',
     GEO_AREA: 'Area',
     GEO_ROUTE: 'Route',
 }
@@ -156,9 +162,10 @@ function resolveSetKey({
         const elementType =
             selectedComponent?.group?.data?.elementData?.componentType
         // Geo objects checked first: area/route are path-typed and would
-        // otherwise fall into the SHAPE branch below. Points have no edit-area
-        // panel — their category is set from the toolbar drawer.
-        if (elementType === 'point') return null
+        // otherwise fall into the SHAPE branch below, and a point's circle
+        // would read as a plain shape and offer stroke/width controls it has
+        // no use for.
+        if (elementType === 'point') return 'GEO_POINT'
         if (elementType === 'area') return 'GEO_AREA'
         if (elementType === 'route') return 'GEO_ROUTE'
         // Plain + curved lines: stroke-centric panel (no fill).
@@ -718,7 +725,13 @@ const ElementPropertiesToolbar = () => {
                             onChangeComplete={handle('fill')}
                             isExpanded={expandedSection === 'fill'}
                             onToggleExpand={() => toggleSection('fill')}
-                            essentialColors={fillEssentialShades}
+                            // A point's quick row runs dark; every other fill
+                            // stays pastel. See pointFillEssentialShades.
+                            essentialColors={
+                                setKey === 'GEO_POINT'
+                                    ? pointFillEssentialShades
+                                    : fillEssentialShades
+                            }
                         />
                     </div>
                 )}

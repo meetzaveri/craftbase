@@ -44,6 +44,41 @@ export const VIEWPORT_KEY_PREFIX = 'craftbase_viewport_'
 export const MOBILE_VIEWPORT_KEY_PREFIX = 'craftbase_mobile_viewport_'
 export const VIEWPORT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
+// Whiteboard-only tools hidden while a geo-flavoured base (the map) is active —
+// that workflow uses point/area/route + the map-side geoText instead.
+// 'shapes' is the mobile drawer; rectangle/circle/diamond are its
+// desktop-flattened children. 'lines' is the line/curvedLine drawer. 'text' is
+// replaced by 'geoText'. Note this hides the *tools* only: shapes already drawn
+// keep rendering and stay editable after a switch.
+export const GEO_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
+    'shapes',
+    'rectangle',
+    'circle',
+    'diamond',
+    'lines',
+    'arrowLine',
+    'pencil',
+    'text',
+])
+
+// Frames to keep re-applying geo-object visibility after a base switch or a
+// store change. Element components mount lazily, so a single pass can run
+// before the last geo element has landed in the Two.js scene. ~1s at 60fps.
+export const GEO_VISIBILITY_RETRIES = 60
+
+// Hard ceiling on that retry loop. The budget above is *reset* whenever the
+// scene is still growing (elements mount lazily, and a big board can take well
+// over a second to land), but `scene.children.length` also moves when selection
+// chrome and previews come and go — so without a ceiling a user fiddling on the
+// canvas could hold the loop open forever. ~10s at 60fps.
+export const GEO_VISIBILITY_MAX_FRAMES = 600
+
+// Per-board base (board / map) — a sidecar key deliberately kept OUT of the
+// draft blob so the draft's size guard and rescue path are unaffected by it,
+// and so a board that never touches the switcher writes nothing at all. Shares
+// the viewport TTL and its sweep. See src/bases/baseStorage.ts.
+export const BASE_KEY_PREFIX = 'craftbase_base_'
+
 export const componentTypes = {
     rectangle: 'rectangle',
     diamond: 'diamond',
@@ -68,11 +103,12 @@ export const isGeoType = (type: string | null | undefined): boolean =>
     type === geoObjectTypes.area ||
     type === geoObjectTypes.route
 
-// Standalone text element types: 'newText' (whiteboard) and 'geoText' (the
-// zoom-resistant map variant). They render identically and share every text
-// code path (properties toolbar, group apply, history revert, clipboard) — the
-// only difference is geoText's per-frame counter-scale. Use this everywhere a
-// "is this standalone text?" decision is made so both stay in lockstep.
+// Standalone text element types: 'newText' (whiteboard) and 'geoText' (the map
+// variant). They render identically and share every text code path (properties
+// toolbar, group apply, history revert, clipboard); the only difference is that
+// geoText carries `objectClass: 'geo'`, so it shows on the map base and hides on
+// the board. Use this everywhere a "is this standalone text?" decision is made
+// so both stay in lockstep.
 export const isStandaloneTextType = (
     type: string | null | undefined
 ): boolean => type === 'newText' || type === 'geoText'
@@ -96,107 +132,26 @@ export const GEO_POINT_PLACE_MODE_KEY = 'geoPointPlaceMode'
 // Pin/point counter-scale: 1/scale^resist keeps the pin legible when zoomed
 // out (0 = fully fixed on screen, 1 = scales with the world).
 export const DEFAULT_GEO_RESIST = 0.9
-export const DEFAULT_GEO_RING_RADIUS = 22
-
-// Default "pin" icon embedded inside a point. Consumers can override per-point
-// via metadata.svgIcon. currentColor lets the point recolor it to its stroke.
-export const DEFAULT_PIN_SVG =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" fill="currentColor"/></svg>'
-
-// Point categories. A point's `metadata.category` drives its look: a filled
-// rounded-square pin in `bg`, a white (or dark, for ghost) icon, and a hard
-// offset shadow — see PointFactory.buildPointVisual. Icon colors are baked into
-// each svgIcon so the factory interprets them as-is (no recolor). Built into
-// craftbase behind `geoObjectsEnabled` (mirroring GEO_TYPE_DEFAULTS); a consumer
-// can override the catalog via the `pointCategories` Board prop.
+// The generic point: a small filled circle with an editable label beside it.
+// One design, no categories. POINT_RADIUS is the circle radius in surface units
+// at scale 1 — the group counter-scales (DEFAULT_GEO_RESIST above), so the pin
+// stays legible zoomed out. POINT_LABEL_GAP is the clear space between the
+// circle's edge and the start of the label.
 //
-// IMPORTANT: svgIcon path data must avoid SVG arc commands (`a`/`A`). Two.js's
-// `interpret()` (used to render the pin on the board) parses numbers with a
-// generic regex that can't split packed arc flags (e.g. `a6 6 0 0012 0` reads
-// `0012` as one number), producing NaN vertices and a blank icon. The browser
-// renders arcs fine — so the toolbar chip looks right while the board pin is
-// empty. Stick to M/L/C/Q/Z paths plus <line>/<circle>/<rect>/<polygon>.
-export interface PointCategory {
-    id: string
-    label: string
-    /** Pin background (the category color). */
-    bg: string
-    /** Icon tint baked into svgIcon — for the legend/picker chip. */
-    icon: string
-    /** Optional outline — only the light "ghost" pin uses it. */
-    border?: string
-    /** 24x24-viewBox icon with colors already baked in. */
-    svgIcon: string
-}
-
-export const POINT_CATEGORIES: Record<string, PointCategory> = {
-    generic: {
-        id: 'generic',
-        label: 'Generic',
-        bg: '#6B6560',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3.5" fill="#FFFFFF"/><path d="M12 4C8.69 4 6 6.69 6 10c0 5 6 10 6 10s6-5 6-10c0-3.31-2.69-6-6-6z" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linejoin="round"/></svg>',
-    },
-    fire: {
-        id: 'fire',
-        label: 'Fire',
-        bg: '#E8621A',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C10 7 7.5 9 7.5 13.5C7.5 17 9.5 19.5 12 19.5C14.5 19.5 16.5 17 16.5 13.5C16.5 9 14 7 12 3Z" fill="#FFFFFF"/><path d="M12 11C11 12.2 10.4 13.2 10.4 14.3C10.4 15.6 11.1 16.4 12 16.4C12.9 16.4 13.6 15.6 13.6 14.3C13.6 13.2 13 12.2 12 11Z" fill="#E8621A"/></svg>',
-    },
-    water: {
-        id: 'water',
-        label: 'Water',
-        bg: '#2A8BC8',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C10 7 7 11 7 15C7 17.8 9.2 20 12 20C14.8 20 17 17.8 17 15C17 11 14 7 12 3Z" fill="#FFFFFF"/></svg>',
-    },
-    nature: {
-        id: 'nature',
-        label: 'Nature',
-        bg: '#4A9A5A',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3L8.5 8.5L10.5 8.5L7 12.5L9.5 12.5L6 16.5L18 16.5L14.5 12.5L17 12.5L13.5 8.5L15.5 8.5Z" fill="#FFFFFF"/><line x1="12" y1="16" x2="12" y2="20.5" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/></svg>',
-    },
-    alert: {
-        id: 'alert',
-        label: 'Alert',
-        bg: '#D03030',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 5L3 19h18L12 5z" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round"/><line x1="12" y1="10" x2="12" y2="14" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="#FFFFFF"/></svg>',
-    },
-    infra: {
-        id: 'infra',
-        label: 'Infra',
-        bg: '#1A1612',
-        icon: '#FFFFFF',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><line x1="12" y1="4" x2="6" y2="20" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="4" x2="18" y2="20" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="11" x2="16" y2="11" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round"/><line x1="7" y1="15.5" x2="17" y2="15.5" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/><line x1="9" y1="5.5" x2="15" y2="5.5" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round"/></svg>',
-    },
-    ghost: {
-        id: 'ghost',
-        label: 'Ghost',
-        bg: '#FFFCF5',
-        icon: '#1A1612',
-        border: '#C4B89A',
-        svgIcon:
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#1A1612"/><circle cx="12" cy="12" r="6" fill="none" stroke="#C4901A" stroke-width="1.5"/></svg>',
-    },
-}
-
-export const DEFAULT_POINT_CATEGORY = 'generic'
-
-// The catalog svgs carry only a viewBox (so Two.js can scale them freely). For
-// HTML rendering (the category picker chip, the tooltip mini-pin) inject an
-// explicit pixel size so they render at a known size regardless of CSS/purge.
-export function sizedCategoryIcon(svg: string, px: number): string {
-    return svg.replace('<svg ', `<svg width="${px}" height="${px}" `)
-}
+// POINT_COLOR is the circle's shipped colour and the only part the user can
+// change. The label is fixed black by design, so a point's name always reads as
+// the same annotation ink no matter how the pin itself is coloured. '#000' (not
+// '#000000') matches the black the rest of the canvas defaults to — see
+// PENCIL_DEFAULT_COLOR — which is also the form themeColorFlip pairs with white.
+//
+// Points only ever render over the map base, and the basemap has no dark
+// variant, so black stays readable in either theme. Ship a dark basemap and
+// this needs to become theme-derived ink instead.
+export const POINT_RADIUS = 10
+export const POINT_LABEL_GAP = 5
+export const POINT_COLOR = '#FF5630'
+export const POINT_LABEL_COLOR = '#000'
+export const POINT_LABEL_FONT_SIZE = 18
 
 // Per-type initial defaults for new geo objects (distinct, map-appropriate
 // colors from the prototypes). Users recolor afterward via the properties
@@ -205,21 +160,36 @@ export const GEO_TYPE_DEFAULTS: Record<
     GeoObjectType,
     { stroke: string; linewidth: number }
 > = {
-    point: { stroke: '#C4501A', linewidth: 3 },
+    point: { stroke: POINT_COLOR, linewidth: 3 },
     area: { stroke: '#A32D2D', linewidth: 2 },
     route: { stroke: '#3B82F6', linewidth: 3 },
 }
 
+// Multi-click draw preview (area / route / curvedLine): the dots and rubber-band
+// are a *drawing aid*, so they are sized in SCREEN pixels and divided by the
+// live camera scale before going into the scene. Without that they are plain
+// surface-space marks, and on the map base — where zooming out drives the ZUI
+// scale far below 1 — a 4px dot and a 2px line render sub-pixel and effectively
+// disappear at the exact zoom levels where a route is easiest to trace.
+//
+// GEO_PREVIEW_MIN_STROKE_PX is a floor, not a replacement: a user who picked a
+// fat stroke still previews it fat.
+export const GEO_PREVIEW_DOT_PX = 5
+export const GEO_PREVIEW_MIN_STROKE_PX = 3
+// Opacity for the committed segments vs. the live rubber-band to the cursor.
+// The rubber-band stays lighter so it reads as provisional, but not so light
+// that it vanishes against a busy basemap.
+export const GEO_PREVIEW_SEGMENT_OPACITY = 0.85
+export const GEO_PREVIEW_RUBBER_OPACITY = 0.6
+
 // Minimum vertices required to finish a multi-click draw. Shared by the geo
 // area/route tools and the generic curved line (which reuses the same machinery).
-export const GEO_MIN_VERTICES: Record<
-    'area' | 'route' | 'curvedLine',
-    number
-> = {
-    area: 3,
-    route: 2,
-    curvedLine: 2,
-}
+export const GEO_MIN_VERTICES: Record<'area' | 'route' | 'curvedLine', number> =
+    {
+        area: 3,
+        route: 2,
+        curvedLine: 2,
+    }
 
 // Default ink for strokes. Pure black so it flips cleanly to white on a theme
 // toggle (see themeColorFlip): #000 in light, #fff in dark.

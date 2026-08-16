@@ -13,6 +13,13 @@
 import type { ReactNode, MutableRefObject } from 'react'
 import type Two from 'two.js'
 import type { EraserSize } from '../constants/misc'
+import type {
+    BaseConfig,
+    BaseId,
+    BaseProvider,
+    MapAnchor,
+} from '../bases/types'
+import type { PrimaryElement } from '../utils/constants'
 
 // --- DB shape (mirrors CLAUDE.md "Component schema (from DB)") ----------
 
@@ -152,6 +159,13 @@ export interface BoardProps {
      * consumers should leave this off and supply their own onboarding.
      */
     welcomeSketch?: boolean
+    /**
+     * Base to open on when the board has no persisted choice of its own. Omit
+     * (the default) and every board — including ones created before bases
+     * existed — opens on the board base. Inherently map-backed consumers pin
+     * this to 'map'. A user switch always wins over this value.
+     */
+    defaultBase?: BaseId
 }
 
 // --- Context value ------------------------------------------------------
@@ -287,6 +301,40 @@ export interface BoardContextValue {
     recordBatchToHistoryLog: (entries: HistoryEntry[]) => void
     undoLastAction: () => void
     redoLastAction: () => void
+
+    // Active base (src/bases). `baseProvider` carries the toolbar gating the
+    // sidebar reads; `switchBase` is the only thing that persists a choice.
+    activeBase: BaseId
+    baseProvider: BaseProvider
+    /**
+     * Effective toolbar gating: the active base's, unless the deprecated
+     * `geoObjectsEnabled` prop overlays the geo toolset on top. Read this
+     * rather than `baseProvider` when deciding which tools to show.
+     */
+    toolset: {
+        hiddenTools: ReadonlySet<string>
+        extraTools: readonly PrimaryElement[]
+        homeTool: string
+    }
+    /** False when the consumer paints its own backdrop and owns the substrate. */
+    baseSwitcherEnabled: boolean
+    switchBase: (id: BaseId) => void
+    /**
+     * Travel to a searched place (map base only). Flies the CAMERA to the
+     * place's surface coordinate under the board's existing anchor, so drawn
+     * elements keep the geography they were drawn over; only an empty map
+     * re-anchors. See the implementation in board.tsx for why.
+     */
+    goToPlace: (place: MapAnchor) => void
+    /** Zoom-button step for the active base, in ZUI zoom units (log2 scale). */
+    zoomStep: number
+    /** Live base config (incl. map anchor) for the JSON export envelope. */
+    readBaseConfig: () => BaseConfig
+    /** Rasterize the live backdrop for PNG export; null when there's nothing. */
+    captureBaseBackdrop: (
+        width: number,
+        height: number
+    ) => Promise<string | null>
 
     // Consumer extension points (forwarded from BoardProps)
     scaleToDisplay?: BoardProps['scaleToDisplay']

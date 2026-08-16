@@ -14,18 +14,18 @@ import {
 import { lineHeightFor } from '../../utils/textLayout'
 import { readOpacity } from '../../utils/canvasUtils'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
-import { computeCounterScale } from '../../utils/counterScale'
-import {
-    DEFAULT_GEO_RESIST,
-    DEFAULT_TEXT_FONT_FAMILY,
-} from '../../constants/misc'
+import { DEFAULT_TEXT_FONT_FAMILY } from '../../constants/misc'
 
-// GeoText is a clone of NewText (it reuses the same NewTextFactory for
-// rendering) with one extra behavior: like a point pin, the whole group is
-// counter-scaled on every camera change so the label stays legible when the
-// world zooms way out. See point.tsx for the resist rationale and
-// counterScale.ts for the math. Everything else — multiline editing, resize
-// handles, the floating toolbar contract — matches NewText.
+// GeoText renders exactly like NewText — same NewTextFactory, same multiline
+// editing, resize handles and floating-toolbar contract. What separates the two
+// is not how they draw but where they belong: geoText carries
+// `objectClass: 'geo'`, so it lives on the map base and hides on the board
+// (geoVisibility.ts), while newText is whiteboard text.
+//
+// It used to counter-scale itself like a point pin. That was deliberately
+// dropped: annotation text on a map should scale with the geography it labels,
+// the way every other mark on the canvas does. The point's own label keeps its
+// counter-scale — a pin is a fixed marker, not a caption.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -62,8 +62,6 @@ function GeoText(props: ElementProps): ReactElement {
     const [, setTextSize] = useState<number>(props?.metadata?.fontSize || 36)
     const textValueRef = useRef(textValue)
     const twoTextRef = useRef<ShapeLike>(null)
-    // The Two.js group, mirrored to a ref so the zoom listener (registered in
-    // its own effect) can counter-scale it without a stale closure.
     const groupRef = useRef<ShapeLike>(null)
     // Satellite Two.Text nodes for lines 2..N (line 1 stays `twoText`), and a
     // ref to the layout sync so the metadata effect can re-run it.
@@ -71,8 +69,6 @@ function GeoText(props: ElementProps): ReactElement {
     const syncMultilineRef = useRef<(() => void) | null>(null)
 
     const two = props.twoJSInstance
-    // Zoom-resistance strength (0 = screen-fixed, 1 = scales with world).
-    const resist = props.metadata?.resist ?? DEFAULT_GEO_RESIST
 
     let selectorInstance: ShapeLike = null
     let groupObject: ShapeLike = null
@@ -119,16 +115,6 @@ function GeoText(props: ElementProps): ReactElement {
         twoTextRef.current = twoText
         groupObject = group
         groupRef.current = group
-
-        // Seed the counter-scale from the current camera so the label is sized
-        // correctly before the first zoom event fires (mirrors point.tsx). The
-        // live scale lives on the nested ZUI instance (fall back to the scene
-        // scale).
-        const initialScale =
-            (zuiInBoard as ShapeLike)?.zui?.scale ?? two?.scene?.scale
-        if (initialScale) {
-            group.scale = computeCounterScale(initialScale, resist)
-        }
 
         // Multiline rendering: `twoText` holds line 1; satellite Two.Text nodes
         // hold lines 2..N. We honor only hard newlines (Shift+Enter). The whole
@@ -350,14 +336,11 @@ function GeoText(props: ElementProps): ReactElement {
 
             groupDomElem.style.display = 'none'
 
-            // The on-screen text size folds in the group's counter-scale on top
-            // of the scene scale, so the editing overlay must do the same to
-            // line up with the rendered glyphs.
+            // The editing overlay must render at the same on-screen size as
+            // the glyphs it covers, which is the text size through the camera.
             const fontSize = twoText.size || 36
             const sceneScale = two?.scene?.scale || 1
-            const groupScale =
-                typeof group.scale === 'number' ? group.scale : 1
-            const cssFontSize = fontSize * sceneScale * groupScale
+            const cssFontSize = fontSize * sceneScale
             const lineH = Math.ceil(cssFontSize * 1.6)
             const vertPad = Math.ceil((lineH - cssFontSize) / 2) + 4
 
@@ -569,24 +552,6 @@ function GeoText(props: ElementProps): ReactElement {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
-
-    // Counter-scale the whole group on every camera change so the label stays
-    // legible when the world zooms out (same contract as point.tsx). Reads the
-    // scale from the event each fire — no stale closure.
-    useEffect(() => {
-        const onZoom = (e: Event): void => {
-            const group = groupRef.current
-            if (!group) return
-            const scale = (e as CustomEvent<{ scale: number }>).detail?.scale
-            if (!scale) return
-            group.scale = computeCounterScale(scale, resist)
-            two.update()
-        }
-        window.addEventListener('zoomChanged', onZoom as EventListener)
-        return (): void => {
-            window.removeEventListener('zoomChanged', onZoom as EventListener)
-        }
-    }, [two, resist])
 
     useEffect(() => {
         if (internalState?.group?.data) {

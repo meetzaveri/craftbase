@@ -1,7 +1,11 @@
 import { test, expect } from './helpers/test.js'
 import { setupLocalBoard } from './helpers/index.js'
 
-const TOAST = '[role="status"]'
+// CraftbaseLoader is also role="status", so a bare [role="status"] matches the
+// loading spinner too and trips Playwright's strict mode whenever the board
+// hasn't finished loading by assertion time (flaky under parallel workers).
+// aria-live="polite" is the toast's alone.
+const TOAST = '[role="status"][aria-live="polite"]'
 const THRESHOLD = 2000
 
 /**

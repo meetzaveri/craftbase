@@ -131,6 +131,19 @@ export const fillEssentialShades: string[] = [
     '#B3D4FF',
 ]
 
+// Point fills only — deliberately the saturated stroke row, not the pastel
+// `fillEssentialShades` above.
+//
+// A pastel is right for a shape fill: it sits behind text and must not compete
+// with it. A point is the opposite — a ~10px dot that has to be findable against
+// CARTO Positron's pale greys and beiges, where a pastel disappears. That makes
+// a point's fill behave like ink, so it takes ink's palette. Transparent goes
+// too: black is far more use on a light basemap than an invisible pin.
+//
+// Aliased rather than inlined so the two can diverge in one edit, and so the
+// call site says which row it means.
+export const pointFillEssentialShades: string[] = essentialShades
+
 export interface DrawerElement {
     elementName: string
     elementDisplayName: string
@@ -283,8 +296,8 @@ export const geoElementData: PrimaryElement[] = [
         drawerData: [],
     },
     {
-        // Zoom-resistant text for maps — counter-scales on zoom like a point
-        // pin (see geoText.tsx). Replaces the standard Text tool in geo mode.
+        // Map text (see geoText.tsx): renders like the standard Text element
+        // but belongs to the map base. Replaces the Text tool in geo mode.
         elementName: 'geoText',
         elementDisplayName: 'Text',
         elementIcon: TextIcon,

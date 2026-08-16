@@ -11,6 +11,10 @@ import getEditComponents from '../utils/editWrapper'
 import { elementOnBlurHandler } from '../../utils/misc'
 import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertices'
 import { isStandaloneTextType } from '../../constants/misc'
+import {
+    applyCounterScaleToCopies,
+    applyCounterScaleToCopy,
+} from '../../utils/counterScale'
 
 // PROTOTYPE FLAG — group resize. Flip to false to fully disable the corner
 // resize handles + baking and fall back to the old move-only group overlay.
@@ -78,6 +82,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
+        zuiInBoard,
     } = useBoardContext()
 
     const two = props.twoJSInstance
@@ -408,9 +413,15 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             // them. See CLAUDE.md "Two.js scene.subtractions Pitfall" — the
             // try/catch + subtractions reset here is the canonical recovery
             // pattern.
-            const toRemove = two.scene.children.filter(
+            // Array.from FIRST: two.scene.children is a Two.js Collection
+            // (Array subclass), so `.filter()` goes through ArraySpeciesCreate
+            // → `new Collection(0)`, and that constructor treats a numeric
+            // argument as an element to push. A filter matching nothing
+            // therefore returns `[0]` with length 1 — which slipped past the
+            // `length > 0` guard below and handed a bogus `0` to two.remove().
+            const toRemove = Array.from(two.scene.children).filter(
                 (el: ShapeLike) =>
-                    el.elementData && idsArr.includes(el.elementData.id)
+                    el?.elementData && idsArr.includes(el.elementData.id)
             )
             if (toRemove.length > 0) {
                 two.remove(toRemove)
@@ -447,6 +458,9 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             // our larger constant-screen-size handles on top so they stay easy
             // to grab at the new zoom.
             sizeHandlesRef.current?.(detail.scale)
+            // Member copies have no element component to counter-scale them on
+            // zoom, so the overlay keeps the geo ones zoom-resistant itself.
+            applyCounterScaleToCopies(groupInstance, detail.scale)
             two.update()
         }
         window.addEventListener('zoomChanged', onZoomChanged)
@@ -521,7 +535,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 // content, but SVG collapses `\n` to a single line. Re-lay it out
                 // as the stacked multiline block (same as the newText component)
                 // so a grouped/duplicated text keeps its line breaks.
-                if (item.componentType === 'newText') {
+                if (isStandaloneTextType(item.componentType)) {
                     layoutStandaloneText(
                         two,
                         coreObject,
@@ -550,6 +564,15 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 }
 
                 coreObject.elementData = item
+                // Seed zoom-resistance on the copy from the current camera. The
+                // originals get this from their own component; a copy is raw
+                // factory output, so without it a grouped pin/geoText collapses
+                // to world size for the life of the selection.
+                applyCounterScaleToCopy(
+                    coreObject,
+                    item,
+                    (zuiInBoard as ShapeLike)?.zui?.scale ?? two?.scene?.scale
+                )
                 group.add(coreObject)
             })
             orderGroupChildrenByZ(group)

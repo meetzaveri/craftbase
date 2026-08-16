@@ -12,6 +12,11 @@ import {
     pollUntilElement,
 } from '../utils/canvasUtils'
 import { lineHeightFor } from '../utils/textLayout'
+import {
+    buildPointVisual,
+    pointColorOf,
+    pointLabelOf,
+} from '../factory/point'
 import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
 import type { ComponentRecord, ComponentStore } from '../types/board'
 
@@ -520,6 +525,34 @@ export function useComponentHistory({
                     },
                 })
             )
+            return
+        }
+
+        // A point's label is a Two.Text node the factory owns, so rebuild the
+        // whole pin from the restored record — cheap (two nodes) and it can't
+        // drift from what a fresh mount would draw.
+        //
+        // The rebuild re-reads the colour, so `elementData` has to be caught up
+        // FIRST: applyPropertyToTwoJSGroup writes reverted colours onto the
+        // Two.js node only, leaving elementData holding the pre-undo value.
+        // Rebuilding off that would repaint the circle in the colour we just
+        // undid. The store row is the authority here — applyBulkProps commits
+        // the revert to it before touching the scene.
+        if (ct === 'point') {
+            const elementData = group.elementData
+            if (elementData) {
+                const record = stateRefForComponentStore.current[elementData.id]
+                if (record) {
+                    elementData.fill = record.fill
+                    elementData.stroke = record.stroke
+                }
+                elementData.metadata = { ...(elementData.metadata || {}), ...m }
+            }
+            buildPointVisual(two, group, {
+                color: pointColorOf(elementData),
+                label: pointLabelOf(elementData),
+            })
+            two.update()
             return
         }
 

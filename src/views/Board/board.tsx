@@ -1,6 +1,7 @@
 import React, {
     useState,
     useEffect,
+    useMemo,
     useRef,
     useCallback,
     type ReactNode,
@@ -28,7 +29,6 @@ import GoToContentButton from '../../components/goToContentButton'
 import HelpButton from '../../components/helpButton'
 import Sidebar from '../../components/sidebar/primary'
 import ElementPropertiesToolbar from '../../components/sidebar/elementProperties'
-import PointTooltip from '../../components/elements/pointTooltip'
 import ClusterLayer from '../../components/elements/clusterLayer'
 import controlsIcon from '../../assets/controls.svg'
 import OkIcon from '../../assets/ok.svg?react'
@@ -40,6 +40,17 @@ import {
     BoardTooLargeModal,
 } from '../../components/modals/BoardSizeLimitModal'
 import { exportBoardAsJson } from '../../utils/exportBoard'
+import {
+    applyBaseVisibility,
+    isRecordVisibleOnBase,
+} from '../../utils/geoVisibility'
+import { lngLatToSurface, scaleForMapZoom } from '../../bases/mercator'
+import {
+    readViewport,
+    writeViewport,
+    IDENTITY_VIEWPORT,
+} from '../../utils/viewportStorage'
+import type { BaseId, MapAnchor } from '../../bases/types'
 import ImportBoardModal from '../../components/modals/ImportBoardModal'
 import {
     openBoardFilePicker,
@@ -63,6 +74,7 @@ import {
     TEXT_SIZES_OBJECT,
     MOBILE_TEXT_SIZES_OBJECT,
     TRANSPARENT_FILL,
+    geoElementData,
 } from '../../utils/constants'
 import {
     RUBBER_MODE_KEY,
@@ -78,18 +90,22 @@ import {
     VIEWPORT_KEY_PREFIX,
     MOBILE_VIEWPORT_KEY_PREFIX,
     VIEWPORT_TTL_MS,
+    BASE_KEY_PREFIX,
+    GEO_HIDDEN_TOOLS,
+    GEO_VISIBILITY_RETRIES,
+    GEO_VISIBILITY_MAX_FRAMES,
     DEFAULT_TEXT_SIZE,
     GEO_DRAW_MODE_KEY,
     GEO_DRAW_TYPE_KEY,
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
-    DEFAULT_GEO_RESIST,
     WELCOME_DISMISSED_KEY,
 } from '../../constants/misc'
 import {
     isWelcomeComponent,
     playWelcomeSketchEntrance,
 } from '../../utils/welcomeSketch'
+import { useActiveBase } from '../../hooks/useActiveBase'
 import { useDrawingModes } from '../../hooks/useDrawingModes'
 import { useElementDefaults } from '../../hooks/useElementDefaults'
 import { useMobileToolbarPanels } from '../../hooks/useMobileToolbarPanels'
@@ -299,6 +315,117 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         clearDrawModesFromStorage,
     } = useDrawingModes()
 
+    // Active base (board / map). Reads the board's persisted choice without
+    // writing one, so boards that predate the switcher open exactly as before.
+    const {
+        activeBase,
+        provider: baseProvider,
+        switchBase,
+        handleCameraChange: handleBaseCameraChange,
+        captureBackdrop,
+        readConfig: readBaseConfigForExport,
+        setMapAnchor,
+    } = useActiveBase({ boardId, defaultBase: props.defaultBase })
+
+    /**
+     * Deprecated `geoObjectsEnabled` compatibility.
+     *
+     * The flag predates bases and means exactly one thing: "surface the geo
+     * toolset". It never implied a backdrop — the consumer always painted its
+     * own map through `renderBackground`. So it must NOT map to the map base,
+     * or craftmaps would end up with two maps stacked: craftbase's and its own.
+     *
+     * It therefore overlays the geo tooling on whatever base is active, leaving
+     * the backdrop alone.
+     */
+    const toolset = useMemo(() => {
+        if (!props.geoObjectsEnabled) {
+            return {
+                hiddenTools: baseProvider.hiddenTools,
+                extraTools: baseProvider.extraTools,
+                homeTool: baseProvider.homeTool,
+            }
+        }
+        return {
+            hiddenTools: GEO_HIDDEN_TOOLS,
+            extraTools: geoElementData,
+            homeTool: 'pan',
+        }
+    }, [baseProvider, props.geoObjectsEnabled])
+
+    // A consumer that paints its own backdrop owns the substrate; offering them
+    // craftbase's switcher would stack a second one underneath.
+    const baseSwitcherEnabled = !props.renderBackground
+
+    /**
+     * Each base shows only the content that belongs on it: geo objects are
+     * hidden on the board base, whiteboard shapes/lines/pencil are hidden on
+     * the map base, and plain text stays on both. Hidden, never deleted — the
+     * records stay in the store, the draft and the DB.
+     *
+     * Runs on `componentStore` too, not just the base, because element
+     * components mount lazily: on a page load the scene fills in after this
+     * effect first fires. The retry window covers the gap between the store
+     * settling and the last element landing in the Two.js scene.
+     */
+    const forceGeoVisible = Boolean(props.geoObjectsEnabled)
+
+    // Live active base for callbacks that outlive the render they were created
+    // in. `addToLocalComponentStore` is handed to `addZUI`, which runs once on
+    // mount — so anything it calls reads mount-time state unless it goes through
+    // a ref (see the stale-closure note in CLAUDE.md). `promoteWelcomeSketch` is
+    // reached exactly that way.
+    const activeBaseRef = useRef<BaseId>(activeBase)
+    useEffect(() => {
+        activeBaseRef.current = activeBase
+    }, [activeBase])
+
+    useEffect(() => {
+        let cancelled = false
+        let attempts = 0
+        let frames = 0
+        let lastSceneSize = -1
+
+        const apply = (): void => {
+            if (cancelled) return
+            const two = twoJSInstanceRef.current
+            if (two) applyBaseVisibility(two, activeBase, { forceGeoVisible })
+
+            // Keep re-applying until the scene stops growing, then for a short
+            // quiet window after that. A fixed budget from the store change was
+            // not enough: element components mount lazily, so on a big board
+            // (or right after a share, which re-mounts the whole scene) the last
+            // geo element could land after the window closed and never get
+            // hidden — which is exactly how a route ends up on the whiteboard.
+            const sceneSize = two?.scene?.children?.length ?? -1
+            if (sceneSize !== lastSceneSize) {
+                lastSceneSize = sceneSize
+                attempts = 0
+            }
+            const keepGoing =
+                attempts++ < GEO_VISIBILITY_RETRIES &&
+                frames++ < GEO_VISIBILITY_MAX_FRAMES
+            if (keepGoing) requestAnimationFrame(apply)
+        }
+        apply()
+
+        return (): void => {
+            cancelled = true
+        }
+    }, [activeBase, forceGeoVisible, componentStore])
+
+    // The base's backdrop sync rides the same camera events the consumer prop
+    // gets. Kept in a ref-free plain callback because Canvas stores it in a ref
+    // of its own (see the stale-closure note in CLAUDE.md).
+    const handleCameraChange = useCallback(
+        (camera: CameraChangeEvent): void => {
+            handleBaseCameraChange(camera)
+            props.onCameraChange?.(camera)
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [handleBaseCameraChange, props.onCameraChange]
+    )
+
     const { showMobileToolbarPanel, setShowMobileToolbarPanel } =
         useMobileToolbarPanels({ isMobile, selectedComponent })
 
@@ -450,9 +577,13 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(stateRefForComponentStore.current, viewport)
+        exportBoardAsJson(
+            stateRefForComponentStore.current,
+            viewport,
+            readBaseConfigForExport()
+        )
         setShowBoardFullModal(false)
-    }, [])
+    }, [readBaseConfigForExport])
 
     // ---- Board import (P0) ----
     // The chooser modal is driven by board state; the parsed file waits in a
@@ -476,6 +607,59 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             console.error('[import] viewport restore failed', e)
         }
     }, [])
+
+    /**
+     * Each base is its own workspace and keeps its own camera. On a switch we
+     * bank the outgoing base's viewport and restore the incoming one — a base
+     * that has never been visited opens at the identity camera.
+     *
+     * Note this is deliberately *not* "the view stays put across a switch":
+     * panning around a map must not drag the whiteboard's view with it. Element
+     * coordinates are still untouched; only the camera differs per base.
+     */
+    const prevBaseRef = useRef<BaseId>(activeBase)
+    useEffect(() => {
+        const previous = prevBaseRef.current
+        if (previous === activeBase) return
+        prevBaseRef.current = activeBase
+
+        const two = twoJSInstanceRef.current
+        const scene = two?.scene
+        if (scene && boardId) {
+            writeViewport(boardId, previous, isMobile, {
+                scale: typeof scene.scale === 'number' ? scene.scale : 1,
+                tx: scene.translation.x,
+                ty: scene.translation.y,
+            })
+        }
+
+        // Hand the camera the incoming base's zoom range BEFORE restoring its
+        // viewport — the map's range reaches far below the board's floor, and a
+        // stale floor would clamp a wide map camera on the way in.
+        zuiInBoardRef.current?.setZoomLimits?.(
+            baseProvider.zoomLimits.min,
+            baseProvider.zoomLimits.max
+        )
+
+        restoreImportedViewport(
+            (boardId && readViewport(boardId, activeBase, isMobile)) ||
+                IDENTITY_VIEWPORT
+        )
+        // The backdrop tracks onCameraChange, and this camera move happens
+        // outside addZUI's handlers — announce it or the map stays put.
+        zuiInBoardRef.current?.notifyCameraChange?.()
+    }, [activeBase, baseProvider, boardId, isMobile, restoreImportedViewport])
+
+    // The camera is created inside newCanvas with the board default, so the
+    // active base's range has to be applied once it exists too — otherwise a
+    // board that OPENS on the map (a saved base, or defaultBase="map") keeps the
+    // whiteboard's floor until the user switches away and back.
+    useEffect(() => {
+        zuiInBoardRef.current?.setZoomLimits?.(
+            baseProvider.zoomLimits.min,
+            baseProvider.zoomLimits.max
+        )
+    }, [baseProvider, zuiInBoard])
 
     // Re-glue every docked connector whose bound shape is present in `store`.
     // The listener in newCanvas polls for fresh mounts, so dispatching now
@@ -690,13 +874,18 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // pan default actually takes effect when geo objects are enabled.
     useEffect(() => {
         clearDrawModesFromStorage()
-        if (props.geoObjectsEnabled) togglePanMode(true)
+        if (toolset.homeTool === 'pan') togglePanMode(true)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // Sweep viewport entries older than VIEWPORT_TTL_MS or missing savedAt.
-    // Each new local draft writes its own craftbase_viewport_<id> key; without
-    // this sweep, localStorage accumulates dead entries indefinitely.
+    // Sweep viewport and base entries older than VIEWPORT_TTL_MS or missing
+    // savedAt. Each new local draft writes its own craftbase_viewport_<id> key
+    // (and, once the user picks a base, craftbase_base_<id>); without this
+    // sweep, localStorage accumulates dead entries indefinitely.
+    //
+    // BASE_KEY_PREFIX is matched *additively* alongside the viewport prefixes —
+    // all three share the same savedAt/TTL shape. Take care here: broadening
+    // this match incorrectly would evict every board's saved camera.
     useEffect(() => {
         try {
             const now = Date.now()
@@ -705,7 +894,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 if (
                     !key ||
                     (!key.startsWith(VIEWPORT_KEY_PREFIX) &&
-                        !key.startsWith(MOBILE_VIEWPORT_KEY_PREFIX))
+                        !key.startsWith(MOBILE_VIEWPORT_KEY_PREFIX) &&
+                        !key.startsWith(BASE_KEY_PREFIX))
                 )
                     continue
                 try {
@@ -823,8 +1013,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ric = (window as any).requestIdleCallback as
-            | ((cb: () => void, opts?: { timeout: number }) => number)
-            | undefined
+            ((cb: () => void, opts?: { timeout: number }) => number) | undefined
         if (ric) {
             const handle = ric(warm, { timeout: 3000 })
             return (): void => {
@@ -919,6 +1108,52 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         setSelectedComponent(shape ?? null)
     }
 
+    /**
+     * Travel to a searched place.
+     *
+     * The map base georeferences the board through a SINGLE anchor: surface
+     * (0,0) is `anchor.lngLat`, and every element's surface coordinates mean a
+     * real place only in relation to it. Moving the anchor therefore re-points
+     * the entire board at new geography while the ink stays put — a route drawn
+     * around Satellite, Ahmedabad reappears in Virginia because it was never
+     * "in Ahmedabad", it was 500px from wherever the anchor happened to be.
+     *
+     * So the anchor is written once and then left alone, and travelling is a
+     * CAMERA move: the place's lng/lat resolves to a fixed surface point (pure
+     * Mercator arithmetic against the anchor — see mercator.ts) and we fly the
+     * viewport there across what is, in effect, a world-sized canvas.
+     *
+     * The one time re-anchoring is right is an empty map: with nothing drawn
+     * there is no geography to betray, and re-anchoring re-centres the ZUI's
+     * usable zoom window (~[anchor.zoom − 4.1, +3]) on where the user actually
+     * is, instead of stranding them at the edge of a window centred half a
+     * world away.
+     */
+    const goToPlace = useCallback(
+        (place: MapAnchor): void => {
+            const anchor = readBaseConfigForExport().mapAnchor
+            const store = stateRefForComponentStore.current ?? {}
+            const mapHasContent = Object.values(store).some(
+                (record) =>
+                    record?.componentType !== GROUP_COMPONENT &&
+                    isRecordVisibleOnBase(record, 'map')
+            )
+
+            if (!anchor || !mapHasContent) {
+                setMapAnchor(place)
+                return
+            }
+
+            const { x, y } = lngLatToSurface(place.lngLat, anchor)
+            zuiInBoardRef.current?.centerOnSurface?.(
+                x,
+                y,
+                scaleForMapZoom(place.zoom, anchor)
+            )
+        },
+        [readBaseConfigForExport, setMapAnchor]
+    )
+
     // Creates a board in the background on first interaction (non-blocking).
     // Stores the server board ID in state + ref + localStorage for later use.
     const ensureBackgroundBoard = async () => {
@@ -953,6 +1188,20 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // user drew. Guarded so a burst of first adds only promotes once.
     const promoteWelcomeSketch = (): void => {
         if (welcomePromotedRef.current) return
+        // Promotion only makes sense on the base the sketch actually renders on.
+        // The sketch is whiteboard onboarding, so it is hidden on every other
+        // base — and promoting it there would hand the user "their own content"
+        // they have never seen.
+        //
+        // It also silently changes what the element IS to the visibility rule:
+        // the sketch's standalone text is hidden off-board *only* because
+        // `isWelcomeComponent` matches it (plain text is deliberately visible on
+        // every base). Strip the tag while the user is on the map and that copy
+        // — "Pick a shape", "Double-click anywhere to add text" — stops being
+        // onboarding and reappears over the map on the next visibility pass.
+        // Read through the ref: this is called from `addToLocalComponentStore`,
+        // which the canvas captured at mount.
+        if (activeBaseRef.current !== 'board') return
         const welcomeIds = Object.keys(
             stateRefForComponentStore.current
         ).filter((id) =>
@@ -1120,7 +1369,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             id,
             componentType,
             // geoText is anchored to the map, so flag it geo (mirrors point/
-            // area/route) and seed the counter-scale resist it reads on mount.
+            // area/route). It renders exactly like newText — the flag is what
+            // keeps it on the map base and off the board.
             ...(componentType === 'geoText' && { objectClass: 'geo' }),
             linewidth: defaultLinewidth,
             strokeType: defaultStrokeType,
@@ -1130,9 +1380,6 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 ...(fontSizePx !== undefined && { fontSize: fontSizePx }),
                 ...(defaultTextFontFamily && {
                     textFontFamily: defaultTextFontFamily,
-                }),
-                ...(componentType === 'geoText' && {
-                    resist: DEFAULT_GEO_RESIST,
                 }),
                 opacity: 1,
             },
@@ -1148,10 +1395,23 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         }
     }
 
+    /**
+     * Which text element the *current* toolset means by "text". A geo-flavoured
+     * toolset hides the plain Text tool and offers `geoText` in its place (see
+     * GEO_HIDDEN_TOOLS), so every text-creation entry point must follow that
+     * swap — otherwise text made on the map is a plain `newText` that scales
+     * with the world and disappears at low zoom while the toolbar's geoText
+     * stays legible.
+     */
+    const activeTextComponentType = (): 'newText' | 'geoText' =>
+        toolset.hiddenTools.has('text') ? 'geoText' : 'newText'
+
     // One-shot text-draw mode: cursor → crosshair, next mousedown on canvas
     // places the pending text element via SCENARIO_TEXT_DRAW in newCanvas.js.
+    // The explicit argument is the toolbar telling us which tool was clicked;
+    // without one (the `T` hotkey) we follow the active toolset.
     const enableTextDrawMode = (
-        componentType: 'newText' | 'geoText' = 'newText'
+        componentType: 'newText' | 'geoText' = activeTextComponentType()
     ) => {
         togglePencilMode(false)
         togglePointer(false)
@@ -1173,9 +1433,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // scene for the element instead, then dispatch once it's mounted.
     const createTextAtSurface = (x: number, y: number) => {
         const id = generateUUID()
-        const shapeData = buildTextShapeData(id, x, y)
+        const componentType = activeTextComponentType()
+        const shapeData = buildTextShapeData(id, x, y, componentType)
         if (!shapeData) return
-        addToLocalComponentStore(id, 'newText', shapeData)
+        addToLocalComponentStore(id, componentType, shapeData)
         const two = twoJSInstanceRef.current
         if (!two) return
         pollUntilElement(two, id, () => {
@@ -1989,6 +2250,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const contextValueForSidebar = {
         scaleToDisplay: props.scaleToDisplay,
         geoObjectsEnabled: props.geoObjectsEnabled,
+        activeBase,
+        baseProvider,
+        toolset,
+        baseSwitcherEnabled,
+        switchBase,
+        readBaseConfig: readBaseConfigForExport,
+        captureBaseBackdrop: captureBackdrop,
+        goToPlace,
+        zoomStep: baseProvider.zoomStep,
         pointClusteringEnabled: props.pointClusteringEnabled,
         clusterPoints: props.clusterPoints,
         boardId,
@@ -2083,7 +2353,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                             className="flex flex-col gap-2"
                         >
                             <button
-                                title="Finish line"
+                                title="Finish drawing"
                                 onClick={() =>
                                     window.dispatchEvent(
                                         new CustomEvent('finishGeoDraw')
@@ -2094,7 +2364,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                                 <OkIcon className="w-5 h-5" />
                             </button>
                             <button
-                                title="Cancel line"
+                                title="Cancel drawing"
                                 onClick={() =>
                                     window.dispatchEvent(
                                         new CustomEvent('cancelGeoDraw')
@@ -2149,12 +2419,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                                 : TEXT_SIZES_OBJECT)[defaultTextSize] ??
                             DEFAULT_TEXT_SIZE
                         }
-                        onCameraChange={props.onCameraChange}
+                        onCameraChange={handleCameraChange}
                         renderBackground={props.renderBackground}
                         reorderSelectedRef={reorderSelectedRef}
                         fitToContentRef={fitToContentRef}
                     />
-                    <PointTooltip />
                     <ClusterLayer />
                     {!isMobile && <ZoomControls />}
                     <GoToContentButton />

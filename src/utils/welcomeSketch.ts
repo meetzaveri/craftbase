@@ -24,6 +24,20 @@ interface WelcomeMetadata {
     [key: string]: unknown
     isWelcome: true
     opacity: number
+    /**
+     * Pins these elements to the board base for good — see `baseScope` in
+     * geoVisibility.ts.
+     *
+     * `isWelcome` alone is not enough, because it does not survive the user's
+     * first real interaction: `promoteWelcomeSketch` strips it to turn the
+     * sketch into the user's own content. The sketch's rectangles and arrows
+     * stay hidden off-board regardless (their *types* are board-only), but its
+     * standalone text does not — plain text is deliberately visible on every
+     * base, so promoted welcome copy ("Pick a shape", "Double-tap anywhere to
+     * add text") would surface over the map. This tag is deliberately NOT one
+     * of the two that promotion removes.
+     */
+    baseScope: 'board'
     // Marks the one element that types itself in first; the rest of the sketch
     // is held back until it finishes. See playWelcomeSketchEntrance.
     welcomeRole?: 'headline'
@@ -39,9 +53,16 @@ interface WelcomeMetadata {
 }
 
 function welcomeMetadata(
-    extra: Partial<Omit<WelcomeMetadata, 'isWelcome' | 'opacity'>> = {}
+    extra: Partial<
+        Omit<WelcomeMetadata, 'isWelcome' | 'opacity' | 'baseScope'>
+    > = {}
 ): WelcomeMetadata {
-    return { isWelcome: true, opacity: SKETCH_OPACITY, ...extra }
+    return {
+        isWelcome: true,
+        baseScope: 'board',
+        opacity: SKETCH_OPACITY,
+        ...extra,
+    }
 }
 
 function makeText(

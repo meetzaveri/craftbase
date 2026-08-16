@@ -7,7 +7,7 @@ export default defineConfig({
     plugins: [svgr(), react(), tsconfigPaths()],
     server: {
         host: true,
-        allowedHosts: ['10.201.40.95'],
+        allowedHosts: ['10.106.71.95'],
     },
     test: {
         globals: true,

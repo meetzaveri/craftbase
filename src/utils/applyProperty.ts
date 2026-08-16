@@ -4,12 +4,7 @@ import {
     strokeToAreaFill,
 } from './misc'
 import { getShapeTextNodes } from './canvasUtils'
-import { buildPointVisual } from '../factory/point'
-import {
-    POINT_CATEGORIES,
-    DEFAULT_POINT_CATEGORY,
-    DEFAULT_GEO_RING_RADIUS,
-} from '../constants/misc'
+import { getPointCircle } from '../factory/point'
 
 // Scene-bound selectedComponent shape: `.shape.data`, `.text.data`, and
 // `.group.data.elementData` are scaffolded by newCanvas / element renderers
@@ -120,35 +115,32 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
         const id = selectedComponent?.group?.data?.elementData?.id
         if (!id) return
 
-        // Point category: not a simple shape.data field — re-skin the whole
-        // pin group in place (frozen props mean React won't re-render it) and
-        // persist the new category + derived colors to the store.
-        if (propertyKey === 'pointCategory') {
-            const group = selectedComponent?.group?.data
-            const elementData = group?.elementData
-            if (!group || !elementData) return
-            const cat =
-                POINT_CATEGORIES[value] ??
-                POINT_CATEGORIES[DEFAULT_POINT_CATEGORY]!
-            const existingMeta = elementData.metadata ?? {}
-            const ringRadius = existingMeta.ringRadius ?? DEFAULT_GEO_RING_RADIUS
-            const updatedMeta = {
-                ...existingMeta,
-                category: cat.id,
-                svgIcon: cat.svgIcon,
+        // A point's colour is its circle's fill. Two things make it more than
+        // the generic fill path below: `stroke` is mirrored so anything reading
+        // either field sees one colour, and the legacy category marker is
+        // cleared — while `metadata.category` is set the point deliberately
+        // renders in the standard colour (see pointColorOf), so a user's pick
+        // would be thrown away on the next reload.
+        const pointGroup = selectedComponent?.group?.data
+        if (
+            pointGroup?.elementData?.componentType === 'point' &&
+            (propertyKey === 'fill' || propertyKey === 'stroke')
+        ) {
+            const elementData = pointGroup.elementData
+            const circle = getPointCircle(pointGroup)
+            if (circle) circle.fill = value
+            if (!opts?.preview) {
+                const { category: _legacy, ...metadata } =
+                    elementData.metadata ?? {}
+                elementData.metadata = metadata
+                elementData.fill = value
+                elementData.stroke = value
+                updateComponentBulkPropertiesInLocalStore(id, {
+                    fill: value,
+                    stroke: value,
+                    metadata,
+                })
             }
-            buildPointVisual(twoJSInstance, group, {
-                category: cat.id,
-                ringRadius,
-            })
-            elementData.metadata = updatedMeta
-            elementData.stroke = cat.bg
-            elementData.fill = cat.bg
-            updateComponentBulkPropertiesInLocalStore(id, {
-                metadata: updatedMeta,
-                stroke: cat.bg,
-                fill: cat.bg,
-            })
             twoJSInstance?.update()
             return
         }
