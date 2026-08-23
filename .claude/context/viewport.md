@@ -32,7 +32,7 @@ What gets persisted
 `VIEWPORT_KEY_PREFIX` is stored as `craftbase_viewport_` in misc.js
 
 ```
-craftbase_viewport_<boardId> → { tx: -340, ty: 120, scale: 1.8 }
+craftbase_viewport_<baseId> → { tx: -340, ty: 120, scale: 1.8 }
 ```
 
 That means: the scene is shifted 340px left and 120px down from origin, and zoomed in to 1.8×. On restore, those three numbers are fed back through ZUI's API to reconstruct the

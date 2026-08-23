@@ -33,7 +33,7 @@ const HomePage: React.FC = () => {
 
     return (
         <>
-            {/* <Redirect to={`/board/03a3706e-fe79-4df5-80f6-2f4040ade05f`} /> */}
+            {/* <Redirect to={`/base/03a3706e-fe79-4df5-80f6-2f4040ade05f`} /> */}
             <div
                 className="home-page-container relative bg-canvas "
                 // style={{ height: `${pageHeight}px` }}
@@ -108,25 +108,25 @@ const HomePage: React.FC = () => {
                             <div className="text-left transition-opacity duration-300 ease-in-out">
                                 <h1 className="text-base lg:text-3xl 2xl:text-4xl font-bold font-display">
                                     Instant Infinite Whiteboard with Unique
-                                    Shareable Board Links
+                                    Shareable Canvas Links
                                 </h1>
                                 <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     Start brainstorming in craftbase. Create as
-                                    much as shared boards as you like. Each
-                                    shared board gets a unique URL. No accounts.
+                                    as many shared canvases as you like. Each
+                                    shared canvas gets a unique URL. No accounts.
                                     No login/signup. Just start thinking.
                                 </p>
                                 {/* <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     With real-time updates across all devices,
                                     you can collaborate with your peers in
-                                    real-time just by sharing them the board
+                                    real-time just by sharing them the canvas
                                     link.
                                 </p> */}
                                 <div className="mt-4">
                                     <Button
                                         intent="primary"
                                         name="start_now"
-                                        // label="Let's create board"
+                                        // label="Let's create canvas"
 
                                         size="large"
                                         onClick={onCreateCanvas}
@@ -168,7 +168,7 @@ const HomePage: React.FC = () => {
                                         No sign-up(s) needed
                                     </p>
                                     <p className="mt-2">
-                                        Create as many boards you want without
+                                        Create as many canvases you want without
                                         registering or signing up on platform.
                                     </p>
                                 </div>

@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     getCanvasBox,
     drawShape,
     placeText,
@@ -246,7 +246,7 @@ const SETTLE_MS = 400
 
 test.describe('Group apply property — only the targeted property changes', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     test('fill: only path fill changes; text fill/stroke untouched', async ({

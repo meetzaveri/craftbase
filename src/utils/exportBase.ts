@@ -1,17 +1,17 @@
-import type { ComponentStore } from '../types/board'
-import type { BaseConfig } from '../bases/types'
+import type { ComponentStore } from '../types/base'
+import type { BaseTypeConfig } from '../baseTypes/types'
 import { GROUP_COMPONENT } from '../constants/misc'
 import { isWelcomeComponent } from './welcomeSketch'
 import { version as appVersion } from '../../package.json'
 
-interface BoardViewport {
+interface BaseViewport {
     scale: number
     tx: number
     ty: number
 }
 
 /**
- * Serialize the current board to a versioned, branded JSON envelope and
+ * Serialize the current base to a versioned, branded JSON envelope and
  * trigger a browser download. Reuses the same canonical `ComponentStore`
  * the localStorage draft persists, so round-trip fidelity is inherited.
  *
@@ -21,10 +21,10 @@ interface BoardViewport {
  * that old build (it simply ignores the base fields). Don't add a version
  * check: it would be the compatibility break, not the fix.
  */
-export function exportBoardAsJson(
+export function exportBaseAsJson(
     componentStore: ComponentStore,
-    viewport: BoardViewport,
-    base?: BaseConfig
+    viewport: BaseViewport,
+    base?: BaseTypeConfig
 ): void {
     // Same save-side filter as useLocalDraftPersistence.ts — drop transient
     // groups and onboarding welcome-sketch seeds so they never leave the app.
@@ -42,8 +42,8 @@ export function exportBoardAsJson(
         appVersion,
         exportedAt: Date.now(),
         viewport,
-        base: base?.base ?? 'board',
-        baseConfig: base?.mapAnchor ? { mapAnchor: base.mapAnchor } : null,
+        baseType: base?.type ?? 'board',
+        baseTypeConfig: base?.mapAnchor ? { mapAnchor: base.mapAnchor } : null,
         components,
     }
     downloadJson(JSON.stringify(payload, null, 2))
@@ -55,7 +55,7 @@ function downloadJson(json: string): void {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `craftbase-board-${Date.now()}.json`
+    a.download = `craftbase-canvas-${Date.now()}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

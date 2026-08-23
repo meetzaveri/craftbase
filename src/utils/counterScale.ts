@@ -18,7 +18,7 @@
 //
 // Reference: the standalone prototype in point_two.js.
 
-import { DEFAULT_GEO_RESIST } from '../constants/misc'
+import { DEFAULT_GEO_RESIST, GEO_TEXT_RESIST } from '../constants/misc'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ShapeLike = any
@@ -37,16 +37,23 @@ export function computeCounterScale(
  * width, because scaling their geometry would peel the outline off the map.
  * Don't unify them.
  *
- * geoText is deliberately absent: map text scales with the geography it labels,
- * like every other mark on the canvas.
+ * geoText counter-scales its whole group too: it is a caption, and at resist 0
+ * it rendered at 0.3px over a county (see GEO_TEXT_RESIST). It keeps its own
+ * resist constant because the two are tuned for different jobs — a pin is
+ * chrome, a caption is content.
  */
-const GROUP_SCALED_TYPES: ReadonlySet<string> = new Set(['point'])
+const GROUP_SCALED_TYPES: ReadonlySet<string> = new Set(['point', 'geoText'])
 const STROKE_SCALED_TYPES: ReadonlySet<string> = new Set(['area', 'route'])
+
+/** The default resist for a type, when the record carries no `metadata.resist`. */
+function defaultResistFor(type: string): number {
+    return type === 'geoText' ? GEO_TEXT_RESIST : DEFAULT_GEO_RESIST
+}
 
 /**
  * Stroke-resist applies to a pencil only when the stroke was drawn on a
  * geographic base. Freehand is offered on every base, so unlike area/route its
- * `componentType` does not settle the question — `objectClass` does. A board
+ * `componentType` does not settle the question — `objectClass` does. A board-base
  * scribble must keep scaling with the world like every other whiteboard mark.
  */
 export function isStrokeScaled(item: ShapeLike): boolean {
@@ -81,7 +88,7 @@ export function applyCounterScaleToCopy(
 
     const factor = computeCounterScale(
         zuiScale,
-        item?.metadata?.resist ?? DEFAULT_GEO_RESIST
+        item?.metadata?.resist ?? defaultResistFor(type)
     )
 
     if (GROUP_SCALED_TYPES.has(type)) {

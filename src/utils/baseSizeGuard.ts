@@ -1,4 +1,4 @@
-import type { ComponentStore } from '../types/board'
+import type { ComponentStore } from '../types/base'
 import { GROUP_COMPONENT, DRAFT_STORAGE_KEY } from '../constants/misc'
 import { isWelcomeComponent } from './welcomeSketch'
 
@@ -6,7 +6,7 @@ import { isWelcomeComponent } from './welcomeSketch'
  * localStorage stores strings as UTF-16 (~2 bytes/char) and the per-origin
  * quota is ~5MB in most browsers. This budget is the write-side / load-side
  * ceiling (in UTF-16 bytes) — a proactive line kept near, but under, the real
- * quota so editing stays smooth and huge boards don't freeze on load.
+ * quota so editing stays smooth and huge bases don't freeze on load.
  *
  * NOTE: this is a *storage footprint* (≈2× the on-disk file size), not the
  * file size. A 2.3MB `.json` export occupies ~4.6MB here.
@@ -122,7 +122,7 @@ export function isRawDraftOverBudget(raw: string): boolean {
 
 /**
  * Download the raw persisted draft as a file WITHOUT rendering it — the rescue
- * path for a board too large to open. Reads straight from localStorage so it
+ * path for a base too large to open. Reads straight from localStorage so it
  * never mounts thousands of elements into Two.js (which is what freezes the
  * page in the first place).
  */
@@ -131,7 +131,7 @@ export function downloadRawDraftBackup(raw: string): void {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `craftbase-board-backup-${Date.now()}.json`
+    a.download = `craftbase-canvas-backup-${Date.now()}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

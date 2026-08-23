@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import RouteFactory from '../../factory/route'
 import { computeCounterScale } from '../../utils/counterScale'
@@ -27,10 +27,10 @@ function Route(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
-        zuiInBoard,
+        zuiInBase,
         selectedComponent,
         updateComponentBulkPropertiesInLocalStore,
-    } = useBoardContext()
+    } = useBaseContext()
 
     const groupRef = useRef<ShapeLike>(null)
     const shapeRef = useRef<ShapeLike>(null)
@@ -38,12 +38,12 @@ function Route(props: ElementProps): ReactElement {
 
     // Live values read inside DOM drag handlers registered once at mount — keep
     // them in refs to dodge the stale-closure trap (see CLAUDE.md).
-    const zuiRef = useRef<ShapeLike>(zuiInBoard)
+    const zuiRef = useRef<ShapeLike>(zuiInBase)
     const persistRef = useRef(updateComponentBulkPropertiesInLocalStore)
     const idRef = useRef<string>(props.id)
     useEffect(() => {
-        zuiRef.current = zuiInBoard
-    }, [zuiInBoard])
+        zuiRef.current = zuiInBase
+    }, [zuiInBase])
     useEffect(() => {
         persistRef.current = updateComponentBulkPropertiesInLocalStore
     }, [updateComponentBulkPropertiesInLocalStore])
@@ -85,7 +85,7 @@ function Route(props: ElementProps): ReactElement {
             // resists the zoom — the geometry stays glued to the world (unlike
             // point.tsx, which counter-scales the whole group).
             const initialScale =
-                (zuiInBoard as ShapeLike)?.zui?.scale ?? two?.scene?.scale
+                (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
             if (initialScale) {
                 path.linewidth =
                     baseLinewidth * computeCounterScale(initialScale, resist)

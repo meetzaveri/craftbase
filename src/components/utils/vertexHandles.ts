@@ -66,7 +66,7 @@ export interface VertexHandlesOptions {
     group: ShapeLike
     path: ShapeLike
     componentId: string
-    /** Live BoardContext camera wrapper ({ zui, ... }). */
+    /** Live BaseContext camera wrapper ({ zui, ... }). */
     zuiRef: MutableRefObject<ShapeLike>
     /** Live `updateComponentBulkPropertiesInLocalStore`. */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,7 +134,7 @@ export function attachVertexHandles({
 
     // Every DOM read below needs rendered SVG nodes, which only exist after a
     // render. Batch that render with every other element mounting this frame —
-    // a synchronous two.update() per element made mounting a board O(N²).
+    // a synchronous two.update() per element made mounting a base O(N²).
     // `cancelled` guards an unmount before the frame fires, so we never bind a
     // node that is already gone.
     scheduleRender(two, () => {

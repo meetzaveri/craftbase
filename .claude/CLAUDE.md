@@ -23,7 +23,7 @@ via `"craftbase": "link:../craftbase"`. **It is being torn down.** Do not design
 do not preserve its call site, and do not weigh "would this break craftmaps?" when
 evaluating a change.
 
-The map is now craftbase's own product identity — the base switcher (`src/bases/`) —
+The map is now craftbase's own product identity — the base switcher (`src/baseTypes/`) —
 which is exactly what made craftmaps redundant.
 
 ## Implications when editing craftbase
@@ -35,7 +35,7 @@ which is exactly what made craftmaps redundant.
     craftmaps needed them, and each one is now a fork in the code with no live caller:
     - `geoObjectsEnabled` — **deprecated**; only ever meant "surface the geo toolset".
         Superseded by the map base's own toolset.
-    - `renderBackground` — consumer-painted backdrop slot. Superseded by `BaseProvider`.
+    - `renderBackground` — consumer-painted backdrop slot. Superseded by `BaseTypeProvider`.
     - `onCameraChange`, `scaleToDisplay` — still harmless, but no external caller.
     Removing them is cleanup, not a breaking change. Sequence it deliberately (see
     "Base switcher" below — `geoObjectsEnabled` still drives the toolset overlay and
@@ -47,10 +47,11 @@ which is exactly what made craftmaps redundant.
     `optimizeDeps.exclude` note, the tailwind-purge-across-`node_modules` rule, and the
     `link:` live-reload caveat all only mattered for craftmaps. Only this repo's own Vite
     and tailwind configs matter now.
-- **Backward compatibility that still counts is *data*, not API.** Existing boards in
+- **Backward compatibility that still counts is *data*, not API.** Existing bases in
     localStorage and Hasura, saved viewports, exported JSON files. Those users are real.
-    Keep the "no write on read", legacy-viewport-key and `formatVersion`-never-validated
-    guarantees described under "Base switcher".
+    Keep the "no write on read", unsuffixed-viewport-key and
+    `formatVersion`-never-validated guarantees described under "Bases and base types",
+    and route any storage rename through `storageMigration.ts` rather than resetting.
 
 ## When in doubt
 
@@ -67,14 +68,14 @@ Craftbase is an minimal virtual whiteboarding tool built with React that uses Tw
 
 ## Core Architecture
 
-**Rendering Stack**: Board → Canvas → ElementRenderer → Component Element → Component Factory
+**Rendering Stack**: Base → Canvas → ElementRenderer → Component Element → Component Factory
 
-- **Board**: Main container handling canvas rendering, sidebar, and floating toolbar
+- **Base**: The workspace, and the main container — canvas rendering, sidebar, floating toolbar. A base has a **type** (`board` / `map` / `image`) that decides the substrate it is drawn on; see "Bases and base types" below.
 - **Canvas**: 2D rendering logic and user interaction controls (mouse, drag, zoom, pan)
 - **Component Elements**: React functional components with attached event listeners
 - **Component Factories**: Template generators that produce component definitions
 
-The Board component uses React Context (`BoardContext`) to pass state and methods down to child components. This is the primary state management pattern used throughout the application.
+The Base component uses React Context (`BaseContext`) to pass state and methods down to child components. This is the primary state management pattern used throughout the application.
 
 ## React + Two.js Stale Closure Pattern
 
@@ -152,8 +153,9 @@ Collection). Fixed once in `groupobject.tsx` `handleOnDeleteGroupElements`.
 
 Top-level page views/routes.
 
-- **`Board/`**: Main whiteboard page
-    - `board.tsx` - Board component with `BoardContext` provider, GraphQL operations
+- **`Base/`**: The workspace page (the canvas itself)
+    - `base.tsx` - Base component with GraphQL operations; consumes `BaseContext`
+    - `baseContext.ts` - The context object, in its own stable module so its identity survives HMR
     - `index.tsx` - Entry point with error boundary
     - `errorBoundary.tsx` - Error boundary wrapper
 
@@ -191,10 +193,22 @@ Reusable React UI components.
     - `elementRenderWrappers.tsx` - `ElementRenderWrapper` and `GroupRenderWrapper` factory functions used by Canvas to lazily mount element components
 
 - **`modals/`**: Standalone modal components
-    - `PermissionErrorModal.tsx` - Permission error modal (extracted from board.tsx)
-    - `StorageLimitModal.tsx` - Storage quota exceeded modal (extracted from board.tsx)
+    - `PermissionErrorModal.tsx` - Permission error modal (extracted from base.tsx)
+    - `StorageLimitModal.tsx` - Storage quota exceeded modal (extracted from base.tsx)
 
 - **`floatingToolbar.tsx`**: Floating toolbar for quick actions (every time when a user clicks component, this floating toolbar gets visible and invisible when the focus is moved away from component)
+
+### `/src/baseTypes`
+
+One module per base type — the substrate a base is drawn on.
+
+- `types.ts` - `BaseType` union + the `BaseTypeProvider` interface
+- `registry.ts` - `BaseType` → lazily-imported provider; `isBaseType` guard
+- `boardType.ts` - Parchment whiteboard (near no-op; the CSS owns the backdrop)
+- `mapType.ts` - MapLibre + CARTO Positron; dynamically imported
+- `baseTypeStorage.ts` - `craftbase_base_type_<baseId>` read/write
+- `zoomLimits.ts` - Per-type camera range (`BASE_TYPE_ZOOM_LIMITS`)
+- `mercator.ts` - lng/lat ⇄ surface-space conversion
 
 ### `/src/factory/`
 
@@ -230,7 +244,7 @@ Application constants and configuration.
 
 ### `/src/hooks`
 
-Custom React hooks extracted from board.tsx and newCanvas.tsx.
+Custom React hooks extracted from base.tsx and newCanvas.tsx.
 
 - `useDrawingModes.ts` - Draw mode state (`isPencilMode`, `isArrowDrawMode`, `isTextDrawMode`, pointer toggle)
 - `useElementDefaults.ts` - Element defaults (`defaultLinewidth`, `defaultStrokeType`, `defaultStrokeColor`, text defaults) and their setters
@@ -269,7 +283,7 @@ Global stylesheets.
 
 ### Root Level (`/src`)
 
-- **`App.tsx`**: Root application component with routing (`/` → Board, `/board/:id` → Board, `/home` → Marketing)
+- **`App.tsx`**: Root application component with routing (`/` → Base, `/base/:id` → Base, `/board/:id` → `LegacyBaseRedirect` for links shared before the rename, `/home` → Marketing)
 - **`newCanvas.tsx`**: Main canvas rendering logic using Two.js
 - **`routes.ts`**: Application routes configuration
 - **`index.tsx`**: Application entry point
@@ -279,12 +293,12 @@ Global stylesheets.
 
 1. **User Interaction** → Canvas event listeners (mouse, drag, zoom)
 2. **Component Creation** → Factory generates template → Element renderer creates Two.js object
-3. **State Updates** → React Context (BoardContext) + local component state → Component re-renders
+3. **State Updates** → React Context (BaseContext) + local component state → Component re-renders
 4. **Backend Sync** → GraphQL mutations fire only when `isPersisted` is true. In local mode (`/`), state lives in React + localStorage draft only.
 
 ## React Context
 
-The **BoardContext** (created in `src/views/Board/board.tsx`) provides:
+The **BaseContext** (declared in `src/views/Base/baseContext.ts`, provided by `src/views/Base/base.tsx`) provides:
 
 - Component store state
 - Selected component state
@@ -294,14 +308,15 @@ The **BoardContext** (created in `src/views/Board/board.tsx`) provides:
 - Element defaults — stroke/fill/text (from `useElementDefaults` hook)
 - Undo/history functions — `recordToHistoryLog`, `undoLastAction` (from `useComponentHistory` hook)
 - GraphQL mutation functions
-- `boardId`, `isPersisted`, `persistBoard`, `backgroundBoardId` (canvas-first UX)
-- Other board-level state and handlers
+- `baseId`, `isPersisted`, `persistBase`, `backgroundBaseId` (canvas-first UX)
+- `activeBaseType`, `switchBaseType`, `toolset` (base-type switching)
+- Other base-level state and handlers
 
-Child components access this context via `useContext(BoardContext)`.
+Child components access this context via `useContext(BaseContext)`.
 
-### Hook composition in board.tsx
+### Hook composition in base.tsx
 
-`board.tsx` composes several custom hooks in this order (order matters — each may depend on the previous):
+`base.tsx` composes several custom hooks in this order (order matters — each may depend on the previous):
 
 1. `useDrawingModes()` — draw mode state and setters
 2. `useMobileToolbarPanels({ isMobile, selectedComponent })` — panel visibility
@@ -314,7 +329,7 @@ Child components access this context via `useContext(BoardContext)`.
 - **Language**: TypeScript (`strict: true`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
 - **UI Framework**: React (^18.3.1)
 - **Canvas Rendering**: Two.js (custom DOM-level event handling; see Stale Closure section)
-- **State Management**: React Context (BoardContext) + local component state
+- **State Management**: React Context (BaseContext) + local component state
 - **Backend**: GraphQL (Hasura) with codegen via `yarn codegen` → `src/schema/generated.ts`
 - **GraphQL Client**: Apollo Client
 - **Styling**: CSS + Tailwind CSS
@@ -344,56 +359,88 @@ When testing on a real mobile device (laptop and phone on same WiFi):
 
 See detailed notes in `.claude/context/` for feature-specific implementation details:
 
-- `.claude/context/floating-toolbar.md` - Floating toolbar activation and structure
 - `.claude/context/undo-history.md` - Undo/history stack: action entry shapes, `recordToHistoryLog`, and `undoLastAction()` as the canonical rollback for any failed mutation
 - `.claude/context/responsive-design.md` - When to use Tailwind responsive prefixes vs `useMediaQueryUtils` hook; breakpoint values for both; the core decision rule
 - `.claude/context/font-guide.md` - Font system: Geist (UI chrome), Fraunces (branding/headings), Caveat Brush (canvas sketch); CSS variables, Tailwind config, and usage rules per area
 - `.claude/context/reorder.md` - How reording/positioning of elements in Z-Axis (Z-order) works in craftbase
-- `.claude/context/v1-readiness-roadmap.md` - the roadmpa for v1 readiness of craftbase consisting of plan and promises of data durability, API stability and operational confidence.
+- `.claude/context/viewport.md` - What tx/ty/scale mean; why `zoomSet` + `translateSurface`; how the camera persists
+- `.claude/context/geo-objects-plan.md` - Original implementation plan for the geo elements (point/area/route) — partly historical
+- `.claude/context/v1-readiness-roadmap.md` - The roadmap for v1 readiness of craftbase: plan and promises around data durability, API stability and operational confidence.
 
-## Base switcher (board ⇄ map)
+## Bases and base types
 
-A **base** is the substrate the canvas is drawn on: `board` (parchment) or `map`
-(OpenStreetMap). Lives in `src/bases/`, behind the `BaseProvider` interface
-(`types.ts`), resolved through `registry.ts` with a dynamic import.
+A **base** is the workspace: the thing a user opens, draws on, shares and
+persists. It is the entity behind `bases.base` in Postgres, `/base/:id` in the
+URL, and `BaseContext` in React.
 
-- **Element coordinates never change across a switch.** They stay in Two.js
-  surface space; only the backdrop and the camera change. The map is slaved to
-  the ZUI camera by `syncMapToZui` in `mapBase.ts` — surface (0,0) always sits
-  over `anchor.lngLat`, and `mapZoom = anchor.zoom + log2(zuiScale)`. That
+A base has a **type** — the substrate it is drawn on. Three exist in the design:
+`board` (parchment whiteboard, labelled **Whiteboard** in the UI), `map`
+(OpenStreetMap) and `image` (still to be built). Types live in `src/baseTypes/`
+behind the `BaseTypeProvider` interface (`types.ts`), resolved through
+`registry.ts` with a dynamic import.
+
+Keep the two words apart. "Base" never means the backdrop; "base type" never
+means the document. `BaseType` is the union, `base.type` is the column,
+`activeBaseType` is the context value, `baseTypeSwitcher.tsx` is the control.
+
+- **Element coordinates never change when the type changes.** They stay in
+  Two.js surface space; only the backdrop and the camera move. The map is slaved
+  to the ZUI camera by `syncMapToZui` in `mapType.ts` — surface (0,0) always
+  sits over `anchor.lngLat`, and `mapZoom = anchor.zoom + log2(zuiScale)`. That
   equation is the whole contract; if the map drifts against the ink, it's wrong.
-- **Each base owns its own viewport.** A base is a workspace, not a wallpaper:
-  panning a map must not drag the whiteboard's view with it. `viewportStorage.ts`
-  keys the camera per base, `board.tsx` banks the outgoing camera and restores
-  the incoming one on every switch, and an unvisited base opens at identity.
-  The board base deliberately keeps the **unsuffixed legacy key**
-  (`craftbase_viewport_<boardId>`) so pre-bases viewports still restore.
-- **Each base shows only its own content** (`geoVisibility.ts`,
-  `applyBaseVisibility`): geo objects hide on the board base, `BOARD_ONLY_TYPES`
-  (rectangle/circle/diamond/arrowLine/curvedLine/pencil/line/divider) hide on the
-  map base, and **text stays visible on both**. Hidden via Two.js `visible`,
-  never unmounted and never deleted — the records stay in the store, draft and DB.
+- **Each base type owns its own viewport.** A type is a workspace, not a
+  wallpaper: panning a map must not drag the whiteboard's view with it.
+  `viewportStorage.ts` keys the camera per type, `base.tsx` banks the outgoing
+  camera and restores the incoming one on every switch, and an unvisited type
+  opens at identity. The board type deliberately keeps the **unsuffixed key**
+  (`craftbase_viewport_<baseId>`), which is also why the board → base rename
+  left these keys alone: they never carried the word "board".
+- **Each base type shows only its own content** (`geoVisibility.ts`,
+  `applyBaseTypeVisibility`): geo objects hide on the board type, and
+  `BOARD_ONLY_TYPES` (rectangle/circle/diamond/arrowLine/curvedLine/pencil/
+  line/divider) hide on the map type. Hidden via Two.js `visible`, never
+  unmounted and never deleted — the records stay in the store, draft and DB.
+- **Text is scoped per record, not per type.** The same `newText` type is
+  authorable on more than one base type, so `buildTextShapeData` (`base.tsx`)
+  stamps `metadata.baseTypeScope` with the authoring type and that pin outranks
+  every type-level rule. Text used to be universal, which meant whiteboard text
+  leaked onto the map while map text (`geoText`, flagged `objectClass: 'geo'`)
+  correctly stayed put — the same gesture producing two different scopes.
+  Records written before the stamp are caught by a legacy rule: a bare
+  `newText` can only have been authored on the board base, because `'text'` is
+  in `GEO_HIDDEN_TOOLS` so map text is always `geoText`. Covered by
+  `tests/e2e/text-base-type-scope.spec.js`.
+- **The visibility rules are still binary against `'board'`, and that is the
+  known blocker for the image type.** `objectClass === 'geo'` resolves to
+  `type !== 'board'`, so geo objects would appear on an image base; and
+  `BOARD_ONLY_TYPES` resolves to `type === 'board'`, so shapes would hide on
+  one. `metadata.baseTypeScope` is the mechanism that scales — it is the
+  highest-precedence rule and it is per-record — but it currently has one
+  writer (`welcomeSketch.ts`). Make it universal before building the image type.
+- **`baseTypeScope` keeps a legacy read.** `scopedBaseType` accepts the old
+  `metadata.baseScope` spelling because that field lives on rows already in
+  Hasura, which `storageMigration.ts` cannot reach. It is the single deliberate
+  back-compat read in the codebase; everything else speaks one vocabulary.
 - **Any camera change must reach `onCameraChange`.** Handlers inside `addZUI`
   do this already. Anything driving the camera from *outside* — currently only
   `ZoomControls` — must call `zui.notifyCameraChange()`, or the backdrop
   silently freezes while the canvas keeps moving.
-- **Persistence:** `craftbase_base_<boardId>` (`baseStorage.ts`), a sidecar key
-  mirroring the viewport-key pattern, swept by the same TTL loop in `board.tsx`.
-  Never inside the draft blob, and **never written on read** — a board that has
-  never touched the switcher must leave localStorage untouched, which is what
-  keeps pre-bases boards byte-identical.
-- **Toolbar gating:** read `toolset` from `BoardContext`, not `baseProvider`.
-  `toolset` is the base's gating *unless* the deprecated `geoObjectsEnabled`
+- **Persistence:** `craftbase_base_type_<baseId>` (`baseTypeStorage.ts`), a
+  sidecar key mirroring the viewport-key pattern, swept by the same TTL loop in
+  `base.tsx`. Never inside the draft blob, and **never written on read** — a
+  base that has never touched the switcher must leave localStorage untouched.
+- **Toolbar gating:** read `toolset` from `BaseContext`, not the provider.
+  `toolset` is the type's gating *unless* the deprecated `geoObjectsEnabled`
   prop overlays the geo toolset.
 - **`geoObjectsEnabled` / `renderBackground` are dead weight awaiting removal.**
   Both exist only for the now-defunct craftmaps consumer. `geoObjectsEnabled`
-  only ever meant "surface the geo tools" (never "use the map base" — that
-  mapping would have stacked two maps), and `renderBackground` sets
-  `baseSwitcherEnabled = false` because the caller owned the substrate. With no
-  caller left, both branches are unreachable in practice: **delete them rather
-  than extend them**, and let `toolset` come purely from the active base.
-- **maplibre-gl is dynamically imported in `mapBase.ts` only** (~1MB chunk), so
-  board-base users never fetch it. It needs
+  only ever meant "surface the geo tools" (never "use the map" — that mapping
+  would have stacked two maps), and `renderBackground` sets
+  `baseTypeSwitcherEnabled = false` because the caller owned the substrate.
+  With no caller left, both branches are unreachable in practice: **delete them
+  rather than extend them**, and let `toolset` come purely from the active type.
+- **maplibre-gl is dynamically imported in `mapType.ts` only** (~1MB chunk), so
+  whiteboard users never fetch it. It needs
   `canvasContextAttributes: { preserveDrawingBuffer: true }` or PNG export
   captures a blank backdrop.
 - **The basemap is CARTO Positron vector tiles** (`BASEMAP_STYLE_URL`) — OSM
@@ -401,11 +448,27 @@ A **base** is the substrate the canvas is drawn on: `board` (parchment) or `map`
   TileJSON. Deliberately *not* osm.org's raster tiles: those serve one baked-in
   design capped at z19, with nothing to restyle. The style is one exported
   constant so swapping providers stays a one-line change.
-- **Export:** JSON is `formatVersion: '1.1'` with `base`/`baseConfig`, and the
-  version is deliberately **never validated on import** — that's what keeps 1.0
-  and 1.1 files interchangeable both ways. PNG export asks the provider for a
-  raster backdrop (`captureBackdrop`) and injects it as an SVG `<image>`;
-  returning `null` falls back to the original parchment path.
+- **Export:** JSON is `formatVersion: '1.1'` with `baseType`/`baseTypeConfig`,
+  and the version is deliberately **never validated on import** — that's what
+  keeps files interchangeable both ways. The importer reads only `components`
+  and `viewport`, so a pre-rename file carrying `boardId` still opens: the field
+  is ignored and both apply paths stamp their own. PNG export asks the provider
+  for a raster backdrop (`captureBaseTypeBackdrop`) and injects it as an SVG
+  `<image>`; returning `null` falls back to the parchment path.
+
+## Storage migration
+
+`src/utils/storageMigration.ts` runs once at boot from `src/index.tsx`, guarded
+by `craftbase_storage_version`. It exists so the board → base rename did not
+wipe local work: it moves `craftbase_base_<id>` → `craftbase_base_type_<id>`
+(reshaping `base` → `type`), moves `craftbase_background_board_id` →
+`craftbase_background_base_id`, remaps `boardId`/`boardName` → `baseId`/`baseName`
+inside the draft, and drops the dead `lastOpenBoard`.
+
+Rules: every step is independently try/caught (a corrupt entry costs that entry,
+never the boot), and **no read path anywhere else carries a fallback**. Bump
+`STORAGE_VERSION` and add a step for any future storage rename. Covered by
+`tests/e2e/storage-migration.spec.js`.
 
 ## Port connectors (connectable arrows)
 
@@ -433,8 +496,8 @@ edge **port**.
   `tailShapeId`/`tailEdge`/`tailPortIndex` and `headShapeId`/`headEdge`/
   `headPortIndex` (`*Edge` = `n/e/s/w-resize`; `*PortIndex` = fan slot among
   connectors stacked on the same port, reassigned by `restackPortConnectors`).
-  All 6 are Hasura columns (in `generated.ts` and the board-load query), so
-  bindings persist in both local mode and saved boards. Reverse lookup is
+  All 6 are Hasura columns (in `generated.ts` and the base-load query), so
+  bindings persist in both local mode and saved bases. Reverse lookup is
   derived by scanning the store (no shape-side columns).
   `reanchorArrowsForShape`/`persistBoundArrows` keep a docked endpoint glued when
   the bound shape moves/resizes.
@@ -452,40 +515,85 @@ edge **port**.
   `useComponentHistory` mirrors all 6 fields onto `elementData` and fires
   `restackPorts` for every touched port. Deleting a shape detaches its docked
   arrows (bindings cleared, arrows kept) as one `BATCH` with the shape's
-  DELETE (`detachArrowsForDeletedShapes` in `board.tsx`) — one undo restores
+  DELETE (`detachArrowsForDeletedShapes` in `base.tsx`) — one undo restores
   the shape and re-docks the arrows.
 - **Copy/paste** — `cloneElementData` carries the 6 binding fields; the paste
   path (`rebindClonedArrow` in `useCanvasClipboard`) remaps bindings to shapes
   cloned in the same paste, keeps bindings to shapes still on the canvas, and
   clears bindings whose shape is gone — then restacks once the arrow mounts.
 
-### Component schema (from DB)
+### DB schema
+
+Two tables matter. Types below are the real Postgres types — the previous
+version of this block was stale (it said `text`/`integer` where the columns are
+`uuid`/`float8`). Regenerate `src/schema/generated.ts` with `yarn codegen` after
+any change; never hand-edit it.
+
+**`bases.base`** — the workspace. Root field `bases_base`.
 
 ```
 {
-  id: uuid, // primary key, unique, default: gen_random_uuid()
-  componentType: text,
-  x: integer, // default: 0
-  y: integer, // default: 0
-  x1: integer, // default: 100
-  x2: integer, // default: 400
-  y1: integer, // default: 100
-  y2: integer, // default: 100
-  width: integer, // default: 120
-  height: integer, // default: 120
-  fill: text, // default: '#f4f4f2'
-  stroke: text | null,
-  linewidth: integer | null,
-  strokeType: text | null,
-  radius: integer | null,
-  iconStroke: text | null,
-  textColor: text | null,
-  boardId: text | null,
-  boardName: text | null,
-  metadata: jsonb | null,
-  children: jsonb | null,
-  isDummy: boolean | null,
+  id: uuid,               // primary key, default: gen_random_uuid()
+  type: bases_base_type,  // FK -> bases.base_type(value); NOT NULL, default 'board'
+  name: text | null,
+  isPublic: boolean,      // NOT NULL; flipped by the share flow
+  createdAt: bigint,      // NOT NULL
+  createdBy: text | null,
+  createdByEmail: text | null,
+  updatedAt: bigint,      // NOT NULL
   updatedBy: text | null,
-  createdAt: bigint | null, // default: epoch()
+  components: jsonb | null,   // legacy blob, superseded by components.component
+  comments: jsonb | null,
+  subscribersData: jsonb,     // NOT NULL
+  allowViewBy: jsonb | null,
+  allowUpdateBy: jsonb | null,
+  allowDeleteBy: jsonb | null,
 }
 ```
+
+**`bases.base_type`** — a Hasura *enum table* (`set_table_is_enum`), which is
+what makes `type` surface as the GraphQL enum `bases_base_type_enum` rather than
+a bare String. Adding a fourth type is one `INSERT`, not a constraint swap.
+
+```
+{ value: text primary key, comment: text }   // 'board' | 'map' | 'image'
+```
+
+**`components.component`** — the elements on a base. Root field
+`components_component`; object relationship `base` points back to `bases.base`.
+
+```
+{
+  id: uuid,               // primary key, default: gen_random_uuid()
+  componentType: text,    // NOT NULL
+  objectClass: text,      // 'geo' marks the geo toolset's output
+  baseId: uuid,           // NOT NULL, FK -> bases.base(id)
+  baseName: text | null,
+  x: float8, y: float8,
+  x1: float8, x2: float8, y1: float8, y2: float8,
+  width: float8, height: float8,
+  fill: text,             // NOT NULL, default '#f4f4f2'
+  stroke: text | null,
+  linewidth: float8 | null,
+  strokeType: text | null,
+  radius: float8 | null,
+  iconStroke: text | null,
+  textColor: text | null,
+  opacity: float | null,
+  position: integer,      // NOT NULL; Z-order (see reorder.md)
+  metadata: jsonb | null, // polymorphic: vertex array for pencil/route/area/
+                          // curvedLine; object for text/point; carries baseTypeScope
+  children: jsonb | null,
+  isDummy: boolean | null,
+  createdBy: text,        // NOT NULL
+  updatedBy: text | null,
+  createdAt: bigint | null,
+  // Port connector bindings — see "Port connectors" above
+  tailShapeId: uuid | null, tailEdge: text | null, tailPortIndex: integer,
+  headShapeId: uuid | null, headEdge: text | null, headPortIndex: integer,
+}
+```
+
+Note `metadata` is a union type Postgres cannot constrain and Hasura types as
+opaque `jsonb`; the client branches on `Array.isArray(metadata)` in several
+places. Splitting the vertex array into its own column is a known follow-up.

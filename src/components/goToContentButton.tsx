@@ -1,21 +1,21 @@
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../views/Board/boardContext'
+import { useBaseContext } from '../views/Base/baseContext'
+import { isUrlBasePath } from '../utils/baseRoutes'
 
 // Bottom-center pill that frames all elements into view (zoom-to-fit). A safety
-// net for boards that load showing empty space — content drawn far from the
+// net for bases that load showing empty space — content drawn far from the
 // origin, or a stale/seeded viewport pointing at emptiness. Hidden when the
-// board has no elements (nothing to go to). Complements the auto-fit-on-load,
+// base has no elements (nothing to go to). Complements the auto-fit-on-load,
 // which only fires when no content is visible; this button always works.
 const GoToContentButton = (): ReactElement | null => {
-    const { fitToContent, componentStore } = useBoardContext()
+    const { fitToContent, componentStore } = useBaseContext()
 
-    // Only on a URL-loaded board (/board/:id) — not the local home board (`/`),
-    // which lands on deliberately-placed content and needs no rescue. Matches
-    // the auto-fit-on-load scoping in newCanvas.
-    const isUrlBoard =
-        typeof window !== 'undefined' &&
-        window.location.pathname.startsWith('/board/')
-    if (!isUrlBoard) return null
+    // Only on a URL-loaded base (/base/:id, /map/:id) — not the local home base
+    // (`/`), which lands on deliberately-placed content and needs no rescue.
+    // Matches the auto-fit-on-load scoping in newCanvas; both ask the same
+    // question through the same helper so a new base route can't teach one
+    // about itself and not the other.
+    if (!isUrlBasePath()) return null
 
     const hasContent = Object.keys(componentStore ?? {}).length > 0
     if (!hasContent) return null

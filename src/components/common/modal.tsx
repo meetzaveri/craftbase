@@ -45,8 +45,16 @@ const Content = styled.div`
     box-sizing: border-box;
     min-height: 50px;
     min-width: 50px;
-    max-height: 80%;
-    max-width: 80%;
+    /* Phones, not just desktop. A max-width of 80% left a 390px screen a 312px
+       box, and once the 20px padding came off, 272px of usable width — less
+       than the 400-440px minWidths the modal bodies ask for, so their content
+       spilled out of the rounded box. Bound to the viewport instead and let
+       each body cap its own width (they all do). The overflow rule is the
+       other half: max-height used to clip tall content with no way to reach
+       it. NB: no backticks in here — this is a template literal. */
+    max-height: 85vh;
+    max-width: calc(100vw - 32px);
+    overflow: auto;
     box-shadow:
         0 3px 6px rgba(0, 0, 0, 0.16),
         0 3px 6px rgba(0, 0, 0, 0.23);

@@ -1,5 +1,6 @@
 import React, { type ReactNode } from 'react'
 import * as Sentry from '@sentry/react'
+import { BACKGROUND_BASE_STORAGE_KEY } from '../../constants/misc'
 
 interface Props {
     children?: ReactNode
@@ -9,7 +10,7 @@ interface State {
     hasError: boolean
 }
 
-class ErrorBoundaryBoardView extends React.Component<Props, State> {
+class ErrorBoundaryBaseView extends React.Component<Props, State> {
     constructor(props: Props) {
         super(props)
         this.state = { hasError: false }
@@ -23,10 +24,10 @@ class ErrorBoundaryBoardView extends React.Component<Props, State> {
         Sentry.captureException(error, {
             user: { id: localStorage.getItem('userId') ?? undefined },
             contexts: {
-                board: {
-                    boardId:
+                base: {
+                    baseId:
                         localStorage.getItem(
-                            'craftbase_background_board_id'
+                            BACKGROUND_BASE_STORAGE_KEY
                         ) ?? undefined,
                 },
             },
@@ -37,11 +38,11 @@ class ErrorBoundaryBoardView extends React.Component<Props, State> {
 
     override render(): ReactNode {
         if (this.state.hasError) {
-            return <h1>Couldn't load board view. Something went wrong</h1>
+            return <h1>Couldn't load canvas. Something went wrong</h1>
         }
 
         return this.props.children
     }
 }
 
-export default ErrorBoundaryBoardView
+export default ErrorBoundaryBaseView

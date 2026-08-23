@@ -5,20 +5,20 @@ import type {
     UpdateComponentInfoMutationVariables,
     InsertComponentMutation,
     InsertComponentMutationVariables,
-    UpdateBoardComponentsMutation,
-    UpdateBoardComponentsMutationVariables,
     DeleteComponentByIdMutation,
     DeleteComponentByIdMutationVariables,
     InsertBulkComponentsMutation,
     InsertBulkComponentsMutationVariables,
     InsertUserMutation,
     InsertUserMutationVariables,
-    CreateBoardMutation,
-    CreateBoardMutationVariables,
+    CreateBaseMutation,
+    CreateBaseMutationVariables,
     DeleteComponentsMutation,
     DeleteComponentsMutationVariables,
-    UpdateBoardVisibilityMutation,
-    UpdateBoardVisibilityMutationVariables,
+    UpdateBaseVisibilityMutation,
+    UpdateBaseVisibilityMutationVariables,
+    SharePersistedBaseMutation,
+    SharePersistedBaseMutationVariables,
     UpdateUserRevisitCountMutation,
     UpdateUserRevisitCountMutationVariables,
 } from '../generated'
@@ -52,27 +52,13 @@ export const INSERT_COMPONENT: TypedDocumentNode<
     }
 `
 
-export const UPDATE_BOARD_COMPONENTS: TypedDocumentNode<
-    UpdateBoardComponentsMutation,
-    UpdateBoardComponentsMutationVariables
-> = gql`
-    mutation updateBoardComponents($id: uuid = "", $components: jsonb = "") {
-        update_boards_board_by_pk(
-            pk_columns: { id: $id }
-            _set: { components: $components }
-        ) {
-            id
-        }
-    }
-`
-
 export const DELETE_COMPONENT_BY_ID: TypedDocumentNode<
     DeleteComponentByIdMutation,
     DeleteComponentByIdMutationVariables
 > = gql`
     mutation deleteComponentById($id: uuid = "") {
         delete_components_component_by_pk(id: $id) {
-            boardId
+            baseId
         }
     }
 `
@@ -87,7 +73,7 @@ export const INSERT_BULK_COMPONENTS: TypedDocumentNode<
         insert_components_component(objects: $objects) {
             affected_rows
             returning {
-                boardId
+                baseId
                 componentType
                 id
             }
@@ -107,12 +93,12 @@ export const INSERT_USER_ONE: TypedDocumentNode<
     }
 `
 
-export const CREATE_BOARD: TypedDocumentNode<
-    CreateBoardMutation,
-    CreateBoardMutationVariables
+export const CREATE_BASE: TypedDocumentNode<
+    CreateBaseMutation,
+    CreateBaseMutationVariables
 > = gql`
-    mutation createBoard($object: boards_board_insert_input! = {}) {
-        board: insert_boards_board_one(object: $object) {
+    mutation createBase($object: bases_base_insert_input! = {}) {
+        base: insert_bases_base_one(object: $object) {
             id
             createdBy
         }
@@ -132,14 +118,54 @@ export const DELETE_BULK_COMPONENTS: TypedDocumentNode<
     }
 `
 
-export const UPDATE_BOARD_VISIBILITY: TypedDocumentNode<
-    UpdateBoardVisibilityMutation,
-    UpdateBoardVisibilityMutationVariables
+export const UPDATE_BASE_VISIBILITY: TypedDocumentNode<
+    UpdateBaseVisibilityMutation,
+    UpdateBaseVisibilityMutationVariables
 > = gql`
-    mutation updateBoardVisibility($id: uuid = "") {
-        update_boards_board_by_pk(
+    mutation updateBaseVisibility($id: uuid = "") {
+        update_bases_base_by_pk(
             pk_columns: { id: $id }
             _set: { isPublic: true }
+        ) {
+            id
+            isPublic
+        }
+    }
+`
+
+/**
+ * Share a base that is ALREADY persisted: publish it and refresh the view a
+ * recipient lands on.
+ *
+ * Separate from `updateBaseVisibility` because re-sharing has to move the
+ * landing view — the owner has almost certainly panned since the base was
+ * created — while `updateBaseVisibility` is the create-time publish and has no
+ * view to move.
+ *
+ * The anchor is deliberately NOT in the `_set`. It is the georeference every
+ * stored element's x/y was measured against, so rewriting it would slide the
+ * whole world under ink that stays put. It is written once, at create time.
+ * Columns are named explicitly rather than taking a `bases_base_set_input`, so
+ * this mutation can only ever touch these four.
+ */
+export const SHARE_PERSISTED_BASE: TypedDocumentNode<
+    SharePersistedBaseMutation,
+    SharePersistedBaseMutationVariables
+> = gql`
+    mutation sharePersistedBase(
+        $id: uuid!
+        $landingLng: float8
+        $landingLat: float8
+        $landingZoom: float8
+    ) {
+        base: update_bases_base_by_pk(
+            pk_columns: { id: $id }
+            _set: {
+                isPublic: true
+                landingLng: $landingLng
+                landingLat: $landingLat
+                landingZoom: $landingZoom
+            }
         ) {
             id
             isPublic

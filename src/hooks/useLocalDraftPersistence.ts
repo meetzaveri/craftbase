@@ -3,12 +3,12 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import {
     DRAFT_STORAGE_KEY,
     DRAFT_EXPIRY_MS,
-    BACKGROUND_BOARD_STORAGE_KEY,
+    BACKGROUND_BASE_STORAGE_KEY,
     STORAGE_QUOTA_ERROR_NAME,
     GROUP_COMPONENT,
     WELCOME_DISMISSED_KEY,
 } from '../constants/misc'
-import type { ComponentStore } from '../types/board'
+import type { ComponentStore } from '../types/base'
 import {
     buildWelcomeSketch,
     isWelcomeComponent,
@@ -19,23 +19,23 @@ import {
     downloadRawDraftBackup,
     measureStoredDraftUtf8Bytes,
     MAX_DRAFT_UTF8_BYTES,
-} from '../utils/boardSizeGuard'
+} from '../utils/baseSizeGuard'
 
 export interface LocalDraftPersistenceOptions {
     isPersisted: boolean
-    localBoardId: string
+    localBaseId: string
     componentStore: ComponentStore
     setComponentStore: Dispatch<SetStateAction<ComponentStore>>
-    backgroundBoardIdRef: MutableRefObject<string | null>
-    setBackgroundBoardId: Dispatch<SetStateAction<string | null>>
+    backgroundBaseIdRef: MutableRefObject<string | null>
+    setBackgroundBaseId: Dispatch<SetStateAction<string | null>>
     onStorageLimitRef?: MutableRefObject<(() => void) | null>
     /**
      * Fired right after a draft write whose UTF-8 size exceeds
      * `MAX_DRAFT_UTF8_BYTES` — the write-side guard. The host reverts the last
-     * action and surfaces the "board is full" modal.
+     * action and surfaces the "canvas is full" modal.
      */
     onDraftOverBudgetRef?: MutableRefObject<(() => void) | null>
-    /** Opt-in onboarding seed; see BoardProps.welcomeSketch. */
+    /** Opt-in onboarding seed; see BaseProps.welcomeSketch. */
     welcomeSketch?: boolean
     /**
      * Forwarded to `buildWelcomeSketch` to pick the mobile vs. large-screen
@@ -48,32 +48,32 @@ export interface LocalDraftPersistenceOptions {
 export interface LocalDraftPersistenceApi {
     showStorageLimitModal: boolean
     setShowStorageLimitModal: Dispatch<SetStateAction<boolean>>
-    storageLimitBoardUrl: string | null
-    setStorageLimitBoardUrl: Dispatch<SetStateAction<string | null>>
+    storageLimitBaseUrl: string | null
+    setStorageLimitBaseUrl: Dispatch<SetStateAction<string | null>>
     handleStartNewCanvas: () => void
-    handleContinueOnSavedBoard: () => void
+    handleContinueOnSavedBase: () => void
     // Load-side rescue for a persisted draft too large to render safely.
-    showBoardTooLargeModal: boolean
-    handleDownloadBoardBackup: () => void
+    showBaseTooLargeModal: boolean
+    handleDownloadBaseBackup: () => void
     handleStartFreshFromTooLarge: () => void
-    handleOpenBoardAnyway: () => void
+    handleOpenBaseAnyway: () => void
     /** Live UTF-8 byte size of the persisted draft, refreshed on every save. */
     draftSizeBytes: number
 }
 
 interface PersistedDraft {
-    boardId?: string
+    baseId?: string
     components?: ComponentStore
     timestamp?: number
 }
 
 export function useLocalDraftPersistence({
     isPersisted,
-    localBoardId,
+    localBaseId,
     componentStore,
     setComponentStore,
-    backgroundBoardIdRef,
-    setBackgroundBoardId,
+    backgroundBaseIdRef,
+    setBackgroundBaseId,
     onStorageLimitRef,
     onDraftOverBudgetRef,
     welcomeSketch,
@@ -81,24 +81,24 @@ export function useLocalDraftPersistence({
 }: LocalDraftPersistenceOptions): LocalDraftPersistenceApi {
     const [showStorageLimitModal, setShowStorageLimitModal] = useState(false)
     const [draftSizeBytes, setDraftSizeBytes] = useState(0)
-    const [storageLimitBoardUrl, setStorageLimitBoardUrl] = useState<
+    const [storageLimitBaseUrl, setStorageLimitBaseUrl] = useState<
         string | null
     >(null)
-    const [showBoardTooLargeModal, setShowBoardTooLargeModal] = useState(false)
+    const [showBaseTooLargeModal, setShowBaseTooLargeModal] = useState(false)
     // Raw (unparsed) draft text deliberately NOT loaded because it's over
     // budget. Kept as a string — parsing it is itself heavy enough to stutter
     // the page — so it's only parsed if the user explicitly hits "Open anyway".
     const deferredRawDraftRef = useRef<string | null>(null)
     const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    // Restore draft and background board ID from localStorage on mount (local mode only)
+    // Restore draft and background base ID from localStorage on mount (local mode only)
     useEffect(() => {
         if (isPersisted) return
 
-        const savedBgBoardId = localStorage.getItem(BACKGROUND_BOARD_STORAGE_KEY)
-        if (savedBgBoardId) {
-            backgroundBoardIdRef.current = savedBgBoardId
-            setBackgroundBoardId(savedBgBoardId)
+        const savedBgBaseId = localStorage.getItem(BACKGROUND_BASE_STORAGE_KEY)
+        if (savedBgBaseId) {
+            backgroundBaseIdRef.current = savedBgBaseId
+            setBackgroundBaseId(savedBgBaseId)
         }
 
         let restoredDraft = false
@@ -114,7 +114,7 @@ export function useLocalDraftPersistence({
                 // sketch over it.
                 if (isRawDraftOverBudget(draft)) {
                     deferredRawDraftRef.current = draft
-                    setShowBoardTooLargeModal(true)
+                    setShowBaseTooLargeModal(true)
                     restoredDraft = true
                 } else {
                     const parsed = JSON.parse(draft) as PersistedDraft
@@ -132,13 +132,13 @@ export function useLocalDraftPersistence({
                         }
                     } else {
                         localStorage.removeItem(DRAFT_STORAGE_KEY)
-                        localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
+                        localStorage.removeItem(BACKGROUND_BASE_STORAGE_KEY)
                     }
                 }
             }
         } catch {
             localStorage.removeItem(DRAFT_STORAGE_KEY)
-            localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
+            localStorage.removeItem(BACKGROUND_BASE_STORAGE_KEY)
         }
 
         // First-visit welcome seed: only when opt-in flag is set, no draft was
@@ -150,7 +150,7 @@ export function useLocalDraftPersistence({
             !localStorage.getItem(WELCOME_DISMISSED_KEY)
         ) {
             setComponentStore(
-                buildWelcomeSketch(localBoardId, {
+                buildWelcomeSketch(localBaseId, {
                     width: window.innerWidth,
                     height: window.innerHeight,
                     isMobile,
@@ -181,7 +181,7 @@ export function useLocalDraftPersistence({
                 localStorage.setItem(
                     DRAFT_STORAGE_KEY,
                     JSON.stringify({
-                        boardId: localBoardId,
+                        baseId: localBaseId,
                         components: componentsToSave,
                         timestamp: Date.now(),
                     })
@@ -236,20 +236,20 @@ export function useLocalDraftPersistence({
     const handleStartNewCanvas = (): void => {
         localStorage.removeItem(DRAFT_STORAGE_KEY)
         setShowStorageLimitModal(false)
-        setStorageLimitBoardUrl(null)
+        setStorageLimitBaseUrl(null)
         window.location.href = '/'
     }
 
-    const handleContinueOnSavedBoard = (): void => {
+    const handleContinueOnSavedBase = (): void => {
         setShowStorageLimitModal(false)
-        if (storageLimitBoardUrl) {
-            window.location.href = storageLimitBoardUrl
+        if (storageLimitBaseUrl) {
+            window.location.href = storageLimitBaseUrl
         }
     }
 
     // Rescue: download the raw over-budget draft straight from localStorage
     // (no rendering, so it can't freeze) so the user keeps their work.
-    const handleDownloadBoardBackup = (): void => {
+    const handleDownloadBaseBackup = (): void => {
         const raw = readRawDraft()
         if (raw) downloadRawDraftBackup(raw)
     }
@@ -257,7 +257,7 @@ export function useLocalDraftPersistence({
     const handleStartFreshFromTooLarge = (): void => {
         localStorage.removeItem(DRAFT_STORAGE_KEY)
         deferredRawDraftRef.current = null
-        setShowBoardTooLargeModal(false)
+        setShowBaseTooLargeModal(false)
         window.location.href = '/'
     }
 
@@ -265,7 +265,7 @@ export function useLocalDraftPersistence({
     // it anyway — this is the heavy work the load path deliberately skipped, so
     // it may freeze; the user opted in. The write-side guard leaves the result
     // alone because the undo stack is empty.
-    const handleOpenBoardAnyway = (): void => {
+    const handleOpenBaseAnyway = (): void => {
         const raw = deferredRawDraftRef.current
         if (raw) {
             try {
@@ -285,20 +285,20 @@ export function useLocalDraftPersistence({
             }
             deferredRawDraftRef.current = null
         }
-        setShowBoardTooLargeModal(false)
+        setShowBaseTooLargeModal(false)
     }
 
     return {
         showStorageLimitModal,
         setShowStorageLimitModal,
-        storageLimitBoardUrl,
-        setStorageLimitBoardUrl,
+        storageLimitBaseUrl,
+        setStorageLimitBaseUrl,
         handleStartNewCanvas,
-        handleContinueOnSavedBoard,
-        showBoardTooLargeModal,
-        handleDownloadBoardBackup,
+        handleContinueOnSavedBase,
+        showBaseTooLargeModal,
+        handleDownloadBaseBackup,
         handleStartFreshFromTooLarge,
-        handleOpenBoardAnyway,
+        handleOpenBaseAnyway,
         draftSizeBytes,
     }
 }

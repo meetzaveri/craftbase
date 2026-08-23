@@ -2,23 +2,24 @@
 //
 // During the JS → TS migration these are intentionally loose where they need
 // to be: many fields carry internal handlers whose precise signatures live in
-// still-JS hook/board files. Later stages will tighten function signatures
-// in-place when those source files convert (hooks: Stage 4, board: Stage 10).
+// still-JS hook/base files. Later stages will tighten function signatures
+// in-place when those source files convert (hooks: Stage 4, base: Stage 10).
 //
 // Consumers (e.g. craftmaps) should rely on:
-//   - BoardProps  — props accepted by the exported <Board /> component
-//   - BoardContextValue — shape returned by useBoardContext()
+//   - BaseProps  — props accepted by the exported <Board /> component
+//   - BaseContextValue — shape returned by useBaseContext()
 //   - ComponentRecord — shape of a single component in the persisted store
 
 import type { ReactNode, MutableRefObject } from 'react'
 import type Two from 'two.js'
 import type { EraserSize } from '../constants/misc'
 import type {
-    BaseConfig,
-    BaseId,
-    BaseProvider,
+    BaseTypeConfig,
+    BaseType,
+    BaseTypeProvider,
     MapAnchor,
-} from '../bases/types'
+} from '../baseTypes/types'
+import type { ServerBaseConfig } from '../baseTypes/serverConfig'
 import type { PrimaryElement } from '../utils/constants'
 
 // --- DB shape (mirrors CLAUDE.md "Component schema (from DB)") ----------
@@ -47,8 +48,8 @@ export interface ComponentRecord {
     radius: number | null
     iconStroke: string | null
     textColor: string | null
-    boardId: string | null
-    boardName: string | null
+    baseId: string | null
+    baseName: string | null
     metadata: ComponentMetadata | null
     children: unknown | null
     isDummy: boolean | null
@@ -122,7 +123,7 @@ export interface Cluster {
     variant?: 'default' | 'warm'
 }
 
-export interface BoardProps {
+export interface BaseProps {
     /** Fired on ZUI camera updates. See CLAUDE.md "Extension points over forks". */
     onCameraChange?: (event: CameraChangeEvent) => void
     /** Render slot mounted between #selector-rect and #main-two-root. */
@@ -160,12 +161,27 @@ export interface BoardProps {
      */
     welcomeSketch?: boolean
     /**
-     * Base to open on when the board has no persisted choice of its own. Omit
-     * (the default) and every board — including ones created before bases
-     * existed — opens on the board base. Inherently map-backed consumers pin
+     * Base type to open on when the base has no persisted choice of its own.
+     * Omit (the default) and every base — including ones created before base
+     * types existed — opens on the board base. Inherently map-backed callers pin
      * this to 'map'. A user switch always wins over this value.
      */
-    defaultBase?: BaseId
+    defaultBaseType?: BaseType
+    /**
+     * The route *is* the base type (`/map/:id`). Unlike `defaultBaseType` —
+     * a mere fallback — this outranks the stored type, hides the base-type
+     * switcher, and makes `switchBaseType` inert, so the address bar and the
+     * substrate can never disagree.
+     */
+    pinnedBaseType?: BaseType
+    /**
+     * INTERNAL — supplied by `views/Base/index.tsx`, never by a caller.
+     *
+     * The base row for a persisted base: its type, its map georeference, and
+     * the view a recipient should land on. Resolved in the container so it is
+     * already settled on this component's first render; see the note there.
+     */
+    serverBaseConfig?: ServerBaseConfig | null
 }
 
 // --- Context value ------------------------------------------------------
@@ -182,23 +198,30 @@ export type CurrentElement = string
 // History entry shape lives in useComponentHistory; tightened in Stage 4.
 export type HistoryEntry = unknown
 
-export interface BoardContextValue {
+export interface BaseContextValue {
     // Identity / persistence
-    boardId: string
+    baseId: string
     isPersisted: boolean
-    persistBoard: () => Promise<string>
-    backgroundBoardId: string | null
-    onCreateBoard: () => void
-    createBoardLoading: boolean
-    clearBoard: () => void
+    persistBase: () => Promise<string>
+    /**
+     * Publish this base and return the id its link points at. Handles both the
+     * unpersisted (`/`) and already-persisted cases, and is the only path that
+     * should be used to share — calling `persistBase` alone creates a base
+     * without ever making it public.
+     */
+    shareBase: () => Promise<string>
+    backgroundBaseId: string | null
+    onCreateBase: () => void
+    createBaseLoading: boolean
+    clearBase: () => void
     /** Open the file picker → parse → new-vs-merge chooser flow (P0 import). */
-    beginBoardImport: () => void
+    beginBaseImport: () => void
 
     // Two.js handles
     twoJSInstance: Two | null
-    setTwoJSInstanceInBoard: (instance: Two | null) => void
-    zuiInBoard: unknown
-    setZuiInstanceInBoard: (zui: unknown) => void
+    setTwoJSInstanceInBase: (instance: Two | null) => void
+    zuiInBase: unknown
+    setZuiInstanceInBase: (zui: unknown) => void
 
     // Drawing modes
     isPencilMode: boolean
@@ -211,10 +234,10 @@ export interface BoardContextValue {
     togglePencilMode: (value: boolean) => void
     togglePointer: (value: boolean) => void
     togglePanMode: (value: boolean) => void
-    setArrowDrawModeInBoard: (value: boolean) => void
-    setTextDrawModeInBoard: (value: boolean) => void
-    setRubberModeInBoard: (value: boolean) => void
-    setEraserSizeInBoard: (value: EraserSize) => void
+    setArrowDrawModeInBase: (value: boolean) => void
+    setTextDrawModeInBase: (value: boolean) => void
+    setRubberModeInBase: (value: boolean) => void
+    setEraserSizeInBase: (value: EraserSize) => void
     cancelPendingElement: () => void
     enableTextDrawMode: (componentType?: 'newText' | 'geoText') => void
     createTextAtSurface: (x: number, y: number) => void
@@ -222,10 +245,10 @@ export interface BoardContextValue {
 
     // Selection
     selectedComponent: SelectedComponent | null
-    setSelectedComponentInBoard: (component: SelectedComponent | null) => void
+    setSelectedComponentInBase: (component: SelectedComponent | null) => void
     selectedGroup: SelectedGroup | null
     currentElement: CurrentElement | null
-    setCurrentElementInBoard: (element: CurrentElement | null) => void
+    setCurrentElementInBase: (element: CurrentElement | null) => void
 
     // Local component store mutations
     addToLocalComponentStore: (
@@ -286,8 +309,8 @@ export interface BoardContextValue {
     defaultTextColor: string
     defaultTextSize: string
     defaultTextFontFamily: string
-    setDefaultLinewidthInBoard: (value: number) => void
-    setDefaultStrokeTypeInBoard: (value: string | null) => void
+    setDefaultLinewidthInBase: (value: number) => void
+    setDefaultStrokeTypeInBase: (value: string | null) => void
 
     // Mobile toolbar panel
     showMobileToolbarPanel: boolean
@@ -304,51 +327,51 @@ export interface BoardContextValue {
     undoLastAction: () => void
     redoLastAction: () => void
 
-    // Active base (src/bases). `baseProvider` carries the toolbar gating the
-    // sidebar reads; `switchBase` is the only thing that persists a choice.
-    activeBase: BaseId
-    baseProvider: BaseProvider
+    // Active base (src/bases). `baseTypeProvider` carries the toolbar gating the
+    // sidebar reads; `switchBaseType` is the only thing that persists a choice.
+    activeBaseType: BaseType
+    baseTypeProvider: BaseTypeProvider
     /**
      * Effective toolbar gating: the active base's, unless the deprecated
      * `geoObjectsEnabled` prop overlays the geo toolset on top. Read this
-     * rather than `baseProvider` when deciding which tools to show.
+     * rather than `baseTypeProvider` when deciding which tools to show.
      */
     toolset: {
         /**
-         * The base this toolset was derived from. It trails `activeBase` across
+         * The base this toolset was derived from. It trails `activeBaseType` across
          * a switch, because providers are dynamically imported — compare the
          * two before acting on a switch.
          */
-        baseId: BaseId
+        baseId: BaseType
         hiddenTools: ReadonlySet<string>
         extraTools: readonly PrimaryElement[]
         homeTool: string
     }
     /** False when the consumer paints its own backdrop and owns the substrate. */
-    baseSwitcherEnabled: boolean
-    switchBase: (id: BaseId) => void
+    baseTypeSwitcherEnabled: boolean
+    switchBaseType: (id: BaseType) => void
     /**
      * Travel to a searched place (map base only). Flies the CAMERA to the
-     * place's surface coordinate under the board's existing anchor, so drawn
+     * place's surface coordinate under the base's existing anchor, so drawn
      * elements keep the geography they were drawn over; only an empty map
-     * re-anchors. See the implementation in board.tsx for why.
+     * re-anchors. See the implementation in base.tsx for why.
      */
     goToPlace: (place: MapAnchor) => void
     /** Zoom-button step for the active base, in ZUI zoom units (log2 scale). */
     zoomStep: number
     /** Live base config (incl. map anchor) for the JSON export envelope. */
-    readBaseConfig: () => BaseConfig
+    readBaseTypeConfig: () => BaseTypeConfig
     /** Rasterize the live backdrop for PNG export; null when there's nothing. */
-    captureBaseBackdrop: (
+    captureBaseTypeBackdrop: (
         width: number,
         height: number
     ) => Promise<string | null>
 
-    // Consumer extension points (forwarded from BoardProps)
-    scaleToDisplay?: BoardProps['scaleToDisplay']
-    geoObjectsEnabled?: BoardProps['geoObjectsEnabled']
-    pointClusteringEnabled?: BoardProps['pointClusteringEnabled']
-    clusterPoints?: BoardProps['clusterPoints']
+    // Consumer extension points (forwarded from BaseProps)
+    scaleToDisplay?: BaseProps['scaleToDisplay']
+    geoObjectsEnabled?: BaseProps['geoObjectsEnabled']
+    pointClusteringEnabled?: BaseProps['pointClusteringEnabled']
+    clusterPoints?: BaseProps['clusterPoints']
 }
 
 // --- Utility exports ---------------------------------------------------

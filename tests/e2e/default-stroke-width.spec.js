@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     drawPencilStroke,
     setDefaultStrokeWidth,
     clickToolbarButton,
@@ -26,7 +26,7 @@ async function getLinewidth(handle) {
 
 test.describe('Default stroke width applies to drawn shapes', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     // NOTE: the rectangle/circle/arrow cases that set the default stroke width

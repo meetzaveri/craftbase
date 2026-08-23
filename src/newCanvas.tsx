@@ -20,11 +20,13 @@ import React, {
 import Two from 'two.js'
 
 import { ZUI } from 'two.js/extras/jsm/zui'
-import { useBoardContext } from './views/Board/boardContext'
+import { useBaseContext } from './views/Base/baseContext'
 import { useMediaQueryUtils } from './constants/exportHooks'
-import { BASE_ROOT_ID } from './hooks/useActiveBase'
+import { BASE_ROOT_ID } from './hooks/useActiveBaseType'
 import { readViewport, writeViewport } from './utils/viewportStorage'
-import type { BaseId } from './bases/types'
+import type { StoredViewport } from './utils/viewportStorage'
+import { isUrlBasePath } from './utils/baseRoutes'
+import type { BaseType, MapAnchor } from './baseTypes/types'
 
 import {
     GROUP_COMPONENT,
@@ -133,10 +135,12 @@ import {
 } from './utils/themeColorFlip'
 import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
 import { scheduleRender } from './utils/renderScheduler'
-import { isRecordVisibleOnBase } from './utils/geoVisibility'
+import { installRenderOrigin } from './canvas/renderOrigin'
+import { isRecordVisibleOnBaseType } from './utils/geoVisibility'
 import { SELECTION_CHROME_ATTR } from './utils/svgExportShared'
 import { computeCounterScale } from './utils/counterScale'
-import { zoomLimitsForBase } from './bases/zoomLimits'
+import { zoomLimitsForBaseType } from './baseTypes/zoomLimits'
+import { lngLatToSurface, scaleForMapZoom } from './baseTypes/mercator'
 import { useCanvasClipboard } from './hooks/useCanvasClipboard'
 import type { HistoryEntry } from './hooks/useComponentHistory'
 import { exportSelectionAsSvg } from './utils/exportSelectionAsSvg'
@@ -152,13 +156,13 @@ import type {
     ComponentStore,
     SelectedComponent,
     CurrentElement,
-} from './types/board'
+} from './types/base'
 
 /**
  * One lazy component per element *type*, not per element.
  *
  * `React.lazy()` returns a NEW component type on every call, and each one
- * suspends and resolves independently — so calling it per element made a board
+ * suspends and resolves independently — so calling it per element made a base
  * of N elements resolve N Suspense boundaries in N separate commits, spreading
  * the mount across hundreds of frames. Every one of those frames triggered a
  * full O(scene) Two.js render (the SVG renderer walks every child on each
@@ -197,7 +201,7 @@ interface CanvasProps {
     pointerToggle: boolean
     isPencilMode: boolean
     selectPanMode: boolean
-    boardId: string
+    baseId: string
     selectedComponent: SelectedComponent | null
     lastAddedElement: ComponentRecord | null
     componentStore: ComponentStore
@@ -208,15 +212,29 @@ interface CanvasProps {
     onCameraChange?: (event: CameraChangeEvent) => void
     renderBackground?: () => ReactNode
     // Bridge: Canvas owns reorderSelected (needs reconcileZOrder + live zui
-    // selection); it publishes the function here so board.tsx can expose a
-    // stable wrapper through BoardContext for the properties toolbar.
+    // selection); it publishes the function here so base.tsx can expose a
+    // stable wrapper through BaseContext for the properties toolbar.
     reorderSelectedRef?: MutableRefObject<
         ((op: 'front' | 'forward' | 'backward' | 'back') => void) | null
     >
     // Bridge: Canvas owns fitToContent (lives on the live zui handle); it
-    // publishes it here so board.tsx can expose a stable wrapper through
-    // BoardContext for the "Go to content" button. Returns whether a fit ran.
+    // publishes it here so base.tsx can expose a stable wrapper through
+    // BaseContext for the "Go to content" button. Returns whether a fit ran.
     fitToContentRef?: MutableRefObject<(() => boolean) | null>
+    /**
+     * Where a shared map base should open, for a recipient who has never
+     * opened it. The georeference (`anchor`) plus the view to land on, both
+     * from the base row.
+     *
+     * Non-null only when the row carries all six geo columns — anchor and
+     * landing are written together, so a partial set means a hand-edited row
+     * and is ignored rather than half-applied.
+     */
+    initialMapLanding?: {
+        anchor: MapAnchor
+        lngLat: [number, number]
+        zoom: number
+    } | null
 }
 
 // Shape of the handle addZUI returns and Canvas stores in state. The
@@ -234,7 +252,7 @@ type SetOnGroupHandlerFn = (obj: any) => void
 
 /**
  * @typedef {Object} elementData
- * @property {string} boardId
+ * @property {string} baseId
  * @property {string} componentType
  * @property {string} fill
  * @property {Object} handleDeleteComponent //function
@@ -319,7 +337,7 @@ function addZUI(
         componentInfo: ComponentRecord,
         skipHistory?: boolean
     ) => void,
-    setSelectedComponentInBoard: (component: SelectedComponent | null) => void,
+    setSelectedComponentInBase: (component: SelectedComponent | null) => void,
     setArrowDrawModeOff: () => void,
     setTextDrawModeOff: () => void,
     setPointerElement: (
@@ -341,8 +359,8 @@ function addZUI(
     >,
     // Live active base. addZUI runs once on mount, so the base a viewport is
     // saved under must be read through a ref — a captured value would keep
-    // writing the camera to whichever base the board loaded with.
-    activeBaseRef: MutableRefObject<BaseId>
+    // writing the camera to whichever type the base loaded with.
+    activeBaseTypeRef: MutableRefObject<BaseType>
 ): ZuiHandle {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let shape: any = null
@@ -378,7 +396,7 @@ function addZUI(
     let hoverFrame: number | null = null
     let hoverPendingEvent: MouseEvent | null = null
     // Viewport culling settle timer: cull runs on every camera change; once the
-    // gesture stops, unhide everything so the at-rest board is fully painted.
+    // gesture stops, unhide everything so the at-rest canvas is fully painted.
     let cullSettleTimer: number | null = null
 
     // Called from every camera handler (pan/zoom, mouse + touch) right before
@@ -587,7 +605,7 @@ function addZUI(
     const toSurface = (e: { clientX: number; clientY: number }) =>
         zui.clientToSurface(e.clientX, e.clientY)
     // Opening range. The active base overrides this through setZoomLimits —
-    // the map needs a far wider one (see BaseProvider.zoomLimits).
+    // the map needs a far wider one (see BaseTypeProvider.zoomLimits).
     zui.addLimits(0.06, 8)
 
     // Parchment dot-grid camera sync. The grid is a CSS radial-gradient painted
@@ -658,7 +676,7 @@ function addZUI(
      */
     const pencilPreviewLinewidth = (): number => {
         const base = defaultLinewidthValue
-        if (activeBaseRef.current === 'board') return base
+        if (activeBaseTypeRef.current === 'board') return base
         const scale = zui.scale || two.scene.scale || 1
         return base * computeCounterScale(scale, DEFAULT_GEO_RESIST)
     }
@@ -803,7 +821,7 @@ function addZUI(
     }
 
     // Hide the curved-line "press Esc/Enter to finish" nudge (no-op for geo).
-    // Also signals React (board.tsx) to drop the mobile ✓/✗ draw controls — the
+    // Also signals React (base.tsx) to drop the mobile ✓/✗ draw controls — the
     // nudge and those controls share the exact curved-line draw lifecycle.
     const hideMultiClickHint = () => {
         const hint = document.getElementById('multi-click-draw-hint')
@@ -886,7 +904,7 @@ function addZUI(
             type,
             finalShapeData as unknown as ComponentRecord
         )
-        setSelectedComponentInBoard(null)
+        setSelectedComponentInBase(null)
         // After finishing an area/route draw, land in pointer/select mode so the
         // shape can be tweaked immediately, whatever the base's home tool is.
         setRootCursor('auto')
@@ -905,7 +923,7 @@ function addZUI(
         cancelGeoDraw()
     })
 
-    // Mobile ✓ button (board.tsx) — finish the in-progress multi-click draw,
+    // Mobile ✓ button (base.tsx) — finish the in-progress multi-click draw,
     // the touch equivalent of pressing Enter (no keyboard on mobile).
     window.addEventListener('finishGeoDraw', () => {
         if (geoDrawType) finishGeoDraw({})
@@ -924,10 +942,10 @@ function addZUI(
         zui,
         domElement,
         onSelect: (toolbarState) => {
-            setSelectedComponentInBoard(toolbarState)
+            setSelectedComponentInBase(toolbarState)
         },
         onDeselect: () => {
-            setSelectedComponentInBoard(null)
+            setSelectedComponentInBase(null)
         },
         commit: (id, patch) => {
             updateComponentBulkPropertiesInLocalStore(id, patch)
@@ -956,7 +974,7 @@ function addZUI(
 
     // Delete/Backspace for element types no other delete path covers.
     //
-    // The board's delete key is spread across three owners: the selection
+    // The base's delete key is spread across three owners: the selection
     // controller handles SHAPE_ADAPTERS shapes (rect/circle/diamond/text);
     // arrow, plain line, divider and geoText each carry their own focus-based
     // handler. That left the whole geo family — route, area and point — plus
@@ -989,7 +1007,7 @@ function addZUI(
         two.remove([grp])
         two.update()
         lastSelectedShape = null
-        setSelectedComponentInBoard(null)
+        setSelectedComponentInBase(null)
     }
     window.addEventListener('keydown', onOrphanDeleteKeyDown, false)
 
@@ -1678,7 +1696,7 @@ function addZUI(
 
     // The trail is the eraser's cursor made visible, so it's drawn at the same
     // diameter as the dot in the size selector — pick the big dot, get a big
-    // circle on the board. (The hit-test radius above reaches further; the
+    // circle on the canvas. (The hit-test radius above reaches further; the
     // trail shows the tool, not the blast radius.)
     const eraserTrail = createEraserTrail(
         two,
@@ -2059,8 +2077,8 @@ function addZUI(
             x2: 0,
             y1: 0,
             y2: 0,
-            boardId: props.boardId,
-            boardName: null,
+            baseId: props.baseId,
+            baseName: null,
             radius: null,
             iconStroke: null,
             isDummy: null,
@@ -2474,7 +2492,7 @@ function addZUI(
             // selectedComponent stays set, which keeps the point tooltip
             // pinned. Clear it too so the tooltip dismisses immediately when
             // the user clicks bare canvas.
-            setSelectedComponentInBoard(null)
+            setSelectedComponentInBase(null)
         }
 
         // Reset scenario to prevent stale state from a previous interaction
@@ -2649,7 +2667,7 @@ function addZUI(
                     )
                 }
 
-                setSelectedComponentInBoard(null)
+                setSelectedComponentInBase(null)
                 setPointerElement('pointer', { select: true })
                 setRootCursor('auto')
                 break
@@ -3024,7 +3042,7 @@ function addZUI(
                             data: {},
                         },
                     }
-                    setSelectedComponentInBoard(componentInternalState)
+                    setSelectedComponentInBase(componentInternalState)
                 }
 
                 two.update()
@@ -3598,7 +3616,7 @@ function addZUI(
                     // (getSelectedGroup() returns null) even though the
                     // endpoint handles are visibly "selected".
                     lastSelectedShape = arrowGroup
-                    setSelectedComponentInBoard({
+                    setSelectedComponentInBase({
                         element: {
                             [arrowLineShape.id]: arrowLineShape,
                             [arrowGroup.id]: arrowGroup,
@@ -3615,7 +3633,7 @@ function addZUI(
                     // Paint the now-visible endpoint handles.
                     two.update()
                 } else {
-                    setSelectedComponentInBoard(null)
+                    setSelectedComponentInBase(null)
                 }
 
                 // Radar is a draw-time affordance only — clear it on drop.
@@ -3672,9 +3690,9 @@ function addZUI(
                         text: { data: {} },
                         icon: { data: {} },
                     }
-                    // Don't use the board's generic toolbar for text elements —
+                    // Don't use the canvas's generic toolbar for text elements —
                     // the text component manages its own correctly-configured toolbar.
-                    setSelectedComponentInBoard(null)
+                    setSelectedComponentInBase(null)
                 }
 
                 textDrawElement = null
@@ -3752,7 +3770,7 @@ function addZUI(
                 break
             }
             case SCENARIO_JUST_ADDED_ELEMENT:
-                setSelectedComponentInBoard(null)
+                setSelectedComponentInBase(null)
                 lastPlacedElement = null
                 setPointerElement('pointer')
                 domElement.removeEventListener('mousemove', mousemove, false)
@@ -3806,7 +3824,7 @@ function addZUI(
                 let pencilId = generateUUID()
                 let pencilComponentData = {
                     id: pencilId,
-                    boardId: props.boardId,
+                    baseId: props.baseId,
                     componentType: 'pencil',
                     // Which base this stroke belongs to, decided once at
                     // creation. The pencil is the one whiteboard tool offered on
@@ -3814,9 +3832,9 @@ function addZUI(
                     // `componentType` alone can no longer say where it lives.
                     // `objectClass: 'geo'` is the existing marker the visibility
                     // rule already checks ahead of BOARD_ONLY_TYPES, so a map
-                    // scribble hides on the board and vice versa with no new
+                    // scribble hides on the board base and vice versa with no new
                     // rule. Board strokes stay untagged, exactly as before.
-                    ...(activeBaseRef.current !== 'board'
+                    ...(activeBaseTypeRef.current !== 'board'
                         ? { objectClass: 'geo' }
                         : {}),
                     children: {},
@@ -3897,7 +3915,7 @@ function addZUI(
                             height: groupHeight,
                         })
                     }
-                    setSelectedComponentInBoard(null)
+                    setSelectedComponentInBase(null)
                 } else if (shape?.elementData) {
                     // Did the element actually move since mousedown? Compare the
                     // rounded translation against `prevX`/`prevY` captured at
@@ -4201,10 +4219,10 @@ function addZUI(
     // Debounced persist of the current camera (pan + zoom) so a reload restores
     // the viewport. Shared by the wheel and the desktop pan-drag.
     function scheduleViewportSave() {
-        if (!props.boardId) return
+        if (!props.baseId) return
         if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
         viewportSaveTimer = setTimeout(() => {
-            writeViewport(props.boardId!, activeBaseRef.current, false, {
+            writeViewport(props.baseId!, activeBaseTypeRef.current, false, {
                 tx: two.scene.translation.x,
                 ty: two.scene.translation.y,
                 scale: two.scene.scale,
@@ -4427,8 +4445,8 @@ function addZUI(
             // pipeline so taps in pan mode never trigger selection.
             if (isSinglePanning) {
                 isSinglePanning = false
-                if (props.boardId) {
-                    writeViewport(props.boardId, activeBaseRef.current, true, {
+                if (props.baseId) {
+                    writeViewport(props.baseId, activeBaseTypeRef.current, true, {
                         tx: two.scene.translation.x,
                         ty: two.scene.translation.y,
                         scale: two.scene.scale,
@@ -4513,8 +4531,8 @@ function addZUI(
         // Drop below 2 fingers — save viewport then reset 2-finger tracking state.
         // distance > 0 means twoFingerStart ran (a real 2-finger gesture was active).
         if (e.touches.length < 2) {
-            if (distance > 0 && props.boardId) {
-                writeViewport(props.boardId, activeBaseRef.current, true, {
+            if (distance > 0 && props.baseId) {
+                writeViewport(props.baseId, activeBaseTypeRef.current, true, {
                     tx: two.scene.translation.x,
                     ty: two.scene.translation.y,
                     scale: two.scene.scale,
@@ -4732,7 +4750,7 @@ function addZUI(
         // are read via each element group's *shallow* getBoundingClientRect, so
         // they're in surface (scene) coords — independent of the current camera
         // — and cover every shape type via its real rendered geometry. Returns
-        // false when there's nothing measurable to fit (empty board / not yet
+        // false when there's nothing measurable to fit (empty base / not yet
         // mounted) so the caller can keep polling. Used by the auto-fit-on-load
         // fallback and the "Go to content" button.
         fitToContent: (opts?: { padding?: number }): boolean => {
@@ -4745,8 +4763,8 @@ function addZUI(
             if (!vw || !vh) return false
 
             // Leave a margin; clamp to the ACTIVE base's zoom limits so a huge
-            // or tiny board doesn't overshoot the range (the map's is far wider
-            // than the board's — see BaseProvider.zoomLimits).
+            // or tiny base doesn't overshoot the range (the map's is far wider
+            // than the board base's — see BaseTypeProvider.zoomLimits).
             const bboxW = right - left
             const bboxH = bottom - top
             const padding = opts?.padding ?? 0.8
@@ -4763,7 +4781,7 @@ function addZUI(
             // Work in element-local pixels (surfaceMatrix output space, 0,0 at the
             // SVG top-left) — NOT surfaceToClient, which adds the element's page
             // offset. The delta translateSurface needs lives in this same space,
-            // so an embedded board (consumer not at page origin) still centers
+            // so an embedded base (host not at page origin) still centers
             // correctly. viewport center = (vw/2, vh/2) is element-local too.
             zui.reset()
             zui.zoomSet(scale, 0, 0)
@@ -4823,7 +4841,7 @@ function addZUI(
          * current zoom unless `scale` is given.
          *
          * This is how you travel on a georeferenced base: the map base ties
-         * surface (0,0) to the board's anchor lng/lat, so "go to this place"
+         * surface (0,0) to the base's anchor lng/lat, so "go to this place"
          * means "move the CAMERA to that place's surface coordinate" — never
          * "move the anchor", which would slide the whole world under ink that
          * stays where it is.
@@ -4868,21 +4886,21 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         deleteComponentFromLocalStore,
         updateComponentVerticesInLocalStore,
         updateComponentBulkPropertiesInLocalStore,
-        setTwoJSInstanceInBoard,
-        setZuiInstanceInBoard,
-        setSelectedComponentInBoard,
-        setArrowDrawModeInBoard,
-        setTextDrawModeInBoard,
-        setCurrentElementInBoard,
+        setTwoJSInstanceInBase,
+        setZuiInstanceInBase,
+        setSelectedComponentInBase,
+        setArrowDrawModeInBase,
+        setTextDrawModeInBase,
+        setCurrentElementInBase,
         togglePanMode,
         toolset,
-        activeBase,
+        activeBaseType,
         undoLastAction,
         redoLastAction,
         recordBatchToHistoryLog,
         enableTextDrawMode,
         createTextAtSurface,
-    } = useBoardContext()
+    } = useBaseContext()
 
     // addZUI's post-draw resets funnel a 'pointer' through setPointerElement.
     // On a base whose home tool is pan, a generic reset re-activates pan instead
@@ -4896,19 +4914,19 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     // per-base by design and the deprecated `geoObjectsEnabled` overlay still
     // forces 'pan'.
     // resetToHomeTool is handed to addZUI, which runs once on mount — so it
-    // must not close over `baseProvider` directly. The base is switchable at
+    // must not close over `baseTypeProvider` directly. The base is switchable at
     // runtime now, and a captured provider would keep reporting the base the
-    // board loaded with. See the stale-closure section in CLAUDE.md.
+    // base loaded with. See the stale-closure section in CLAUDE.md.
     const homeToolRef = useRef<string>(toolset.homeTool)
     useEffect(() => {
         homeToolRef.current = toolset.homeTool
     }, [toolset])
 
     // Same reason: viewport saves inside addZUI must key off the *live* base.
-    const activeBaseRef = useRef<BaseId>(activeBase)
+    const activeBaseTypeRef = useRef<BaseType>(activeBaseType)
     useEffect(() => {
-        activeBaseRef.current = activeBase
-    }, [activeBase])
+        activeBaseTypeRef.current = activeBaseType
+    }, [activeBaseType])
 
     const resetToHomeTool = (
         element: CurrentElement | null,
@@ -4917,14 +4935,14 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         if (element === 'pointer' && homeToolRef.current === 'pan') {
             if (options?.select) {
                 togglePanMode(false)
-                setCurrentElementInBoard('pointer')
+                setCurrentElementInBase('pointer')
                 return
             }
             togglePanMode(true)
-            setCurrentElementInBoard('pan')
+            setCurrentElementInBase('pan')
             return
         }
-        setCurrentElementInBoard(element)
+        setCurrentElementInBase(element)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4952,7 +4970,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     >(null)
     const prevElementsRef = useRef<string[]>([])
     const componentsToRenderRef = useRef<React.ComponentType[]>([])
-    // Holds the latest createTextAtSurface from BoardContext so the dblclick
+    // Holds the latest createTextAtSurface from BaseContext so the dblclick
     // handler (registered once inside addZUI) sees fresh closure state.
     const createTextAtSurfaceRef = useRef<
         ((x: number, y: number) => void) | null
@@ -4973,7 +4991,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     const { clipboardRef, lastMouseRef } = useCanvasClipboard({
         twoJSInstance,
         zuiInstanceRef,
-        boardId: props.boardId,
+        baseId: props.baseId,
         addToLocalComponentStore,
         recordBatchToHistoryLog,
         renderGroupRef,
@@ -4994,17 +5012,24 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             updateComponentVertices,
             setOnGroupHandler,
             addToLocalComponentStore,
-            setSelectedComponentInBoard,
-            () => setArrowDrawModeInBoard(false),
-            () => setTextDrawModeInBoard(false),
+            setSelectedComponentInBase,
+            () => setArrowDrawModeInBase(false),
+            () => setTextDrawModeInBase(false),
             resetToHomeTool,
             updateComponentBulkPropertiesInLocalStore,
             deleteComponentFromLocalStore,
             isPencilModeRef,
             createTextAtSurfaceRef,
             onCameraChangeRef,
-            activeBaseRef
+            activeBaseTypeRef
         )
+
+        // Floating render origin: keeps far-from-anchor elements from shaking
+        // on zoom by splitting the camera across a wrapper <g> so the browser
+        // never composes million-unit surface coordinates in float32. Purely a
+        // DOM concern — it adds nothing to two.scene.children and leaves every
+        // element's translation in absolute surface coords.
+        const renderOrigin = installRenderOrigin(two)
 
         // Dev-only handles for profiling the camera from the console or a
         // headless perf harness (drive the zoom/pan without synthesising input).
@@ -5013,27 +5038,22 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             ;(window as any).__cbZui = zui_instance.zui
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ;(window as any).__cbTwo = two
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(window as any).__cbRenderOrigin = renderOrigin
         }
 
         setZuiInstance(zui_instance)
         setTwoJSInstance(two)
-        setTwoJSInstanceInBoard(two)
-        setZuiInstanceInBoard(zui_instance)
+        setTwoJSInstanceInBase(two)
+        setZuiInstanceInBase(zui_instance)
 
         // Restore last mobile viewport (zoom + pan) from localStorage.
         // Use ZUI's own API so its internal zScale stays in sync with the
         // scene — setting two.scene.scale directly desynchronises ZUI and
         // causes the first pan gesture to jump back to the origin.
-        const restoreViewport = (mobile: boolean): boolean => {
-            if (!props.boardId) return false
-            const parsed = readViewport(
-                props.boardId,
-                activeBaseRef.current,
-                mobile
-            )
-            if (!parsed) return false
+        const applyViewport = (vp: StoredViewport): boolean => {
             try {
-                const { tx, ty, scale } = parsed
+                const { tx, ty, scale } = vp
                 // zoomSet updates zui.zScale + surface.scale atomically.
                 // Centering at (0,0) with initial translation (0,0) means no
                 // translation side-effect from the zoom.
@@ -5048,14 +5068,25 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             }
         }
 
-        // First-land seed: a board opened from Share carries the originating
+        const restoreViewport = (mobile: boolean): boolean => {
+            if (!props.baseId) return false
+            const parsed = readViewport(
+                props.baseId,
+                activeBaseTypeRef.current,
+                mobile
+            )
+            if (!parsed) return false
+            return applyViewport(parsed)
+        }
+
+        // First-land seed: a base opened from Share carries the originating
         // '/' viewport (pan + zoom) in the URL (vx/vy/vs). Clone it into this
-        // board's viewport localStorage key(s) so restoreViewport below lands
+        // base's viewport localStorage key(s) so restoreViewport below lands
         // on the same view instead of the origin. Seed both desktop+mobile keys
         // (sharer and opener may be on different devices), then strip the params
         // so a later reload uses the save-as-you-go value rather than the frozen
-        // param — i.e. subsequent reloads honour the last pan/zoom for this board.
-        if (props.boardId) {
+        // param — i.e. subsequent reloads honour the last pan/zoom for this base.
+        if (props.baseId) {
             const params = new URLSearchParams(window.location.search)
             if (params.has('vx') && params.has('vy') && params.has('vs')) {
                 const tx = Number(params.get('vx'))
@@ -5073,14 +5104,14 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                     // opens on (sharer and opener may be on different devices).
                     const seeded = { tx, ty, scale }
                     writeViewport(
-                        props.boardId,
-                        activeBaseRef.current,
+                        props.baseId,
+                        activeBaseTypeRef.current,
                         false,
                         seeded
                     )
                     writeViewport(
-                        props.boardId,
-                        activeBaseRef.current,
+                        props.baseId,
+                        activeBaseTypeRef.current,
                         true,
                         seeded
                     )
@@ -5090,24 +5121,71 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             }
         }
 
-        if (props.boardId) {
-            // Widen the camera to the ACTIVE base's range FIRST. addZUI opens
-            // on the board's 6%–800% (it has no idea which base this is), and
-            // the map reaches far below that floor — so restoring a saved map
-            // camera against the board floor silently clamps it. That is what
-            // made a board saved at map z8 reopen at ~z11: scale 0.0039 was
-            // pinned to 0.06, and nothing re-applied the saved value once
-            // board.tsx installed the real limits a beat later.
-            //
-            // Read from the static table, not `baseProvider`: providers load
-            // through a dynamic import, so at this point the resolved provider
-            // is still the board base no matter which base the board opens on.
-            const limits = zoomLimitsForBase(activeBaseRef.current)
-            zui_instance.setZoomLimits(limits.min, limits.max)
-            restoreViewport(isMobile)
+        // First-open landing: put a shared map on the spot its author shared.
+        //
+        // The base row carries the view as lng/lat/zoom rather than the
+        // camera's own tx/ty/scale, because those are pixel translations —
+        // replaying a desktop pan on a phone lands somewhere else entirely. So
+        // the geography is converted to a camera HERE, against this device's
+        // viewport. Pure mercator arithmetic, no maplibre, which matters: at
+        // this point the resolved provider is still the board base.
+        //
+        // "First open" is defined as "this base+type+device has no saved
+        // camera". That needs no extra flag and is self-cleaning: once the
+        // recipient pans, the save-as-you-go writer owns the camera and this
+        // never fires again. After the 30-day viewport TTL it lands them on the
+        // shared spot once more, which is the right answer for a link revisited
+        // months later. It sits after the vx/vy/vs block so an explicit param
+        // link still wins.
+        let landedViewport: StoredViewport | null = null
+        const landing = props.initialMapLanding
+        if (props.baseId && landing && activeBaseTypeRef.current === 'map') {
+            const alreadyHasCamera =
+                readViewport(props.baseId, 'map', isMobile) !== null
+            if (!alreadyHasCamera) {
+                const scale = scaleForMapZoom(landing.zoom, landing.anchor)
+                const { x, y } = lngLatToSurface(landing.lngLat, landing.anchor)
+                const vw = two.width || window.innerWidth
+                const vh = two.height || window.innerHeight
+                landedViewport = {
+                    scale,
+                    tx: vw / 2 - x * scale,
+                    ty: vh / 2 - y * scale,
+                }
+                // Current device's key only — unlike the vx/vy/vs path above,
+                // which copies opaque pixels and so seeds both. These tx/ty were
+                // computed from THIS viewport, so writing them under the other
+                // form factor's key would be a wrong pan. A recipient who later
+                // crosses the breakpoint gets the landing re-derived from the
+                // geography instead, which is strictly better.
+                writeViewport(props.baseId, 'map', isMobile, landedViewport)
+            }
         }
 
-        // Auto-fit-on-load: a board can land showing empty space — either the
+        if (props.baseId) {
+            // Widen the camera to the ACTIVE base's range FIRST. addZUI opens
+            // on the board base's 6%–800% (it has no idea which type this is), and
+            // the map reaches far below that floor — so restoring a saved map
+            // camera against the board base's floor silently clamps it. That is what
+            // made a base saved at map z8 reopen at ~z11: scale 0.0039 was
+            // pinned to 0.06, and nothing re-applied the saved value once
+            // base.tsx installed the real limits a beat later.
+            //
+            // Read from the static table, not `baseTypeProvider`: providers load
+            // through a dynamic import, so at this point the resolved provider
+            // is still the board base no matter which type the base opens on.
+            const limits = zoomLimitsForBaseType(activeBaseTypeRef.current)
+            zui_instance.setZoomLimits(limits.min, limits.max)
+            // Fall back to the landing we just computed if the read comes back
+            // empty. `writeViewport` swallows quota/private-mode failures by
+            // design, and trusting the localStorage round-trip would drop a
+            // recipient in private browsing at the origin with no clue why.
+            if (!restoreViewport(isMobile) && landedViewport) {
+                applyViewport(landedViewport)
+            }
+        }
+
+        // Auto-fit-on-load: a base can land showing empty space — either the
         // camera is at the origin (no seeded/saved viewport) while content sits
         // far away, OR a stale/bad saved viewport (30-day TTL, save-as-you-go) or
         // a shared link's seeded viewport points at emptiness. In every one of
@@ -5118,13 +5196,18 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // ONLY IF no element is on-screen. A good restored view (or a deliberate
         // zoom into one region) shows content → left untouched. Runs once.
         //
-        // Scope to URL-loaded boards (/board/:id) only. Local drafts (`/`) also
-        // carry a boardId (localBoardId) but seed the deliberately-placed welcome
-        // sketch — reframing that would disturb the intended landing.
-        const isUrlBoard =
-            typeof window !== 'undefined' &&
-            window.location.pathname.startsWith('/board/')
-        pendingInitialFitRef.current = Boolean(props.boardId && isUrlBoard)
+        // Scope to URL-loaded bases (/base/:id, /map/:id) only. Local drafts
+        // (`/`) also carry a baseId (localBaseId) but seed the
+        // deliberately-placed welcome sketch — reframing that would disturb the
+        // intended landing.
+        //
+        // A shared landing stands auto-fit down. The two are mutually exclusive
+        // by definition: auto-fit is the rescue for a camera nobody chose, and
+        // a landing is a camera someone chose deliberately. Someone can quite
+        // reasonably share a view with the pins just off-frame, and fitting
+        // would throw that away and reframe on content they aimed away from.
+        pendingInitialFitRef.current =
+            Boolean(props.baseId && isUrlBasePath()) && !landedViewport
 
         // Reflect the stored dot-grid flag on the root (adds `cb-dot-grid` when
         // enabled) and seed the parchment grid from the restored (or default)
@@ -5138,22 +5221,22 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             ty: two.scene.translation.y,
         })
 
-        const boardId = props.boardId
-        const tabsOpen = localStorage.getItem(`tabs_open_${boardId}`)
+        const baseId = props.baseId
+        const tabsOpen = localStorage.getItem(`tabs_open_${baseId}`)
         if (tabsOpen == null) {
-            localStorage.setItem(`tabs_open_${boardId}`, '1')
+            localStorage.setItem(`tabs_open_${baseId}`, '1')
         } else {
             localStorage.setItem(
-                `tabs_open_${boardId}`,
+                `tabs_open_${baseId}`,
                 String(parseInt(tabsOpen) + 1)
             )
         }
 
         window.onunload = function (e) {
-            const newTabCount = localStorage.getItem(`tabs_open_${boardId}`)
+            const newTabCount = localStorage.getItem(`tabs_open_${baseId}`)
             if (newTabCount !== null) {
                 localStorage.setItem(
-                    `tabs_open_${boardId}`,
+                    `tabs_open_${baseId}`,
                     String(Number(newTabCount) - 1)
                 )
             }
@@ -5168,6 +5251,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // browser defaults take over again; remounting the Board re-applies
         // them, so the whiteboard's no-scroll behavior is unchanged.
         return () => {
+            renderOrigin.uninstall()
             zui_instance?.disconnectThemeObserver?.()
             zui_instance?.disposeEraserTrail?.()
             for (const prop of [
@@ -5188,7 +5272,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     // Handle for an in-flight z-order reconcile poll so a new store change can
     // cancel a stale one instead of stacking rAF loops.
     const zOrderPollRef = useRef<number | null>(null)
-    // Set true on mount when a board opened with no seeded/saved viewport should
+    // Set true on mount when a base opened with no seeded/saved viewport should
     // be zoom-to-fit once its (async-loaded) content settles. Consumed + cleared
     // by the one-time fit poll in the componentStore effect so it fires once.
     const pendingInitialFitRef = useRef<boolean>(false)
@@ -5248,9 +5332,9 @@ const Canvas: React.FC<CanvasProps> = (props) => {
 
         // Already in the desired order? Then there is nothing to restack, and
         // re-rendering would be pure waste. This matters because the reconcile
-        // POLL re-runs this every frame while a board mounts: each render is
+        // POLL re-runs this every frame while a base mounts: each render is
         // O(scene) in the SVG renderer, so unconditionally rendering here cost
-        // ~90 full-scene renders per store change on a large board.
+        // ~90 full-scene renders per store change on a large base.
         const alreadyOrdered = children.every((c, i) => desired[i] === c)
         if (alreadyOrdered) return
 
@@ -5371,7 +5455,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             // settle — this is what fixes the post-refresh ordering bug.
             startZOrderReconcilePoll()
 
-            // One-time auto-fit-on-load (see the mount effect). The board's
+            // One-time auto-fit-on-load (see the mount effect). The base's
             // content arrives async: element groups enter the scene a frame or
             // two BEFORE their component applies x/y, so settling on the child
             // *count* is too early — the visibility test would run while the
@@ -5381,7 +5465,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             // (positions applied). Then force a render so worldMatrix is current,
             // and fit only if nothing is on-screen. One-shot: clear the flag so
             // later edits never re-fit. A cap bails out on a genuinely empty or
-            // never-settling board (chunks that never load).
+            // never-settling base (chunks that never load).
             if (pendingInitialFitRef.current && zuiInstance) {
                 if (initialFitPollRef.current !== null) {
                     cancelAnimationFrame(initialFitPollRef.current)
@@ -5503,7 +5587,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             // keeps its coordinates on every base — so without this filter a
             // marquee on the map silently swallows the whiteboard shapes lying
             // under it (hidden, but still in the store), and vice versa. The
-            // rule is the same one `applyBaseVisibility` paints with; sharing it
+            // rule is the same one `applyBaseTypeVisibility` paints with; sharing it
             // is what keeps "what I can see" and "what I can select" in step.
             const allComponentCoords = (
                 stateRefForComponentStore.current
@@ -5512,7 +5596,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                       )
                     : []
             ).filter((record) =>
-                isRecordVisibleOnBase(record, activeBaseRef.current)
+                isRecordVisibleOnBaseType(record, activeBaseTypeRef.current)
             )
 
             // Geometric marquee hit-test on an element's stored origin.
@@ -5801,8 +5885,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         ]
     )
 
-    // Publish reorderSelected up to board.tsx so the properties toolbar can
-    // trigger it through BoardContext (see the reorderSelectedRef bridge).
+    // Publish reorderSelected up to base.tsx so the properties toolbar can
+    // trigger it through BaseContext (see the reorderSelectedRef bridge).
     useEffect(() => {
         const ref = props.reorderSelectedRef
         if (ref) ref.current = reorderSelected
@@ -5811,7 +5895,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         }
     }, [props.reorderSelectedRef, reorderSelected])
 
-    // Publish fitToContent up to board.tsx (see the fitToContentRef bridge) so
+    // Publish fitToContent up to base.tsx (see the fitToContentRef bridge) so
     // the "Go to content" button can frame all elements on demand. Reads the
     // live zui handle via its ref so it never captures a stale instance.
     useEffect(() => {
@@ -5952,7 +6036,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                     const data = {
                         twoJSInstance: twoJSInstance,
                         id: item.id,
-                        boardId: props.boardId,
+                        baseId: props.baseId,
                         itemData: item,
                     }
 

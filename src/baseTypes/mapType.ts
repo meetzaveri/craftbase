@@ -14,13 +14,13 @@
 // who never opens the map base never downloads it.
 
 import type {
-    BaseConfig,
-    BaseHandle,
-    BaseMountContext,
-    BaseProvider,
+    BaseTypeConfig,
+    BaseTypeHandle,
+    BaseTypeMountContext,
+    BaseTypeProvider,
     MapAnchor,
 } from './types'
-import type { CameraChangeEvent } from '../types/board'
+import type { CameraChangeEvent } from '../types/base'
 import { geoElementData } from '../utils/constants'
 import { GEO_HIDDEN_TOOLS } from '../constants/misc'
 import {
@@ -58,7 +58,7 @@ export const BASEMAP_STYLE_URL =
 const OPAQUE_BACKDROP_CLASS = 'cb-base-opaque-backdrop'
 const MAP_CONTAINER_ID = 'cb-map-bg'
 
-interface MapBaseHandle extends BaseHandle {
+interface MapBaseTypeHandle extends BaseTypeHandle {
     map: MapLibreMap
     anchor: MapAnchor
     /** Last camera seen, so an async anchor change can re-sync immediately. */
@@ -68,7 +68,7 @@ interface MapBaseHandle extends BaseHandle {
 }
 
 /**
- * Where a board opens the map when it has never been told a place.
+ * Where a base opens the map when it has never been told a place.
  *
  * Derived from the browser's IANA timezone — no permission prompt, no network,
  * available synchronously so the map's very first frame is already in roughly
@@ -95,7 +95,7 @@ function defaultAnchor(): MapAnchor {
  * `targetZoom = anchor.zoom + log2(scale)` keeps tile resolution in lockstep
  * with the canvas.
  */
-function syncMapToZui(handle: MapBaseHandle, camera: CameraChangeEvent): void {
+function syncMapToZui(handle: MapBaseTypeHandle, camera: CameraChangeEvent): void {
     const { map, anchor } = handle
     if (!map || !anchor) return
 
@@ -120,7 +120,7 @@ function syncMapToZui(handle: MapBaseHandle, camera: CameraChangeEvent): void {
     map.jumpTo({ center: desiredCenter, zoom: targetZoom })
 }
 
-export const mapBase: BaseProvider = {
+export const mapType: BaseTypeProvider = {
     id: 'map',
     label: 'Map',
 
@@ -139,11 +139,11 @@ export const mapBase: BaseProvider = {
 
     async mount(
         container: HTMLElement,
-        config: BaseConfig,
+        config: BaseTypeConfig,
         // Unused: the anchor is resolved synchronously from the timezone, and a
         // real choice arrives later via setAnchor (the host persists it).
-        _ctx: BaseMountContext
-    ): Promise<BaseHandle> {
+        _ctx: BaseTypeMountContext
+    ): Promise<BaseTypeHandle> {
         const [{ default: maplibregl }] = await Promise.all([
             import('maplibre-gl'),
             // Bundled into this lazy chunk, so board-base users never fetch it.
@@ -157,7 +157,7 @@ export const mapBase: BaseProvider = {
 
         // A persisted anchor is authoritative: the saved Two.js viewport was
         // recorded against it, so reusing it is what makes a refresh land on the
-        // same view. Only a board that has never picked a place falls back to
+        // same view. Only a base that has never picked a place falls back to
         // the timezone guess — and the host then offers to replace it.
         const saved = config.mapAnchor
         const anchor: MapAnchor = saved
@@ -192,7 +192,7 @@ export const mapBase: BaseProvider = {
             }),
         })
 
-        const handle: MapBaseHandle = {
+        const handle: MapBaseTypeHandle = {
             id: 'map',
             map,
             anchor,
@@ -211,27 +211,27 @@ export const mapBase: BaseProvider = {
         return handle
     },
 
-    syncCamera(handle: BaseHandle, camera: CameraChangeEvent): void {
-        const h = handle as MapBaseHandle
+    syncCamera(handle: BaseTypeHandle, camera: CameraChangeEvent): void {
+        const h = handle as MapBaseTypeHandle
         if (h.disposed) return
         h.lastCamera = camera
         syncMapToZui(h, camera)
     },
 
-    setAnchor(handle: BaseHandle, anchor: MapAnchor): void {
-        const h = handle as MapBaseHandle
+    setAnchor(handle: BaseTypeHandle, anchor: MapAnchor): void {
+        const h = handle as MapBaseTypeHandle
         if (h.disposed) return
         h.anchor = { lngLat: [...anchor.lngLat], zoom: anchor.zoom }
         if (h.lastCamera) syncMapToZui(h, h.lastCamera)
     },
 
-    readConfig(handle: BaseHandle): Partial<BaseConfig> {
-        const h = handle as MapBaseHandle
+    readConfig(handle: BaseTypeHandle): Partial<BaseTypeConfig> {
+        const h = handle as MapBaseTypeHandle
         return { mapAnchor: h.anchor }
     },
 
-    async captureBackdrop(handle: BaseHandle): Promise<string | null> {
-        const h = handle as MapBaseHandle
+    async captureBackdrop(handle: BaseTypeHandle): Promise<string | null> {
+        const h = handle as MapBaseTypeHandle
         if (h.disposed || !h.map) return null
         try {
             // preserveDrawingBuffer keeps the last rendered frame readable, so
@@ -246,8 +246,8 @@ export const mapBase: BaseProvider = {
         }
     },
 
-    unmount(handle: BaseHandle): void {
-        const h = handle as MapBaseHandle
+    unmount(handle: BaseTypeHandle): void {
+        const h = handle as MapBaseTypeHandle
         if (h.disposed) return
         h.disposed = true
         document.body.classList.remove(OPAQUE_BACKDROP_CLASS)
@@ -260,4 +260,4 @@ export const mapBase: BaseProvider = {
     },
 }
 
-export default mapBase
+export default mapType

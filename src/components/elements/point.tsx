@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import interact from 'interactjs'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import PointFactory, {
     getPointLabelNode,
@@ -37,9 +37,9 @@ function Point(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
-        zuiInBoard,
+        zuiInBase,
         updateComponentBulkPropertiesInLocalStore,
-    } = useBoardContext()
+    } = useBaseContext()
 
     const groupRef = useRef<ShapeLike>(null)
     const selectorRef = useRef<ShapeLike>(null)
@@ -94,11 +94,11 @@ function Point(props: ElementProps): ReactElement {
         }
 
         // Seed the counter-scale from the current camera so the pin is
-        // sized correctly before the first zoom event fires. The board
+        // sized correctly before the first zoom event fires. The board base
         // context holds the addZUI wrapper ({ zui, ... }) — the live scale
         // lives on the nested ZUI instance (fall back to the scene scale).
         const initialScale =
-            (zuiInBoard as ShapeLike)?.zui?.scale ?? two?.scene?.scale
+            (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
         if (initialScale) {
             group.scale = computeCounterScale(initialScale, resist)
         }

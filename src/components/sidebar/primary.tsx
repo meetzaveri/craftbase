@@ -3,15 +3,15 @@ import type { ReactElement } from 'react'
 import { useQuery } from '@apollo/client'
 
 import ShapesToolbar from './shapesToolbar'
-import BaseSwitcher from './baseSwitcher'
+import BaseTypeSwitcher from './baseTypeSwitcher'
 import PlaceSearch from './placeSearch'
 import { GET_COMPONENT_TYPES } from '../../schema/queries'
 import SpinnerWithSize from '../common/spinnerWithSize'
 import { generateUUID } from '../../utils/misc'
 import { prefetchElementModule } from '../../elementModules'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
-import type { ComponentRecord } from '../../types/board'
+import type { ComponentRecord } from '../../types/base'
 import {
     GEO_TYPE_DEFAULTS,
     POINT_COLOR,
@@ -49,24 +49,24 @@ const FALLBACK_CATALOG: Record<
 
 const PrimarySidebar = (): ReactElement => {
     const {
-        boardId,
+        baseId,
         updateLastAddedElement,
         togglePointer,
         togglePencilMode,
         togglePanMode,
         addToLocalComponentStore,
         enableTextDrawMode,
-        setArrowDrawModeInBoard,
-        setRubberModeInBoard,
+        setArrowDrawModeInBase,
+        setRubberModeInBase,
         cancelPendingElement,
         defaultLinewidth,
         defaultStrokeType,
         defaultFill,
         defaultStrokeColor,
         defaultTextFontFamily,
-        activeBase,
-    } = useBoardContext()
-    const isMapBase = activeBase === 'map'
+        activeBaseType,
+    } = useBaseContext()
+    const isMapBaseType = activeBaseType === 'map'
     const [hintText, setHintText] = useState(
         'Click anywhere to place element there.'
     )
@@ -123,8 +123,8 @@ const PrimarySidebar = (): ReactElement => {
                         x2: 0,
                         y1: 0,
                         y2: 0,
-                        boardId,
-                        boardName: null,
+                        baseId,
+                        baseName: null,
                         radius: null,
                         iconStroke: null,
                         isDummy: null,
@@ -164,8 +164,8 @@ const PrimarySidebar = (): ReactElement => {
                 x2: 0,
                 y1: 0,
                 y2: 0,
-                boardId,
-                boardName: null,
+                baseId,
+                baseName: null,
                 radius: null,
                 iconStroke: null,
                 isDummy: null,
@@ -191,7 +191,7 @@ const PrimarySidebar = (): ReactElement => {
         if (root) root.style.cursor = 'crosshair'
         localStorage.setItem('arrowDrawMode', 'true')
         localStorage.setItem('lastAddedElementId', generateId)
-        setArrowDrawModeInBoard(true)
+        setArrowDrawModeInBase(true)
         addToLocalComponentStore(
             (shapeData as ComponentRecord).id,
             (shapeData as ComponentRecord).componentType,
@@ -245,8 +245,8 @@ const PrimarySidebar = (): ReactElement => {
             x2: 0,
             y1: 0,
             y2: 0,
-            boardId,
-            boardName: null,
+            baseId,
+            baseName: null,
             radius: null,
             iconStroke: null,
             isDummy: null,
@@ -296,8 +296,8 @@ const PrimarySidebar = (): ReactElement => {
             linewidth: geoDef ? geoDef.linewidth : (defaultLinewidth ?? 2.5),
             strokeType: isGeo ? null : defaultStrokeType,
             fill: 'transparent',
-            boardId,
-            boardName: null,
+            baseId,
+            baseName: null,
             textColor: null,
             updatedBy: localStorage.getItem('userId'),
         }
@@ -315,7 +315,7 @@ const PrimarySidebar = (): ReactElement => {
             hint.style.zIndex = '20'
         }
         // Mobile has no Esc/Enter, no double-click and no right-click, so the
-        // ✓/✗ controls (board.tsx) are the ONLY way to finish or abandon a
+        // ✓/✗ controls (base.tsx) are the ONLY way to finish or abandon a
         // multi-click draw there. That's true of every tool in this family, so
         // all three raise it — area and route were left out back when they were
         // expected to finish through a consumer's own map UI, and there is no
@@ -333,7 +333,7 @@ const PrimarySidebar = (): ReactElement => {
             prefetchElementModule(label)
         }
         cancelPendingElement()
-        if (label !== 'rubber') setRubberModeInBoard(false)
+        if (label !== 'rubber') setRubberModeInBase(false)
         if (label !== 'pan') togglePanMode(false)
         switch (label) {
             case 'pointer':
@@ -348,7 +348,7 @@ const PrimarySidebar = (): ReactElement => {
             case 'rubber':
                 togglePencilMode(false)
                 togglePointer(false)
-                setRubberModeInBoard(true)
+                setRubberModeInBase(true)
                 break
             case 'arrowLine':
                 handleArrowElement(label)
@@ -433,8 +433,8 @@ const PrimarySidebar = (): ReactElement => {
                                 x2: label.includes('divider') ? 100 : 0,
                                 y1: 0,
                                 y2: 0,
-                                boardId,
-                                boardName: null,
+                                baseId,
+                                baseName: null,
                                 radius: null,
                                 iconStroke: null,
                                 isDummy: null,
@@ -487,8 +487,8 @@ const PrimarySidebar = (): ReactElement => {
                         x2: label.includes('divider') ? 100 : 0,
                         y1: 0,
                         y2: 0,
-                        boardId,
-                        boardName: null,
+                        baseId,
+                        baseName: null,
                         radius: null,
                         iconStroke: null,
                         isDummy: null,
@@ -535,7 +535,7 @@ const PrimarySidebar = (): ReactElement => {
     return (
         <>
             <ShapesToolbar addElement={addElement} />
-            <BaseSwitcher />
+            <BaseTypeSwitcher />
             <PlaceSearch />
             <MenuDrawer />
             <div
@@ -623,8 +623,12 @@ const PrimarySidebar = (): ReactElement => {
                     same top-right corner as the place search, and the theme
                     switcher has nothing to switch there anyway — the basemap
                     ships light-only (see POINT_LABEL_COLOR's note). */}
-                {!isMobile && !isMapBase && <ThemeSwitcher />}
-                {!isMobile && !isMapBase && <ShareLinkPopup />}
+                {!isMobile && !isMapBaseType && <ThemeSwitcher />}
+                {/* Share is available everywhere — on the map base (which is
+                    the whole point of a shareable map) and on mobile. The theme
+                    switcher keeps both gates: it shares this corner, and the
+                    basemap ships light-only so it has nothing to switch there. */}
+                <ShareLinkPopup />
             </div>
         </>
     )

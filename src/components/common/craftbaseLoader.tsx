@@ -7,7 +7,7 @@ interface CraftbaseLoaderProps {
 
 /**
  * Full-screen startup loader using the Craftbase monogram mark, sketched on
- * (Variant B). Used for the `AppInit` startup gate and the board's Suspense
+ * (Variant B). Used for the `AppInit` startup gate and the base's Suspense
  * fallback. A pure-CSS copy is also inlined into `#root` in index.html so the
  * loader paints before the JS bundle arrives — keep the two in sync. Mark
  * geometry (viewBox + path data) is copied verbatim from

@@ -10,7 +10,7 @@ import { useMutation, useQuery } from '@apollo/client'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import {
-    GET_COMPONENTS_FOR_BOARD_QUERY,
+    GET_COMPONENTS_FOR_BASE_QUERY,
     GET_COMPONENT_TYPES,
 } from '../../schema/queries'
 import {
@@ -21,7 +21,9 @@ import {
     DELETE_COMPONENT_BY_ID,
     DELETE_BULK_COMPONENTS,
     UPDATE_COMPONENT_INFO,
-    CREATE_BOARD,
+    CREATE_BASE,
+    UPDATE_BASE_VISIBILITY,
+    SHARE_PERSISTED_BASE,
 } from '../../schema/mutations'
 import Canvas from '../../newCanvas'
 import ZoomControls from '../../components/ZoomControls'
@@ -41,30 +43,37 @@ import {
     resolveTimezoneCity,
     DEFAULT_ANCHOR_ZOOM,
 } from '../../utils/timezoneCities'
-import { zoomLimitsForBase } from '../../bases/zoomLimits'
+import { zoomLimitsForBaseType } from '../../baseTypes/zoomLimits'
 import {
-    BoardFullModal,
-    BoardTooLargeModal,
-} from '../../components/modals/BoardSizeLimitModal'
-import { exportBoardAsJson } from '../../utils/exportBoard'
+    BaseFullModal,
+    BaseTooLargeModal,
+} from '../../components/modals/BaseSizeLimitModal'
+import { exportBaseAsJson } from '../../utils/exportBase'
 import {
-    applyBaseVisibility,
-    isRecordVisibleOnBase,
+    applyBaseTypeVisibility,
+    isRecordVisibleOnBaseType,
 } from '../../utils/geoVisibility'
-import { lngLatToSurface, scaleForMapZoom } from '../../bases/mercator'
+import {
+    lngLatToSurface,
+    mapZoomForScale,
+    scaleForMapZoom,
+    surfaceToLngLat,
+} from '../../baseTypes/mercator'
+import { writeBaseTypeConfig } from '../../baseTypes/baseTypeStorage'
+import { baseTypeUrl } from '../../utils/baseRoutes'
 import {
     readViewport,
     writeViewport,
     IDENTITY_VIEWPORT,
 } from '../../utils/viewportStorage'
-import type { BaseId, MapAnchor } from '../../bases/types'
-import ImportBoardModal from '../../components/modals/ImportBoardModal'
+import type { BaseType, MapAnchor } from '../../baseTypes/types'
+import ImportBaseModal from '../../components/modals/ImportBaseModal'
 import {
-    openBoardFilePicker,
-    parseImportedBoard,
-} from '../../utils/importBoard'
-import type { ParsedImport, BoardViewport } from '../../utils/importBoard'
-import { draftFitsForStore } from '../../utils/boardSizeGuard'
+    openBaseFilePicker,
+    parseImportedBase,
+} from '../../utils/importBase'
+import type { ParsedImport, BaseViewport } from '../../utils/importBase'
+import { draftFitsForStore } from '../../utils/baseSizeGuard'
 import { generateUUID, generateRandomUsernames } from '../../utils/misc'
 import { prefetchElementModule } from '../../elementModules'
 import {
@@ -93,11 +102,11 @@ import {
     PENDING_SHAPE_PROPS_KEY,
     LAST_ADDED_ELEMENT_ID_KEY,
     PENCIL_MODE_KEY,
-    BACKGROUND_BOARD_STORAGE_KEY,
+    BACKGROUND_BASE_STORAGE_KEY,
     VIEWPORT_KEY_PREFIX,
     MOBILE_VIEWPORT_KEY_PREFIX,
     VIEWPORT_TTL_MS,
-    BASE_KEY_PREFIX,
+    BASE_TYPE_KEY_PREFIX,
     GEO_HIDDEN_TOOLS,
     GEO_VISIBILITY_RETRIES,
     GEO_VISIBILITY_MAX_FRAMES,
@@ -112,13 +121,13 @@ import {
     isWelcomeComponent,
     playWelcomeSketchEntrance,
 } from '../../utils/welcomeSketch'
-import { useActiveBase } from '../../hooks/useActiveBase'
+import { useActiveBaseType } from '../../hooks/useActiveBaseType'
 import { useDrawingModes } from '../../hooks/useDrawingModes'
 import { useElementDefaults } from '../../hooks/useElementDefaults'
 import { useMobileToolbarPanels } from '../../hooks/useMobileToolbarPanels'
 import { useLocalDraftPersistence } from '../../hooks/useLocalDraftPersistence'
 import { useElementCountWarning } from '../../hooks/useElementCountWarning'
-import { PERFORMANCE_WARNING_THRESHOLD } from '../../utils/countBoardElements'
+import { PERFORMANCE_WARNING_THRESHOLD } from '../../utils/countBaseElements'
 import Toast from '../../components/common/toast'
 import {
     useComponentHistory,
@@ -127,18 +136,18 @@ import {
 import { createApplyProperty } from '../../utils/applyProperty'
 import { createApplyGroupProperty } from '../../utils/applyGroupProperty'
 import type {
-    BoardProps,
-    BoardContextValue,
+    BaseProps,
+    BaseContextValue,
     ComponentRecord,
     ComponentStore,
     CameraChangeEvent,
-} from '../../types/board'
-import { BoardContext, useBoardContext } from './boardContext'
+} from '../../types/base'
+import { BaseContext, useBaseContext } from './baseContext'
 
-// Re-exported so existing importers (`from '.../views/Board/board'`) and the
+// Re-exported so existing importers (`from '.../views/Base/base'`) and the
 // public lib.ts surface keep working — the canonical definition now lives in
-// the stable boardContext module (see the comment there for the HMR rationale).
-export { BoardContext, useBoardContext }
+// the stable baseContext module (see the comment there for the HMR rationale).
+export { BaseContext, useBaseContext }
 
 // Strips __typename fields injected by Apollo before sending data back to Hasura
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,37 +169,37 @@ const formatDraftBytes = (n: number): string => {
     return `${(n / (1024 * 1024)).toFixed(2)} MB`
 }
 
-const BoardViewPage: React.FC<BoardProps> = (props) => {
+const BaseViewPage: React.FC<BaseProps> = (props) => {
     const routeParams = useParams()
-    const boardIdFromUrl = routeParams.id
-    const [localBoardId, setLocalBoardId] = useState(() => {
-        if (boardIdFromUrl) return boardIdFromUrl
-        // Reuse the boardId stored with the local draft so viewport persistence
+    const baseIdFromUrl = routeParams.id
+    const [localBaseId, setLocalBaseId] = useState(() => {
+        if (baseIdFromUrl) return baseIdFromUrl
+        // Reuse the baseId stored with the local draft so viewport persistence
         // keys stay stable across page refreshes in local (non-persisted) mode.
         try {
             const draft = localStorage.getItem(DRAFT_STORAGE_KEY)
             if (draft) {
                 const parsed = JSON.parse(draft)
-                if (parsed?.boardId) return parsed.boardId
+                if (parsed?.baseId) return parsed.baseId
             }
         } catch (_) {}
         return generateUUID()
     })
-    const [isPersisted, setIsPersisted] = useState(!!boardIdFromUrl)
-    const isPersistedRef = useRef(!!boardIdFromUrl)
-    const boardId = boardIdFromUrl || localBoardId
-    const [backgroundBoardId, setBackgroundBoardId] = useState<string | null>(
+    const [isPersisted, setIsPersisted] = useState(!!baseIdFromUrl)
+    const isPersistedRef = useRef(!!baseIdFromUrl)
+    const baseId = baseIdFromUrl || localBaseId
+    const [backgroundBaseId, setBackgroundBaseId] = useState<string | null>(
         null
     )
-    const backgroundBoardIdRef = useRef<string | null>(null)
-    const boardCreationInFlightRef = useRef<boolean>(false)
+    const backgroundBaseIdRef = useRef<string | null>(null)
+    const baseCreationInFlightRef = useRef<boolean>(false)
 
     const {
-        loading: getComponentsForBoardLoading,
-        data: getComponentsForBoardData,
-        error: getComponentsForBoardError,
-    } = useQuery(GET_COMPONENTS_FOR_BOARD_QUERY, {
-        variables: { boardId },
+        loading: getComponentsForBaseLoading,
+        data: getComponentsForBaseData,
+        error: getComponentsForBaseError,
+    } = useQuery(GET_COMPONENTS_FOR_BASE_QUERY, {
+        variables: { baseId },
         fetchPolicy: 'cache-first',
         skip: !isPersisted,
     })
@@ -230,9 +239,12 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const navigate = useNavigate()
 
     const [
-        createBoard,
-        { loading: createBoardLoading, data: createBoardData },
-    ] = useMutation(CREATE_BOARD)
+        createBase,
+        { loading: createBaseLoading, data: createBaseData },
+    ] = useMutation(CREATE_BASE)
+
+    const [updateBaseVisibility] = useMutation(UPDATE_BASE_VISIBILITY)
+    const [sharePersistedBase] = useMutation(SHARE_PERSISTED_BASE)
 
     const [insertBulkComponents] = useMutation(INSERT_BULK_COMPONENTS, {
         ignoreResults: true,
@@ -243,7 +255,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const { showPerfWarning, dismissPerfWarning } = useElementCountWarning({
         componentStore,
         isPersisted,
-        boardId,
+        baseId,
     })
 
     const [lastAddedElement, setLastAddedElement] =
@@ -251,7 +263,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [twoJSInstance, setTwoJSInstance] = useState<any>(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [zuiInBoard, setZuiInBoard] = useState<any>(null)
+    const [zuiInBase, setZuiInBase] = useState<any>(null)
     const [selectedComponent, setSelectedComponent] = useState<unknown>(null)
     const [selectedGroup, setSelectedGroup] = useState<unknown>(null)
     // Mirror of selectedGroup as a ref — useComponentHistory's applyBatch needs
@@ -299,7 +311,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const twoJSInstanceRef = useRef<any>(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const zuiInBoardRef = useRef<any>(null)
+    const zuiInBaseRef = useRef<any>(null)
     const skipComponentStoreResetRef = useRef<boolean>(false)
 
     const {
@@ -315,25 +327,30 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         eraserSize,
         isPanMode,
         togglePanMode: togglePanModeFromHook,
-        setArrowDrawModeInBoard,
-        setTextDrawModeInBoard,
-        setRubberModeInBoard,
-        setEraserSizeInBoard,
+        setArrowDrawModeInBase,
+        setTextDrawModeInBase,
+        setRubberModeInBase,
+        setEraserSizeInBase,
         clearDrawModesFromStorage,
     } = useDrawingModes()
 
-    // Active base (board / map). Reads the board's persisted choice without
-    // writing one, so boards that predate the switcher open exactly as before.
+    // Active base type (board / map). Reads the base's persisted choice without
+    // writing one, so bases that predate the switcher open exactly as before.
     const {
-        activeBase,
-        provider: baseProvider,
-        switchBase,
-        handleCameraChange: handleBaseCameraChange,
+        activeBaseType,
+        provider: baseTypeProvider,
+        switchBaseType,
+        handleCameraChange: handleBaseTypeCameraChange,
         captureBackdrop,
-        readConfig: readBaseConfigForExport,
+        readConfig: readBaseTypeConfigForExport,
         setMapAnchor,
         hadStoredMapAnchor,
-    } = useActiveBase({ boardId, defaultBase: props.defaultBase })
+    } = useActiveBaseType({
+        baseId,
+        defaultBaseType: props.defaultBaseType,
+        serverConfig: props.serverBaseConfig,
+        pinnedBaseType: props.pinnedBaseType,
+    })
 
     /**
      * Deprecated `geoObjectsEnabled` compatibility.
@@ -350,27 +367,46 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (!props.geoObjectsEnabled) {
             return {
                 // Which base this toolset was actually built from. Providers are
-                // dynamically imported, so `baseProvider` lags `activeBase` by
+                // dynamically imported, so `baseTypeProvider` lags `activeBaseType` by
                 // however long the chunk takes to load — anything acting on a
                 // base switch has to wait for these two to agree, or it acts on
                 // the OUTGOING base's tools.
-                baseId: baseProvider.id,
-                hiddenTools: baseProvider.hiddenTools,
-                extraTools: baseProvider.extraTools,
-                homeTool: baseProvider.homeTool,
+                baseId: baseTypeProvider.id,
+                hiddenTools: baseTypeProvider.hiddenTools,
+                extraTools: baseTypeProvider.extraTools,
+                homeTool: baseTypeProvider.homeTool,
             }
         }
         return {
-            baseId: baseProvider.id,
+            baseId: baseTypeProvider.id,
             hiddenTools: GEO_HIDDEN_TOOLS,
             extraTools: geoElementData,
             homeTool: 'pan',
         }
-    }, [baseProvider, props.geoObjectsEnabled])
+    }, [baseTypeProvider, props.geoObjectsEnabled])
 
     // A consumer that paints its own backdrop owns the substrate; offering them
-    // craftbase's switcher would stack a second one underneath.
-    const baseSwitcherEnabled = !props.renderBackground
+    // craftbase's switcher would stack a second one underneath. A pinned route
+    // (`/map/:id`) owns it for a different reason: there the URL names the type,
+    // so a switcher could only ever make the address bar lie.
+    const baseTypeSwitcherEnabled =
+        !props.renderBackground && !props.pinnedBaseType
+
+    /**
+     * Where a recipient of this shared map should land, resolved once at mount.
+     *
+     * Requires BOTH halves of the base row's geography: the anchor (which makes
+     * the ink mean anything) and the landing view (the camera to open on). They
+     * are always written together, so anything less is a hand-edited row and is
+     * ignored rather than half-applied — Canvas then falls back to the saved
+     * camera, exactly as it did before this existed.
+     */
+    const [initialMapLanding] = useState(() => {
+        const anchor = props.serverBaseConfig?.mapAnchor
+        const landing = props.serverBaseConfig?.landing
+        if (!anchor || !landing) return null
+        return { anchor, lngLat: landing.lngLat, zoom: landing.zoom }
+    })
 
     /**
      * Each base shows only the content that belongs on it: geo objects are
@@ -390,10 +426,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // mount — so anything it calls reads mount-time state unless it goes through
     // a ref (see the stale-closure note in CLAUDE.md). `promoteWelcomeSketch` is
     // reached exactly that way.
-    const activeBaseRef = useRef<BaseId>(activeBase)
+    const activeBaseTypeRef = useRef<BaseType>(activeBaseType)
     useEffect(() => {
-        activeBaseRef.current = activeBase
-    }, [activeBase])
+        activeBaseTypeRef.current = activeBaseType
+    }, [activeBaseType])
 
     useEffect(() => {
         let cancelled = false
@@ -404,11 +440,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         const apply = (): void => {
             if (cancelled) return
             const two = twoJSInstanceRef.current
-            if (two) applyBaseVisibility(two, activeBase, { forceGeoVisible })
+            if (two) applyBaseTypeVisibility(two, activeBaseType, { forceGeoVisible })
 
             // Keep re-applying until the scene stops growing, then for a short
             // quiet window after that. A fixed budget from the store change was
-            // not enough: element components mount lazily, so on a big board
+            // not enough: element components mount lazily, so on a big base
             // (or right after a share, which re-mounts the whole scene) the last
             // geo element could land after the window closed and never get
             // hidden — which is exactly how a route ends up on the whiteboard.
@@ -427,18 +463,18 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         return (): void => {
             cancelled = true
         }
-    }, [activeBase, forceGeoVisible, componentStore])
+    }, [activeBaseType, forceGeoVisible, componentStore])
 
     // The base's backdrop sync rides the same camera events the consumer prop
     // gets. Kept in a ref-free plain callback because Canvas stores it in a ref
     // of its own (see the stale-closure note in CLAUDE.md).
     const handleCameraChange = useCallback(
         (camera: CameraChangeEvent): void => {
-            handleBaseCameraChange(camera)
+            handleBaseTypeCameraChange(camera)
             props.onCameraChange?.(camera)
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [handleBaseCameraChange, props.onCameraChange]
+        [handleBaseTypeCameraChange, props.onCameraChange]
     )
 
     const { showMobileToolbarPanel, setShowMobileToolbarPanel } =
@@ -480,9 +516,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         setDefaultTextColor,
         setDefaultTextSize,
         setDefaultTextFontFamily,
-        // board-facing setters (kept for any external callers)
-        setDefaultLinewidthInBoard,
-        setDefaultStrokeTypeInBoard,
+        // base-facing setters (kept for any external callers)
+        setDefaultLinewidthInBase,
+        setDefaultStrokeTypeInBase,
         resetDefaults,
     } = useElementDefaults()
 
@@ -519,22 +555,22 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const {
         showStorageLimitModal,
         setShowStorageLimitModal,
-        storageLimitBoardUrl,
-        setStorageLimitBoardUrl,
+        storageLimitBaseUrl,
+        setStorageLimitBaseUrl,
         handleStartNewCanvas,
-        handleContinueOnSavedBoard,
-        showBoardTooLargeModal,
-        handleDownloadBoardBackup,
+        handleContinueOnSavedBase,
+        showBaseTooLargeModal,
+        handleDownloadBaseBackup,
         handleStartFreshFromTooLarge,
-        handleOpenBoardAnyway,
+        handleOpenBaseAnyway,
         draftSizeBytes,
     } = useLocalDraftPersistence({
         isPersisted,
-        localBoardId,
+        localBaseId,
         componentStore,
         setComponentStore,
-        backgroundBoardIdRef,
-        setBackgroundBoardId,
+        backgroundBaseIdRef,
+        setBackgroundBaseId,
         onStorageLimitRef,
         onDraftOverBudgetRef,
         welcomeSketch: props.welcomeSketch,
@@ -555,7 +591,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         twoJSInstanceRef,
         stateRefForComponentStore,
         isPersistedRef,
-        boardId,
+        baseId,
         isPersisted,
         insertComponent,
         deleteComponent,
@@ -571,19 +607,19 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
 
     // Write-side size guard. The measurement lives in useLocalDraftPersistence
     // (real UTF-8 size of the persisted draft, after each save); when it's over
-    // budget it calls this, and we revert the last action + open the "board is
+    // budget it calls this, and we revert the last action + open the "canvas is
     // full" modal. Skip when there's nothing to revert (a draft hydration or
     // "open anyway"), so the guard never fights a load it can't roll back.
-    const [showBoardFullModal, setShowBoardFullModal] = useState(false)
+    const [showBaseFullModal, setShowBaseFullModal] = useState(false)
     onDraftOverBudgetRef.current = (): void => {
         if (historyLogRef.current.length === 0) return
         undoLastAction()
-        setShowBoardFullModal(true)
+        setShowBaseFullModal(true)
     }
 
-    // Export the current board to a .json file — the "keep working elsewhere"
-    // path offered by the board-full modal. Reads viewport off the live scene.
-    const handleExportBoardFromModal = useCallback(() => {
+    // Export the current base to a .json file — the "keep working elsewhere"
+    // path offered by the canvas-full modal. Reads viewport off the live scene.
+    const handleExportBaseFromModal = useCallback(() => {
         const scene = twoJSInstanceRef.current?.scene
         const viewport = scene
             ? {
@@ -592,16 +628,16 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(
+        exportBaseAsJson(
             stateRefForComponentStore.current,
             viewport,
-            readBaseConfigForExport()
+            readBaseTypeConfigForExport()
         )
-        setShowBoardFullModal(false)
-    }, [readBaseConfigForExport])
+        setShowBaseFullModal(false)
+    }, [readBaseTypeConfigForExport])
 
     // ---- Board import (P0) ----
-    // The chooser modal is driven by board state; the parsed file waits in a
+    // The chooser modal is driven by base state; the parsed file waits in a
     // ref until the user picks "Open as new" vs "Merge".
     const [showImportChooser, setShowImportChooser] = useState(false)
     const [importError, setImportError] = useState<string | null>(null)
@@ -610,8 +646,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // Set the camera absolutely to a saved viewport: reset to identity, then
     // zoom + translate (the fitToContent pattern in newCanvas). zoomSet keeps
     // ZUI's internal scale in sync — never set two.scene.scale directly.
-    const restoreImportedViewport = useCallback((vp: BoardViewport): void => {
-        const zui = zuiInBoardRef.current?.zui
+    const restoreImportedViewport = useCallback((vp: BaseViewport): void => {
+        const zui = zuiInBaseRef.current?.zui
         if (!zui) return
         try {
             zui.reset?.()
@@ -632,16 +668,16 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
      * panning around a map must not drag the whiteboard's view with it. Element
      * coordinates are still untouched; only the camera differs per base.
      */
-    const prevBaseRef = useRef<BaseId>(activeBase)
+    const prevBaseTypeRef = useRef<BaseType>(activeBaseType)
     useEffect(() => {
-        const previous = prevBaseRef.current
-        if (previous === activeBase) return
-        prevBaseRef.current = activeBase
+        const previous = prevBaseTypeRef.current
+        if (previous === activeBaseType) return
+        prevBaseTypeRef.current = activeBaseType
 
         const two = twoJSInstanceRef.current
         const scene = two?.scene
-        if (scene && boardId) {
-            writeViewport(boardId, previous, isMobile, {
+        if (scene && baseId) {
+            writeViewport(baseId, previous, isMobile, {
                 scale: typeof scene.scale === 'number' ? scene.scale : 1,
                 tx: scene.translation.x,
                 ty: scene.translation.y,
@@ -649,41 +685,41 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         }
 
         // Hand the camera the incoming base's zoom range BEFORE restoring its
-        // viewport — the map's range reaches far below the board's floor, and a
+        // viewport — the map's range reaches far below the board base's floor, and a
         // stale floor would clamp a wide map camera on the way in.
         //
-        // Read from the static table, NOT `baseProvider`: providers load through
-        // a dynamic import, so on a switch `baseProvider` still describes the
-        // base being LEFT. Using it here would install the board's floor and
+        // Read from the static table, NOT `baseTypeProvider`: providers load through
+        // a dynamic import, so on a switch `baseTypeProvider` still describes the
+        // base being LEFT. Using it here would install the board base's floor and
         // clamp the very map camera this line exists to protect.
-        const incomingLimits = zoomLimitsForBase(activeBase)
-        zuiInBoardRef.current?.setZoomLimits?.(
+        const incomingLimits = zoomLimitsForBaseType(activeBaseType)
+        zuiInBaseRef.current?.setZoomLimits?.(
             incomingLimits.min,
             incomingLimits.max
         )
 
         restoreImportedViewport(
-            (boardId && readViewport(boardId, activeBase, isMobile)) ||
+            (baseId && readViewport(baseId, activeBaseType, isMobile)) ||
                 IDENTITY_VIEWPORT
         )
         // The backdrop tracks onCameraChange, and this camera move happens
         // outside addZUI's handlers — announce it or the map stays put.
-        zuiInBoardRef.current?.notifyCameraChange?.()
-    }, [activeBase, boardId, isMobile, restoreImportedViewport])
+        zuiInBaseRef.current?.notifyCameraChange?.()
+    }, [activeBaseType, baseId, isMobile, restoreImportedViewport])
 
     // Belt-and-braces re-apply once the camera exists. newCanvas already
     // installs the active base's range before restoring the saved viewport;
     // this covers any later path that recreates the camera.
     //
-    // Keyed on `activeBase` via the static table rather than on `baseProvider`.
+    // Keyed on `activeBaseType` via the static table rather than on `baseTypeProvider`.
     // It used to read the provider, which meant this effect fired on first
     // render with the still-unresolved board base and re-clamped a just-restored
     // map camera back to the whiteboard's 6% floor — undoing the restore it was
     // meant to complete.
     useEffect(() => {
-        const limits = zoomLimitsForBase(activeBase)
-        zuiInBoardRef.current?.setZoomLimits?.(limits.min, limits.max)
-    }, [activeBase, zuiInBoard])
+        const limits = zoomLimitsForBaseType(activeBaseType)
+        zuiInBaseRef.current?.setZoomLimits?.(limits.min, limits.max)
+    }, [activeBaseType, zuiInBase])
 
     // Re-glue every docked connector whose bound shape is present in `store`.
     // The listener in newCanvas polls for fresh mounts, so dispatching now
@@ -715,8 +751,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         []
     )
 
-    // Replace the whole canvas with the imported board and rotate the local
-    // board id. Mirrors clearBoard's teardown + persistBoard's id rotation.
+    // Replace the whole canvas with the imported base and rotate the local
+    // base id. Mirrors clearBase's teardown + persistBase's id rotation.
     const importAsNewCanvas = useCallback(
         (parsed: ParsedImport): void => {
             window.dispatchEvent(new Event('clearSelector'))
@@ -727,12 +763,12 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             const newLocalId = generateUUID()
             const store: ComponentStore = {}
             Object.entries(parsed.components).forEach(([id, comp]) => {
-                store[id] = { ...comp, boardId: newLocalId }
+                store[id] = { ...comp, baseId: newLocalId }
             })
             stateRefForComponentStore.current = store
-            // Rotate localBoardId without the id-change effect wiping the store.
+            // Rotate localBaseId without the id-change effect wiping the store.
             skipComponentStoreResetRef.current = true
-            setLocalBoardId(newLocalId)
+            setLocalBaseId(newLocalId)
             setComponentStore(store)
             clearHistory(isPersisted)
 
@@ -742,11 +778,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         [isPersisted, restoreImportedViewport, restackBoundPortsForStore]
     )
 
-    // Merge the imported board into the current canvas: re-key every id to a
+    // Merge the imported base into the current canvas: re-key every id to a
     // fresh UUID (so it can't collide), remap in-file port bindings to the
     // clones (drop bindings to shapes not in the file), and stack on top. One
     // BATCH entry so a single undo removes the whole import.
-    const mergeImportedBoard = useCallback(
+    const mergeImportedBase = useCallback(
         (parsed: ParsedImport): void => {
             const records = Object.values(parsed.components)
             // Add in ascending original z-order so the assigned positions
@@ -772,7 +808,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             records.forEach((r, i) => {
                 const newId = idMap.get(r.id) as string
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const cloned: any = { ...r, id: newId, boardId }
+                const cloned: any = { ...r, id: newId, baseId }
                 // Explicit top position, in sorted order — O(1) per add.
                 cloned.position = baseMax + i + 1
                 ;(['tail', 'head'] as const).forEach((end) => {
@@ -811,17 +847,17 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             }
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [boardId]
+        [baseId]
     )
 
-    const beginBoardImport = useCallback(async (): Promise<void> => {
-        const text = await openBoardFilePicker()
+    const beginBaseImport = useCallback(async (): Promise<void> => {
+        const text = await openBaseFilePicker()
         if (text == null) return // cancelled
         try {
-            const parsed = parseImportedBoard(text)
+            const parsed = parseImportedBase(text)
             if (Object.keys(parsed.components).length === 0) {
                 pendingImportRef.current = null
-                setImportError('This file has no readable board elements.')
+                setImportError('This file has no readable canvas elements.')
             } else {
                 pendingImportRef.current = parsed
                 setImportError(null)
@@ -843,10 +879,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         (projected: ComponentStore): boolean => {
             if (draftFitsForStore(projected)) return false
             setImportError(
-                "This board is too large to fit in this browser's local storage. " +
+                "This canvas is too large to fit in this browser's local storage. " +
                     'Browsers store canvas text at roughly twice its file size and ' +
-                    'cap local storage near 5 MB, so very large boards can’t be ' +
-                    'saved locally. Try a smaller board, or split it across canvases.'
+                    'cap local storage near 5 MB, so very large canvases can’t be ' +
+                    'saved locally. Try a smaller one, or split it across canvases.'
             )
             return true
         },
@@ -879,8 +915,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (rejectIfWontFit(projected)) return // stay open, show error
         setShowImportChooser(false)
         pendingImportRef.current = null
-        mergeImportedBoard(parsed)
-    }, [mergeImportedBoard, rejectIfWontFit])
+        mergeImportedBase(parsed)
+    }, [mergeImportedBase, rejectIfWontFit])
 
     const handleImportChooserClose = useCallback(() => {
         setShowImportChooser(false)
@@ -907,9 +943,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // (and, once the user picks a base, craftbase_base_<id>); without this
     // sweep, localStorage accumulates dead entries indefinitely.
     //
-    // BASE_KEY_PREFIX is matched *additively* alongside the viewport prefixes —
+    // BASE_TYPE_KEY_PREFIX is matched *additively* alongside the viewport prefixes —
     // all three share the same savedAt/TTL shape. Take care here: broadening
-    // this match incorrectly would evict every board's saved camera.
+    // this match incorrectly would evict every base's saved camera.
     useEffect(() => {
         try {
             const now = Date.now()
@@ -919,7 +955,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                     !key ||
                     (!key.startsWith(VIEWPORT_KEY_PREFIX) &&
                         !key.startsWith(MOBILE_VIEWPORT_KEY_PREFIX) &&
-                        !key.startsWith(BASE_KEY_PREFIX))
+                        !key.startsWith(BASE_TYPE_KEY_PREFIX))
                 )
                     continue
                 try {
@@ -939,21 +975,21 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         } catch (_) {}
     }, [])
 
-    // Reset component store whenever the board changes (persisted mode only).
-    // In local mode the boardId is a stable UUID and draft restore handles initialization.
-    // skipComponentStoreResetRef lets persistBoard() rotate localBoardId without wiping the store.
-    const prevBoardIdRef = useRef(boardId)
+    // Reset component store whenever the base changes (persisted mode only).
+    // In local mode the baseId is a stable UUID and draft restore handles initialization.
+    // skipComponentStoreResetRef lets persistBase() rotate localBaseId without wiping the store.
+    const prevBaseIdRef = useRef(baseId)
     useEffect(() => {
-        if (prevBoardIdRef.current !== boardId) {
+        if (prevBaseIdRef.current !== baseId) {
             if (!skipComponentStoreResetRef.current) {
                 setComponentStore({})
             }
             skipComponentStoreResetRef.current = false
-            prevBoardIdRef.current = boardId
+            prevBaseIdRef.current = baseId
         }
-    }, [boardId])
+    }, [baseId])
 
-    // Update revisit count on every board open, persisted or local.
+    // Update revisit count on every base open, persisted or local.
     // A null payload means there's no revisit row for this userId — i.e.
     // the user was never created in this DB. Self-heal by inserting the
     // user with the known id; the `after_user_insert` Postgres trigger
@@ -979,42 +1015,41 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             })
             .catch(() => {
                 // Non-blocking: revisit tracking is best-effort and must
-                // never break board mount (network/permission/conflict).
+                // never break base mount (network/permission/conflict).
             })
     }, [])
 
-    // Track last opened board only once it's persisted
+    // Track last opened base only once it's persisted
     useEffect(() => {
-        if (isPersisted && boardId) {
-            localStorage.setItem('lastOpenBoard', boardId)
+        if (isPersisted && baseId) {
         }
     }, [isPersisted])
 
     useEffect(() => {
         if (
-            !getComponentsForBoardLoading &&
-            getComponentsForBoardData &&
-            getComponentsForBoardData.components
+            !getComponentsForBaseLoading &&
+            getComponentsForBaseData &&
+            getComponentsForBaseData.components
         ) {
-            if (getComponentsForBoardData.components.length > 0) {
+            if (getComponentsForBaseData.components.length > 0) {
                 const baseComponentStore: ComponentStore = { ...componentStore }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                getComponentsForBoardData.components.forEach((item: any) => {
+                getComponentsForBaseData.components.forEach((item: any) => {
                     baseComponentStore[item.id] = item as ComponentRecord
                 })
                 setComponentStore(baseComponentStore)
             }
         }
-    }, [getComponentsForBoardData])
+    }, [getComponentsForBaseData])
 
     useEffect(() => {
         isPersistedRef.current = isPersisted
     }, [isPersisted])
 
-    // Warm the core element chunks once the board is idle after mount, so the
+    // Warm the core element chunks once the base is idle after mount, so the
     // first use of any of them finds its chunk already cached (the per-arm
     // prefetch in primary.tsx still covers the quick-draw race). Best-effort:
-    // gated on idle so it never competes with initial paint/board-load.
+    // gated on idle so it never competes with initial paint/base-load.
     //
     // `groupobject` is included because group-selection lazy-loads it on
     // demand; without warming, the group can't mount until its ~580ms (Slow 4G)
@@ -1070,8 +1105,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         playWelcomeSketchEntrance(two, componentStore)
     }, [componentStore, twoJSInstance])
 
-    // NOTE: the persisted-board loading gate lives in the parent
-    // (views/Board/index.tsx). Never add a conditional `return` here — this
+    // NOTE: the persisted-base loading gate lives in the parent
+    // (views/Base/index.tsx). Never add a conditional `return` here — this
     // component runs hundreds of hooks below this point and an early return
     // changes the hook count between renders (Rules of Hooks violation).
 
@@ -1091,7 +1126,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (pointerVal) {
             cancelPendingElement()
             setSelectedComponent(null)
-            setRubberModeInBoard(false)
+            setRubberModeInBase(false)
             setRootCursor('default')
         }
     }
@@ -1100,7 +1135,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         setPencilMode(value)
         if (value) {
             cancelPendingElement()
-            setRubberModeInBoard(false)
+            setRubberModeInBase(false)
             localStorage.setItem(PENCIL_MODE_KEY, 'TRUE')
             setRootCursor('crosshair')
         } else {
@@ -1117,28 +1152,28 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const setTwoJSInstanceInBoard = (two: any) => {
+    const setTwoJSInstanceInBase = (two: any) => {
         twoJSInstanceRef.current = two
         setTwoJSInstance(two)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const setZuiInstanceInBoard = (zuiInst: any) => {
-        zuiInBoardRef.current = zuiInst
-        setZuiInBoard(zuiInst)
+    const setZuiInstanceInBase = (zuiInst: any) => {
+        zuiInBaseRef.current = zuiInst
+        setZuiInBase(zuiInst)
     }
 
-    const setSelectedComponentInBoard = (shape: unknown) => {
+    const setSelectedComponentInBase = (shape: unknown) => {
         setSelectedComponent(shape ?? null)
     }
 
     /**
      * Travel to a searched place.
      *
-     * The map base georeferences the board through a SINGLE anchor: surface
+     * The map base georeferences the base through a SINGLE anchor: surface
      * (0,0) is `anchor.lngLat`, and every element's surface coordinates mean a
      * real place only in relation to it. Moving the anchor therefore re-points
-     * the entire board at new geography while the ink stays put — a route drawn
+     * the entire base at new geography while the ink stays put — a route drawn
      * around Satellite, Ahmedabad reappears in Virginia because it was never
      * "in Ahmedabad", it was 500px from wherever the anchor happened to be.
      *
@@ -1155,12 +1190,12 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
      */
     const goToPlace = useCallback(
         (place: MapAnchor): void => {
-            const anchor = readBaseConfigForExport().mapAnchor
+            const anchor = readBaseTypeConfigForExport().mapAnchor
             const store = stateRefForComponentStore.current ?? {}
             const mapHasContent = Object.values(store).some(
                 (record) =>
                     record?.componentType !== GROUP_COMPONENT &&
-                    isRecordVisibleOnBase(record, 'map')
+                    isRecordVisibleOnBaseType(record, 'map')
             )
 
             if (!anchor || !mapHasContent) {
@@ -1169,13 +1204,13 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             }
 
             const { x, y } = lngLatToSurface(place.lngLat, anchor)
-            zuiInBoardRef.current?.centerOnSurface?.(
+            zuiInBaseRef.current?.centerOnSurface?.(
                 x,
                 y,
                 scaleForMapZoom(place.zoom, anchor)
             )
         },
-        [readBaseConfigForExport, setMapAnchor]
+        [readBaseTypeConfigForExport, setMapAnchor]
     )
 
     /**
@@ -1185,7 +1220,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
      * action. Three conditions, all necessary:
      *
      *  1. We are on the map base (nothing to ask otherwise).
-     *  2. The board has never persisted an anchor. Note this reads the value
+     *  2. The base has never persisted an anchor. Note this reads the value
      *     snapshotted at load, not the live one: the provider fills in a
      *     timezone guess the moment it mounts, so the live config always has an
      *     anchor and would never let the prompt through.
@@ -1214,24 +1249,24 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
 
     useEffect(() => {
         if (askedMapStartRef.current) return
-        if (activeBase !== 'map') return
+        if (activeBaseType !== 'map') return
         if (hadStoredMapAnchor) return
         // Wait for the map provider to actually be live, so a "Skip" has
         // something to persist against.
-        if (baseProvider.id !== 'map') return
+        if (baseTypeProvider.id !== 'map') return
 
         const store = stateRefForComponentStore.current ?? {}
         const mapHasContent = Object.values(store).some(
             (record) =>
                 record?.componentType !== GROUP_COMPONENT &&
-                isRecordVisibleOnBase(record, 'map')
+                isRecordVisibleOnBaseType(record, 'map')
         )
         if (mapHasContent) return
 
         askedMapStartRef.current = true
         mapStartPendingRef.current = true
         setShowMapStartModal(true)
-    }, [activeBase, hadStoredMapAnchor, baseProvider, componentStore])
+    }, [activeBaseType, hadStoredMapAnchor, baseTypeProvider, componentStore])
 
     const handleMapStartPick = useCallback(
         (place: MapAnchor): void => {
@@ -1256,33 +1291,33 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         setMapAnchor({
             lngLat: [...timezoneCity.lngLat],
             zoom:
-                readBaseConfigForExport().mapAnchor?.zoom ??
+                readBaseTypeConfigForExport().mapAnchor?.zoom ??
                 DEFAULT_ANCHOR_ZOOM,
         })
-    }, [setMapAnchor, timezoneCity, readBaseConfigForExport])
+    }, [setMapAnchor, timezoneCity, readBaseTypeConfigForExport])
 
-    // Creates a board in the background on first interaction (non-blocking).
-    // Stores the server board ID in state + ref + localStorage for later use.
-    const ensureBackgroundBoard = async () => {
+    // Creates a base in the background on first interaction (non-blocking).
+    // Stores the server base ID in state + ref + localStorage for later use.
+    const ensureBackgroundBase = async () => {
         if (isPersistedRef.current) return
-        if (backgroundBoardIdRef.current) return
-        if (boardCreationInFlightRef.current) return
+        if (backgroundBaseIdRef.current) return
+        if (baseCreationInFlightRef.current) return
 
-        boardCreationInFlightRef.current = true
+        baseCreationInFlightRef.current = true
         try {
             const userId = localStorage.getItem('userId')
-            const { data: boardData } = await createBoard({
+            const { data: baseData } = await createBase({
                 variables: { object: {} },
             })
-            const newBoardId = boardData?.board?.id
-            if (!newBoardId) return
-            backgroundBoardIdRef.current = newBoardId
-            setBackgroundBoardId(newBoardId)
-            localStorage.setItem(BACKGROUND_BOARD_STORAGE_KEY, newBoardId)
+            const newBaseId = baseData?.base?.id
+            if (!newBaseId) return
+            backgroundBaseIdRef.current = newBaseId
+            setBackgroundBaseId(newBaseId)
+            localStorage.setItem(BACKGROUND_BASE_STORAGE_KEY, newBaseId)
         } catch (e) {
-            console.error('Background board creation failed:', e)
+            console.error('Background base creation failed:', e)
         } finally {
-            boardCreationInFlightRef.current = false
+            baseCreationInFlightRef.current = false
         }
     }
 
@@ -1300,15 +1335,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // base — and promoting it there would hand the user "their own content"
         // they have never seen.
         //
-        // It also silently changes what the element IS to the visibility rule:
-        // the sketch's standalone text is hidden off-board *only* because
-        // `isWelcomeComponent` matches it (plain text is deliberately visible on
-        // every base). Strip the tag while the user is on the map and that copy
-        // — "Pick a shape", "Double-click anywhere to add text" — stops being
-        // onboarding and reappears over the map on the next visibility pass.
+        // It also used to silently change what the element IS to the
+        // visibility rule, back when text was universal and `isWelcomeComponent`
+        // was the only thing holding the sketch's copy off the map. Text is now
+        // scoped per record and the sketch carries `baseTypeScope: 'board'`, so
+        // that hazard is covered twice over — but promoting off-board is still
+        // wrong for the reason above, so the guard stays.
         // Read through the ref: this is called from `addToLocalComponentStore`,
         // which the canvas captured at mount.
-        if (activeBaseRef.current !== 'board') return
+        if (activeBaseTypeRef.current !== 'board') return
         const welcomeIds = Object.keys(
             stateRefForComponentStore.current
         ).filter((id) =>
@@ -1401,8 +1436,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             promoteWelcomeSketch()
         }
 
-        // Trigger background board creation on first interaction
-        ensureBackgroundBoard()
+        // Trigger background base creation on first interaction
+        ensureBackgroundBase()
 
         if (!skipHistory) {
             recordToHistoryLog({
@@ -1477,7 +1512,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             componentType,
             // geoText is anchored to the map, so flag it geo (mirrors point/
             // area/route). It renders exactly like newText — the flag is what
-            // keeps it on the map base and off the board.
+            // keeps it on the map base and off the board base.
             ...(componentType === 'geoText' && { objectClass: 'geo' }),
             linewidth: defaultLinewidth,
             strokeType: defaultStrokeType,
@@ -1488,12 +1523,20 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 ...(defaultTextFontFamily && {
                     textFontFamily: defaultTextFontFamily,
                 }),
+                // Pin this text to the base type it was authored on. Text is the
+                // one element family with no type-level home: shapes are covered
+                // by BOARD_ONLY_TYPES and geo objects by `objectClass`, but text
+                // fell through every rule to the catch-all `return true` and so
+                // leaked onto every base type. Recording the author's intent per
+                // record is the rule that generalises — a future image base gets
+                // correct scoping for free, with no new branch in the rule.
+                baseTypeScope: activeBaseTypeRef.current,
                 opacity: 1,
             },
             x: Math.trunc(x),
             y: Math.trunc(y),
             x2: 0,
-            boardId: boardId,
+            baseId: baseId,
             width: typeItem.width,
             height: typeItem.height,
             fill: typeItem.fill,
@@ -1529,7 +1572,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         setRootCursor('crosshair')
         localStorage.setItem(TEXT_DRAW_MODE_KEY, 'true')
         localStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, id)
-        setTextDrawModeInBoard(true)
+        setTextDrawModeInBase(true)
         addToLocalComponentStore(id, componentType, shapeData)
     }
 
@@ -1564,9 +1607,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     ) => {
         // Changing a property of a welcome element counts as a first real
         // interaction: promote the sketch into persisted content and spin up the
-        // background board, same as the shapes toolbar. Both are one-shot.
+        // background base, same as the shapes toolbar. Both are one-shot.
         promoteWelcomeSketch()
-        ensureBackgroundBoard()
+        ensureBackgroundBase()
 
         const userId = localStorage.getItem('userId')
 
@@ -1632,10 +1675,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         y: number
     ) => {
         // Dragging a welcome element counts as a first real interaction: promote
-        // the sketch into persisted content and spin up the background board,
+        // the sketch into persisted content and spin up the background base,
         // same as drawing via the shapes toolbar. Both are one-shot/idempotent.
         promoteWelcomeSketch()
-        ensureBackgroundBoard()
+        ensureBackgroundBase()
 
         const userId = localStorage.getItem('userId')
 
@@ -1728,7 +1771,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }
 
     const deleteBulkComponentsFromLocalStore = (ids: string[]) => {
-        ensureBackgroundBoard()
+        ensureBackgroundBase()
 
         const detachEntries = detachArrowsForDeletedShapes(ids)
         const batchEntries: HistoryEntry[] = ids.map((id) => ({
@@ -1757,7 +1800,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
 
     // Snapshots full component state before deletion, then removes from store and DB
     const deleteComponentFromLocalStore = (id: string) => {
-        ensureBackgroundBoard()
+        ensureBackgroundBase()
 
         const detachEntries = detachArrowsForDeletedShapes([id])
         const deleteEntry: HistoryEntry = {
@@ -1792,30 +1835,106 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         }
     }
 
-    const setCurrentElementInBoard = (val: string | null) => {
+    const setCurrentElementInBase = (val: string | null) => {
         setCurrentElement(val)
     }
 
-    const onCreateBoard = () => {
+    const onCreateBase = () => {
         const userId = localStorage.getItem('userId')
-        createBoard({
+        createBase({
             variables: {
                 object: {},
             },
         })
     }
 
-    const persistBoard = async (): Promise<string> => {
-        // Always create a fresh board at share time. The background board
-        // pre-created by ensureBackgroundBoard may be stale (e.g. DB was reset
-        // between sessions) — using its ID would cause a FK violation on insert.
-        const { data: boardData } = await createBoard({
-            variables: { object: {} },
-        })
-        const serverBoardId = boardData?.board?.id
-        if (!serverBoardId) throw new Error('createBoard returned no id')
+    /**
+     * The geography a share has to carry, read at the moment of sharing.
+     *
+     * Two different things, and both are needed:
+     *
+     *  - **anchor** — the georeference. Surface (0,0) IS this lng/lat at this
+     *    zoom, and elements store surface pixels, so without it a recipient's
+     *    map falls back to a guess made from *their* timezone and every pin
+     *    lands in the wrong city.
+     *  - **landing** — where the camera opens: the centre of the view being
+     *    shared. Recorded as lng/lat/zoom, not tx/ty/scale, because pixel
+     *    translations replayed on a different-sized screen land somewhere else.
+     *
+     * `readBaseTypeConfigForExport()` merges the LIVE provider's anchor, not
+     * just the stored one, which is what makes this work for a map whose owner
+     * never searched a place: `mapType.mount` deliberately never persists its
+     * timezone guess (doing so would permanently suppress the first-visit
+     * location prompt), so the only copy of that anchor is the running map's.
+     */
+    const captureShareGeo = (): {
+        type: BaseType
+        anchor: MapAnchor | null
+        landing: MapAnchor | null
+    } => {
+        const config = readBaseTypeConfigForExport()
+        const type = config.type
+        const two = twoJSInstanceRef.current
+        if (type !== 'map' || !two) return { type, anchor: null, landing: null }
 
-        // Insert all components to DB under the server board ID.
+        const anchor = config.mapAnchor ?? null
+        if (!anchor) return { type, anchor: null, landing: null }
+
+        const scene = two.scene
+        const scale =
+            typeof scene?.scale === 'number' && scene.scale > 0 ? scene.scale : 1
+        // two.width/height, never the container's clientWidth/clientHeight —
+        // #main-two-root is 0-height (the SVG is absolutely positioned), which
+        // would put the landing half a screen off.
+        const vw = two.width || window.innerWidth
+        const vh = two.height || window.innerHeight
+        const centre = {
+            x: (vw / 2 - scene.translation.x) / scale,
+            y: (vh / 2 - scene.translation.y) / scale,
+        }
+        return {
+            type,
+            anchor,
+            landing: {
+                lngLat: surfaceToLngLat(centre, anchor),
+                zoom: mapZoomForScale(scale, anchor),
+            },
+        }
+    }
+
+    /** The six geo columns for an insert/update, omitting what we don't have. */
+    const shareGeoColumns = (geo: ReturnType<typeof captureShareGeo>) => ({
+        ...(geo.anchor && {
+            mapAnchorLng: geo.anchor.lngLat[0],
+            mapAnchorLat: geo.anchor.lngLat[1],
+            mapAnchorZoom: geo.anchor.zoom,
+        }),
+        ...(geo.landing && {
+            landingLng: geo.landing.lngLat[0],
+            landingLat: geo.landing.lngLat[1],
+            landingZoom: geo.landing.zoom,
+        }),
+    })
+
+    const persistBase = async (): Promise<string> => {
+        // Stamp the base's type and geography onto the row itself. Without this
+        // the row takes the 'board' default, and a shared map opens as a
+        // whiteboard with every geo object hidden — which is what made maps
+        // unshareable in the first place.
+        const geo = captureShareGeo()
+
+        // Always create a fresh base at share time. The background base
+        // pre-created by ensureBackgroundBase may be stale (e.g. DB was reset
+        // between sessions) — using its ID would cause a FK violation on insert.
+        const { data: baseData } = await createBase({
+            variables: {
+                object: { type: geo.type, ...shareGeoColumns(geo) },
+            },
+        })
+        const serverBaseId = baseData?.base?.id
+        if (!serverBaseId) throw new Error('createBase returned no id')
+
+        // Insert all components to DB under the server base ID.
         // Generate a fresh UUID for each component's id so re-sharing from '/'
         // never hits a "duplicate key" uniqueness violation.
         const allEntries = Object.entries(stateRefForComponentStore.current)
@@ -1835,7 +1954,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 return {
                     ...cleaned,
                     id: generateUUID(),
-                    boardId: serverBoardId,
+                    baseId: serverBaseId,
                 }
             })
 
@@ -1844,7 +1963,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         )
         if (skipped.length > 0) {
             console.warn(
-                '[persistBoard] skipped',
+                '[persistBase] skipped',
                 skipped.length,
                 'malformed component(s) with no componentType:',
                 Object.fromEntries(skipped)
@@ -1857,22 +1976,44 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             })
         }
 
-        // Mint a new local board ID so the '/' session continues independently
-        // from the now-shared board. Components keep their visual state; only the
+        // Mint a new local base ID so the '/' session continues independently
+        // from the now-shared base. Components keep their visual state; only the
         // local identity rotates.
         const newLocalId = generateUUID()
+
+        // Carry this session's base type, anchor and camera to the new local id.
+        //
+        // Both are keyed by baseId, so rotating the id without moving them
+        // orphaned the lot: sharing a map and then reloading '/' brought the
+        // canvas back as a *whiteboard*, with every geo object hidden and the
+        // anchor gone — the user's own work invisible, on the base they had
+        // just been working on. The share and the '/' session are meant to
+        // diverge in identity, not in substrate.
+        try {
+            writeBaseTypeConfig(newLocalId, readBaseTypeConfigForExport())
+            const scene = twoJSInstanceRef.current?.scene
+            if (scene) {
+                writeViewport(newLocalId, geo.type, isMobile, {
+                    scale: typeof scene.scale === 'number' ? scene.scale : 1,
+                    tx: scene.translation.x,
+                    ty: scene.translation.y,
+                })
+            }
+        } catch (_) {
+            // A lost preference must never fail the share itself.
+        }
 
         const updatedStore: ComponentStore = {}
         Object.entries(stateRefForComponentStore.current).forEach(
             ([id, comp]) => {
-                updatedStore[id] = { ...comp, boardId: newLocalId }
+                updatedStore[id] = { ...comp, baseId: newLocalId }
             }
         )
         stateRefForComponentStore.current = updatedStore
 
-        // Rotate localBoardId without wiping the Two.js scene or componentStore
+        // Rotate localBaseId without wiping the Two.js scene or componentStore
         skipComponentStoreResetRef.current = true
-        setLocalBoardId(newLocalId)
+        setLocalBaseId(newLocalId)
         setComponentStore(updatedStore)
 
         // Persist draft immediately under the new local ID
@@ -1880,38 +2021,74 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             localStorage.setItem(
                 DRAFT_STORAGE_KEY,
                 JSON.stringify({
-                    boardId: newLocalId,
+                    baseId: newLocalId,
                     components: updatedStore,
                     timestamp: Date.now(),
                 })
             )
         } catch (_) {}
 
-        // Clear the background board (its work is now on the shared board)
-        backgroundBoardIdRef.current = null
-        setBackgroundBoardId(null)
-        localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
-        localStorage.setItem('lastOpenBoard', serverBoardId)
+        // Clear the background base (its work is now on the shared base)
+        backgroundBaseIdRef.current = null
+        setBackgroundBaseId(null)
+        localStorage.removeItem(BACKGROUND_BASE_STORAGE_KEY)
 
         // Stay in local (non-persisted) mode — new drawings on '/' are a fresh session
-        return serverBoardId
+        return serverBaseId
+    }
+
+    /**
+     * Publish this base and return the id its link points at. The single entry
+     * point for sharing, whichever state the base is in.
+     *
+     * The two paths used to diverge badly: an unpersisted base got created and
+     * published, while an already-persisted one just had its URL copied — never
+     * publishing it. So a base that reached `/base/:id` by any route other than
+     * the share button (the storage-limit auto-persist, most reachably) had its
+     * link handed out while `isPublic` stayed false.
+     *
+     * Re-sharing also refreshes the landing view, since the owner has almost
+     * certainly panned since the base was created. It deliberately does NOT
+     * touch the anchor: that is the georeference the stored elements were drawn
+     * against, and rewriting it would slide the world under ink that stays put.
+     */
+    const shareBase = async (): Promise<string> => {
+        if (!isPersistedRef.current) {
+            const serverBaseId = await persistBase()
+            await updateBaseVisibility({ variables: { id: serverBaseId } })
+            return serverBaseId
+        }
+
+        const geo = captureShareGeo()
+        await sharePersistedBase({
+            variables: {
+                id: baseId,
+                landingLng: geo.landing?.lngLat[0] ?? null,
+                landingLat: geo.landing?.lngLat[1] ?? null,
+                landingZoom: geo.landing?.zoom ?? null,
+            },
+        })
+        return baseId
     }
 
     // Assign storage-limit handler ref so useLocalDraftPersistence can call it
-    // without a direct dependency on persistBoard being defined at hook-call time.
+    // without a direct dependency on persistBase being defined at hook-call time.
     onStorageLimitRef.current = async () => {
         try {
-            const serverBoardId = await persistBoard()
-            setStorageLimitBoardUrl(
-                `${window.location.origin}/board/${serverBoardId}`
+            const serverBaseId = await persistBase()
+            // Type-aware: a map base auto-persisted at the storage limit must
+            // hand back a /map/ link, or the user follows it to a whiteboard
+            // with all their geo work hidden.
+            setStorageLimitBaseUrl(
+                baseTypeUrl(serverBaseId, activeBaseTypeRef.current)
             )
             setShowStorageLimitModal(true)
         } catch (e) {
-            console.error('Failed to auto-persist board on storage limit:', e)
+            console.error('Failed to auto-persist base on storage limit:', e)
         }
     }
 
-    const clearBoard = () => {
+    const clearBase = () => {
         if (isPersisted) {
             const ids = Object.keys(componentStore)
             if (ids.length > 0) {
@@ -2357,21 +2534,22 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     const contextValueForSidebar = {
         scaleToDisplay: props.scaleToDisplay,
         geoObjectsEnabled: props.geoObjectsEnabled,
-        activeBase,
-        baseProvider,
+        activeBaseType,
+        baseTypeProvider,
         toolset,
-        baseSwitcherEnabled,
-        switchBase,
-        readBaseConfig: readBaseConfigForExport,
-        captureBaseBackdrop: captureBackdrop,
+        baseTypeSwitcherEnabled,
+        switchBaseType,
+        readBaseTypeConfig: readBaseTypeConfigForExport,
+        captureBaseTypeBackdrop: captureBackdrop,
         goToPlace,
-        zoomStep: baseProvider.zoomStep,
+        zoomStep: baseTypeProvider.zoomStep,
         pointClusteringEnabled: props.pointClusteringEnabled,
         clusterPoints: props.clusterPoints,
-        boardId,
+        baseId,
         isPersisted,
-        persistBoard,
-        backgroundBoardId,
+        persistBase,
+        shareBase,
+        backgroundBaseId,
         isPencilMode,
         isArrowDrawMode,
         isTextDrawMode,
@@ -2380,10 +2558,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         eraserSize,
         isPanMode,
         togglePanMode,
-        setArrowDrawModeInBoard,
-        setTextDrawModeInBoard,
-        setRubberModeInBoard,
-        setEraserSizeInBoard,
+        setArrowDrawModeInBase,
+        setTextDrawModeInBase,
+        setRubberModeInBase,
+        setEraserSizeInBase,
         cancelPendingElement,
         togglePencilMode,
         togglePointer,
@@ -2399,11 +2577,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         deleteComponentFromLocalStore,
         deleteBulkComponentsFromLocalStore,
         twoJSInstance,
-        setTwoJSInstanceInBoard,
-        setZuiInstanceInBoard,
-        zuiInBoard,
+        setTwoJSInstanceInBase,
+        setZuiInstanceInBase,
+        zuiInBase,
         selectedComponent,
-        setSelectedComponentInBoard,
+        setSelectedComponentInBase,
         applyProperty,
         selectedGroup,
         applyGroupProperty,
@@ -2422,15 +2600,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         defaultTextSize,
         defaultTextFontFamily,
         // Legacy named setters kept for primary sidebar / shape factory paths.
-        setDefaultLinewidthInBoard,
-        setDefaultStrokeTypeInBoard,
+        setDefaultLinewidthInBase,
+        setDefaultStrokeTypeInBase,
         // Mobile panel
         showMobileToolbarPanel,
         setShowMobileToolbarPanel,
         currentElement,
-        setCurrentElementInBoard,
-        onCreateBoard,
-        createBoardLoading,
+        setCurrentElementInBase,
+        onCreateBase,
+        createBaseLoading,
         historyLog,
         historyLogRef,
         bucketLog,
@@ -2438,14 +2616,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         recordBatchToHistoryLog,
         undoLastAction,
         redoLastAction,
-        clearBoard,
-        beginBoardImport,
+        clearBase,
+        beginBaseImport,
     }
 
     return (
         <>
-            <BoardContext.Provider
-                value={contextValueForSidebar as unknown as BoardContextValue}
+            <BaseContext.Provider
+                value={contextValueForSidebar as unknown as BaseContextValue}
             >
                 <div>
                     <Sidebar />
@@ -2516,7 +2694,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                         pointerToggle={pointerToggle}
                         isPencilMode={isPencilMode}
                         selectPanMode={false}
-                        boardId={boardId}
+                        baseId={baseId}
                         selectedComponent={selectedComponent}
                         lastAddedElement={lastAddedElement}
                         componentStore={componentStore}
@@ -2533,13 +2711,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                         renderBackground={props.renderBackground}
                         reorderSelectedRef={reorderSelectedRef}
                         fitToContentRef={fitToContentRef}
+                        initialMapLanding={initialMapLanding}
                     />
                     <ClusterLayer />
                     {!isMobile && <ZoomControls />}
                     <GoToContentButton />
                     <HelpButton />
                 </div>
-            </BoardContext.Provider>
+            </BaseContext.Provider>
             {/* {isMobile ? (
                 <div>
                     <div className="px-4 py-4 text-xl ">
@@ -2562,22 +2741,22 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             <StorageLimitModal
                 open={showStorageLimitModal}
                 onClose={() => setShowStorageLimitModal(false)}
-                boardUrl={storageLimitBoardUrl}
+                baseUrl={storageLimitBaseUrl}
                 onStartNew={handleStartNewCanvas}
-                onContinue={handleContinueOnSavedBoard}
+                onContinue={handleContinueOnSavedBase}
             />
-            <BoardFullModal
-                open={showBoardFullModal}
-                onClose={() => setShowBoardFullModal(false)}
-                onExport={handleExportBoardFromModal}
+            <BaseFullModal
+                open={showBaseFullModal}
+                onClose={() => setShowBaseFullModal(false)}
+                onExport={handleExportBaseFromModal}
             />
-            <BoardTooLargeModal
-                open={showBoardTooLargeModal}
-                onDownloadBackup={handleDownloadBoardBackup}
+            <BaseTooLargeModal
+                open={showBaseTooLargeModal}
+                onDownloadBackup={handleDownloadBaseBackup}
                 onStartFresh={handleStartFreshFromTooLarge}
-                onOpenAnyway={handleOpenBoardAnyway}
+                onOpenAnyway={handleOpenBaseAnyway}
             />
-            <ImportBoardModal
+            <ImportBaseModal
                 open={showImportChooser}
                 onClose={handleImportChooserClose}
                 error={importError}
@@ -2589,7 +2768,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             <Toast
                 open={showPerfWarning}
                 onClose={dismissPerfWarning}
-                message={`This board has over ${PERFORMANCE_WARNING_THRESHOLD.toLocaleString()} elements — panning, zooming and editing may feel slow.`}
+                message={`This canvas has over ${PERFORMANCE_WARNING_THRESHOLD.toLocaleString()} elements — panning, zooming and editing may feel slow.`}
             />
             {/* {!isPersisted && draftSizeBytes > 0 && (
                 <div
@@ -2609,4 +2788,4 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     )
 }
 
-export default BoardViewPage
+export default BaseViewPage

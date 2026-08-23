@@ -4,7 +4,7 @@ import {
     staticPrimaryElementData,
     type PrimaryElement,
 } from '../../utils/constants'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { SHAPES_TOOLBAR_ID } from './shapesToolbarId'
 import Tooltip from '../common/tooltip'
 import UndoIcon from '../../assets/undo_amber.svg?react'
@@ -17,7 +17,7 @@ import {
 } from '../../constants/misc'
 
 // Hover labels for the eraser size dots. The dots' pixel sizes come from
-// ERASER_DOT_PX rather than living here, because the trail drawn on the board
+// ERASER_DOT_PX rather than living here, because the trail drawn on the canvas
 // reads the same map — that's what keeps the swatch and the beam identical.
 const ERASER_SIZE_LABEL: Record<EraserSize, string> = {
     small: 'Small',
@@ -75,17 +75,17 @@ interface DrawerAnchor {
 const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     const {
         currentElement,
-        setCurrentElementInBoard,
+        setCurrentElementInBase,
         undoLastAction,
         redoLastAction,
         historyLog,
         bucketLog,
         toolset,
-        activeBase,
+        activeBaseType,
         selectedComponent,
         eraserSize,
-        setEraserSizeInBoard,
-    } = useBoardContext()
+        setEraserSizeInBase,
+    } = useBaseContext()
     const { isMobile } = useMediaQueryUtils()
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
     const [drawerAnchor, setDrawerAnchor] = useState<DrawerAnchor | null>(null)
@@ -128,35 +128,35 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     // (This was mount-only while the base was a fixed build-time prop.)
     //
     // Gated on the toolset having caught up with the base. Providers load
-    // through a dynamic import, so `activeBase` flips the instant the user
+    // through a dynamic import, so `activeBaseType` flips the instant the user
     // picks — while `toolset.homeTool` still belongs to the base being left.
-    // Firing on `activeBase` alone therefore applied the OUTGOING base's home
-    // tool: switching to the map left you on pointer, and back to the board
-    // left you on pan. `appliedForBase` keeps it to one application per switch
+    // Firing on `activeBaseType` alone therefore applied the OUTGOING base's home
+    // tool: switching to the map left you on pointer, and back to the board base
+    // left you on pan. `appliedForBaseType` keeps it to one application per switch
     // once they agree.
-    const isFirstBaseRun = useRef(true)
-    const appliedForBase = useRef<string | null>(null)
+    const isFirstBaseTypeRun = useRef(true)
+    const appliedForBaseType = useRef<string | null>(null)
     useEffect(() => {
-        if (toolset.baseId !== activeBase) return
-        if (appliedForBase.current === activeBase) return
-        appliedForBase.current = activeBase
+        if (toolset.baseId !== activeBaseType) return
+        if (appliedForBaseType.current === activeBaseType) return
+        appliedForBaseType.current = activeBaseType
 
-        if (isFirstBaseRun.current) {
-            isFirstBaseRun.current = false
+        if (isFirstBaseTypeRun.current) {
+            isFirstBaseTypeRun.current = false
             // Mount: pan needs activating (addElement) to become the live mode;
-            // pointer is the board's resting state, so a highlight is enough.
+            // pointer is the board base's resting state, so a highlight is enough.
             // Kept exactly as-is so a board-base load behaves as it always did.
             if (homeTool === 'pan') addElement('pan')
-            setCurrentElementInBoard(homeTool)
+            setCurrentElementInBase(homeTool)
             return
         }
         // A real switch: go through addElement either way, because that's what
         // releases pan (`if (label !== 'pan') togglePanMode(false)`) on the way
         // back to the board base. Highlighting alone would leave pan live.
         addElement(homeTool)
-        setCurrentElementInBoard(homeTool)
+        setCurrentElementInBase(homeTool)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeBase, toolset.baseId])
+    }, [activeBaseType, toolset.baseId])
 
     useEffect(() => {
         if (!openDrawer) return
@@ -335,7 +335,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         })
                                         setOpenDrawer(element.elementName)
                                         addElement(defaultTool)
-                                        setCurrentElementInBoard(defaultTool)
+                                        setCurrentElementInBase(defaultTool)
                                         return
                                     }
                                     if (element.hasDrawer) {
@@ -353,7 +353,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                                 ? null
                                                 : element.elementName
                                         )
-                                        setCurrentElementInBoard(
+                                        setCurrentElementInBase(
                                             isToggleClose
                                                 ? homeTool
                                                 : element.elementName
@@ -373,7 +373,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                             })
                                         }
                                         addElement(element.elementName)
-                                        setCurrentElementInBoard(
+                                        setCurrentElementInBase(
                                             element.elementName
                                         )
                                     }
@@ -418,7 +418,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         }
                                     `}
                                         onClick={(): void =>
-                                            setEraserSizeInBoard(size)
+                                            setEraserSizeInBase(size)
                                         }
                                     >
                                         <span
@@ -498,7 +498,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                 `}
                                         onClick={(): void => {
                                             addElement(item.elementName)
-                                            setCurrentElementInBoard(
+                                            setCurrentElementInBase(
                                                 item.elementName
                                             )
                                             setOpenDrawer(null)
@@ -552,7 +552,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                     }
                                 `}
                                     onClick={(): void =>
-                                        setEraserSizeInBoard(size)
+                                        setEraserSizeInBase(size)
                                     }
                                 >
                                     <span

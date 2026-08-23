@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import Modal from '../common/modal'
 import Button from '../common/button'
 
-interface ImportBoardModalProps {
+interface ImportBaseModalProps {
     open: boolean
     onClose: () => void
     /** When set, the modal shows an error state instead of the chooser. */
@@ -14,12 +14,12 @@ interface ImportBoardModalProps {
 }
 
 /**
- * Post-file-pick chooser for importing a board. On success it asks how to
+ * Post-file-pick chooser for importing a canvas. On success it asks how to
  * apply the file — replace the canvas or merge into it. On a hard failure
- * (bad JSON / not a board / nothing valid) it surfaces the error with a single
+ * (bad JSON / not a craftbase export / nothing valid) it surfaces the error with a single
  * dismiss.
  */
-export default function ImportBoardModal({
+export default function ImportBaseModal({
     open,
     onClose,
     error,
@@ -27,16 +27,16 @@ export default function ImportBoardModal({
     skipped = 0,
     onOpenAsNew,
     onMerge,
-}: ImportBoardModalProps): ReactElement {
+}: ImportBaseModalProps): ReactElement {
     const valid = total - skipped
 
     return (
         <Modal open={open} onClose={onClose} locked={false}>
-            <div className="p-4" style={{ minWidth: '400px' }}>
+            <div className="p-4" style={{ minWidth: 'min(400px, calc(100vw - 96px))' }}>
                 {error ? (
                     <>
                         <h2 className="text-lg font-semibold mb-2">
-                            Couldn’t import board
+                            Couldn’t import canvas
                         </h2>
                         <p className="text-sm text-neutrals-n700 mb-4">
                             {error}
@@ -53,7 +53,7 @@ export default function ImportBoardModal({
                 ) : (
                     <>
                         <h2 className="text-lg font-semibold mb-2">
-                            Import board
+                            Import canvas
                         </h2>
                         <p className="text-sm text-neutrals-n700 mb-1">
                             Found {valid} element{valid === 1 ? '' : 's'} in
@@ -67,7 +67,7 @@ export default function ImportBoardModal({
                         )}
                         <p className="text-sm text-neutrals-n700 mb-4">
                             Open it as a new canvas (replaces your current
-                            board) or merge it into what you have now?
+                            canvas) or merge it into what you have now?
                         </p>
                         <div className="flex gap-2">
                             <Button

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../views/Board/boardContext'
+import { useBaseContext } from '../views/Base/baseContext'
 import ZoomInIcon from '../assets/zoom-in.svg?react'
 import ZoomOutIcon from '../assets/zoom-out.svg?react'
 
@@ -13,14 +13,14 @@ type ZuiWrapperLike = {
 
 const ZoomControls = (): ReactElement => {
     const {
-        zuiInBoard,
+        zuiInBase,
         twoJSInstance,
         scaleToDisplay,
         zoomStep,
-        activeBase,
-        readBaseConfig,
-    } = useBoardContext()
-    const zui = zuiInBoard as ZuiWrapperLike
+        activeBaseType,
+        readBaseTypeConfig,
+    } = useBaseContext()
+    const zui = zuiInBase as ZuiWrapperLike
     const [scale, setScale] = useState(1)
 
     useEffect(() => {
@@ -41,7 +41,7 @@ const ZoomControls = (): ReactElement => {
     const zoom = (direction: 1 | -1): void => {
         if (!zui || !twoJSInstance) return
         // Step size belongs to the base: a whole map zoom level on the map,
-        // finer grain on the whiteboard (BaseProvider.zoomStep).
+        // finer grain on the whiteboard (BaseTypeProvider.zoomStep).
         const delta = direction * (zoomStep || 0.2)
         zui.zui.zoomBy(delta, window.innerWidth / 2, window.innerHeight / 2)
         twoJSInstance.update()
@@ -61,7 +61,7 @@ const ZoomControls = (): ReactElement => {
     // once the range reaches whole-world zoom it reads "0%". Show the map zoom
     // level instead, which is the number the camera is actually expressed in
     // (mapZoom = anchor.zoom + log2(scale)).
-    const mapAnchor = activeBase === 'map' ? readBaseConfig().mapAnchor : null
+    const mapAnchor = activeBaseType === 'map' ? readBaseTypeConfig().mapAnchor : null
     const label = scaleToDisplay
         ? scaleToDisplay(scale)
         : mapAnchor

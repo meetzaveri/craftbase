@@ -1,8 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
-import { BASE_SWITCHER_ID } from './shapesToolbarId'
+import {
+    BASE_TYPE_SWITCHER_ID,
+    MENU_BUTTON_ID,
+    SHARE_BUTTON_ID,
+} from './shapesToolbarId'
 import { searchPlaces } from '../../utils/placeSearch'
 import type { PlaceResult } from '../../utils/placeSearch'
 
@@ -24,6 +28,8 @@ const MEASURE_RETRIES = 10
  * instead of collapsing to zero width and then popping into place.
  */
 const MOBILE_FALLBACK_LEFT = 160
+/** Right margin when nothing needs avoiding in that corner. */
+const RIGHT_MARGIN = 10
 
 /**
  * Place search for the map base — the standing "take me somewhere else" control.
@@ -37,7 +43,7 @@ const MOBILE_FALLBACK_LEFT = 160
  * than moving the drawing.
  */
 const PlaceSearch = (): ReactElement | null => {
-    const { activeBase, goToPlace } = useBoardContext()
+    const { activeBaseType, goToPlace } = useBaseContext()
     const { isMobile } = useMediaQueryUtils()
     const [query, setQuery] = useState('')
     const [results, setResults] = useState<PlaceResult[]>([])
@@ -57,7 +63,7 @@ const PlaceSearch = (): ReactElement | null => {
      */
     const [leftOffset, setLeftOffset] = useState<number | null>(null)
     useLayoutEffect(() => {
-        if (!isMobile || activeBase !== 'map') {
+        if (!isMobile || activeBaseType !== 'map') {
             setLeftOffset(null)
             return
         }
@@ -65,7 +71,13 @@ const PlaceSearch = (): ReactElement | null => {
         let cancelled = false
         const measure = (): void => {
             if (cancelled) return
-            const el = document.getElementById(BASE_SWITCHER_ID)
+            // The switcher is absent on a pinned route (`/map/:id`), where the
+            // URL already names the type. Fall back to the menu button so the
+            // field starts just past whatever IS there, rather than leaving a
+            // switcher-sized hole where no switcher exists.
+            const el =
+                document.getElementById(BASE_TYPE_SWITCHER_ID) ??
+                document.getElementById(MENU_BUTTON_ID)
             const rect = el?.getBoundingClientRect()
             if (rect && rect.left >= 0) {
                 setLeftOffset(rect.right + MOBILE_GAP)
@@ -78,7 +90,43 @@ const PlaceSearch = (): ReactElement | null => {
             cancelled = true
             window.removeEventListener('resize', measure)
         }
-    }, [isMobile, activeBase])
+    }, [isMobile, activeBaseType])
+
+    /**
+     * Keep clear of the share button, which shares this corner.
+     *
+     * Measured, not a constant, for the same reason the mobile offset is: the
+     * share control's width is not this component's to know, and a hard-coded
+     * guess silently overlaps the moment its padding changes. Falls back to the
+     * bare right margin when there is no share button to avoid.
+     */
+    const [rightOffset, setRightOffset] = useState<number>(RIGHT_MARGIN)
+    useLayoutEffect(() => {
+        if (activeBaseType !== 'map') {
+            setRightOffset(RIGHT_MARGIN)
+            return
+        }
+        let frame = 0
+        let cancelled = false
+        const measure = (): void => {
+            if (cancelled) return
+            const rect = document
+                .getElementById(SHARE_BUTTON_ID)
+                ?.getBoundingClientRect()
+            setRightOffset(
+                rect && rect.width > 0
+                    ? window.innerWidth - rect.left + MOBILE_GAP
+                    : RIGHT_MARGIN
+            )
+            if (frame++ < MEASURE_RETRIES) requestAnimationFrame(measure)
+        }
+        measure()
+        window.addEventListener('resize', measure)
+        return (): void => {
+            cancelled = true
+            window.removeEventListener('resize', measure)
+        }
+    }, [activeBaseType])
 
     useEffect(() => {
         const trimmed = query.trim()
@@ -118,14 +166,14 @@ const PlaceSearch = (): ReactElement | null => {
     // Leaving the map base closes and clears — the control is meaningless on a
     // base with nothing to recentre.
     useEffect(() => {
-        if (activeBase !== 'map') {
+        if (activeBaseType !== 'map') {
             setOpen(false)
             setQuery('')
             setResults([])
         }
-    }, [activeBase])
+    }, [activeBaseType])
 
-    if (activeBase !== 'map') return null
+    if (activeBaseType !== 'map') return null
 
     const handlePick = (place: PlaceResult): void => {
         goToPlace(place.anchor)
@@ -139,7 +187,7 @@ const PlaceSearch = (): ReactElement | null => {
             className="fixed flex flex-col"
             style={{
                 top: '8px',
-                right: '10px',
+                right: `${rightOffset}px`,
                 zIndex: 11,
                 // Desktop: a fixed field hugging the right edge. Mobile: span
                 // from the switcher to the right margin, so the three top-row

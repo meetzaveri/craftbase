@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { useImmer } from 'use-immer'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import NewTextFactory from '../../factory/newText'
 import { syncTextHitRect, readOpacity } from '../../utils/canvasUtils'
@@ -27,7 +27,7 @@ function NewText(props: ElementProps): ReactElement {
         isArrowDrawMode,
         isTextDrawMode,
         isArrowSelected,
-    } = useBoardContext()
+    } = useBaseContext()
 
     const [internalState, setInternalState] = useImmer<InternalState>({})
     const [textValue, setTextValue] = useState<string>(
@@ -142,7 +142,7 @@ function NewText(props: ElementProps): ReactElement {
         // Everything below that touches the DOM (node tagging, the dblclick
         // listeners) needs the rendered SVG nodes, which only exist after a
         // render. Batch that render with every other element mounting this
-        // frame — a synchronous two.update() per element made mounting a board
+        // frame — a synchronous two.update() per element made mounting a base
         // O(N²). `mountCancelled` guards an unmount before the frame fires, so
         // we never bind listeners to a node that is already gone.
         scheduleRender(two, () => {
@@ -451,7 +451,17 @@ function NewText(props: ElementProps): ReactElement {
                     measureSpan.parentNode.removeChild(measureSpan)
                 }
 
-                groupDomElem.style.display = 'block'
+                // Restore to '' — NOT 'block'. This inline style only exists
+                // to hide the text while the textarea overlays it, and an
+                // inline `display` OVERRIDES the `display` attribute Two.js
+                // writes from its own `.visible` flag. Hard-coding 'block' here
+                // pinned the element visible: create text on the board base,
+                // then switch to the map (the switcher click is what blurs the
+                // editor) and `applyBaseTypeVisibility` correctly set
+                // visible=false + display="none" on the <g>, but the inline
+                // block won and the text lingered over the map until reload.
+                // Clearing the property hands display back to Two.js.
+                groupDomElem.style.display = ''
 
                 // Raw text — may contain hard newlines from Shift+Enter.
                 const newContent = input.value

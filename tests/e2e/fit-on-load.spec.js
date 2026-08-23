@@ -1,12 +1,12 @@
 import { test, expect } from './helpers/test.js'
 
-// Verifies board-load framing:
-//  - /board/:id showing empty space (content far from origin) → auto-fit frames it.
-//  - /board/:id whose camera already shows content → auto-fit leaves it alone.
-//  - / (local board) → auto-fit never fires.
+// Verifies base-load framing:
+//  - /base/:id showing empty space (content far from origin) → auto-fit frames it.
+//  - /base/:id whose camera already shows content → auto-fit leaves it alone.
+//  - / (local base) → auto-fit never fires.
 //  - "Go to content" button reframes on demand.
 
-const BOARD_ID = '11111111-1111-1111-1111-111111111111'
+const BASE_ID = '11111111-1111-1111-1111-111111111111'
 
 const rect = (id, x, y) => ({
     id,
@@ -45,7 +45,9 @@ const mockGraphql = async (page, components) => {
         updateUserRevisitCount: {
             update_users_user_revisits_by_pk: { count: 1, user_id: 'test-user-id' },
         },
-        getComponentsForBoard: { components },
+        // The query returns the base row too; null = no server config, which
+        // is what a board base without the geo columns looks like.
+        getComponentsForBase: { base: null, components },
     }
     await page.route('**/v1/graphql', async (route) => {
         let data = {}
@@ -82,10 +84,10 @@ const firstElementVisible = async (page) => {
     return box.x < vw && box.y < vh && box.x + box.width > 0 && box.y + box.height > 0
 }
 
-test.describe('Fit-to-content on board load', () => {
-    test('frames far-away content when opening /board/:id', async ({ page }) => {
+test.describe('Fit-to-content on base load', () => {
+    test('frames far-away content when opening /base/:id', async ({ page }) => {
         await mockGraphql(page, FAR_COMPONENTS)
-        await page.goto(`/board/${BOARD_ID}`)
+        await page.goto(`/base/${BASE_ID}`)
         await page.waitForSelector('#main-two-root svg')
         // Generous waits: on a network-served prod build the element chunks load
         // lazily, so mounting + the geometry-settle can take a few seconds.
@@ -118,8 +120,8 @@ test.describe('Fit-to-content on board load', () => {
                 `craftbase_viewport_${id}`,
                 JSON.stringify({ tx: 0, ty: 0, scale: 2, savedAt: Date.now() })
             )
-        }, BOARD_ID)
-        await page.goto(`/board/${BOARD_ID}`)
+        }, BASE_ID)
+        await page.goto(`/base/${BASE_ID}`)
         await page.waitForSelector('#main-two-root svg')
         await expect(page.locator('[data-component-id]')).toHaveCount(2, {
             timeout: 15000,
@@ -133,7 +135,7 @@ test.describe('Fit-to-content on board load', () => {
 
     test('leaves the camera alone when content is already visible', async ({ page }) => {
         await mockGraphql(page, NEAR_COMPONENTS)
-        await page.goto(`/board/${BOARD_ID}`)
+        await page.goto(`/base/${BASE_ID}`)
         await page.waitForSelector('#main-two-root svg')
         await expect(page.locator('[data-component-id]')).toHaveCount(2, { timeout: 15000 })
         // Near-origin content is on-screen at the default camera → no fit.
@@ -143,7 +145,7 @@ test.describe('Fit-to-content on board load', () => {
         expect(Math.abs(scale - 1)).toBeLessThan(0.01)
     })
 
-    test('does NOT fire on / (local board)', async ({ page }) => {
+    test('does NOT fire on / (local base)', async ({ page }) => {
         await mockGraphql(page, NEAR_COMPONENTS)
         await page.goto('/')
         await page.waitForSelector('#main-two-root svg')
@@ -153,12 +155,12 @@ test.describe('Fit-to-content on board load', () => {
         expect(Math.abs(scale - 1)).toBeLessThan(0.01)
     })
 
-    test('"Go to content" button is hidden on / (local board)', async ({ page }) => {
+    test('"Go to content" button is hidden on / (local base)', async ({ page }) => {
         await mockGraphql(page, NEAR_COMPONENTS)
         await page.goto('/')
         await page.waitForSelector('#main-two-root svg')
-        // Draw a shape so the board has content; the button must still stay
-        // hidden because this is the local home board, not /board/:id.
+        // Draw a shape so the base has content; the button must still stay
+        // hidden because this is the local home base, not /base/:id.
         const box = await page.locator('#main-two-root svg').boundingBox()
         await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6)
         await page.mouse.down()
@@ -172,7 +174,7 @@ test.describe('Fit-to-content on board load', () => {
 
     test('"Go to content" button reframes content into view', async ({ page }) => {
         await mockGraphql(page, NEAR_COMPONENTS)
-        await page.goto(`/board/${BOARD_ID}`)
+        await page.goto(`/base/${BASE_ID}`)
         await page.waitForSelector('#main-two-root svg')
         await expect(page.locator('[data-component-id]')).toHaveCount(2, { timeout: 15000 })
 

@@ -1,4 +1,4 @@
-// The board base — today's parchment canvas, expressed as a BaseProvider.
+// The board base — today's parchment canvas, expressed as a BaseTypeProvider.
 //
 // Deliberately close to a no-op. The parchment fill and the (flag-gated) dot
 // grid are CSS on `#main-two-root`'s svg, driven by `syncBackgroundToCamera` /
@@ -7,11 +7,11 @@
 // the board is *a* base like any other — which is what lets the switcher, the
 // toolbar gating and the export path stay provider-agnostic.
 
-import type { BaseHandle, BaseProvider } from './types'
+import type { BaseTypeHandle, BaseTypeProvider } from './types'
 
-const BOARD_HANDLE: BaseHandle = { id: 'board' }
+const BOARD_HANDLE: BaseTypeHandle = { id: 'board' }
 
-export const boardBase: BaseProvider = {
+export const boardType: BaseTypeProvider = {
     id: 'board',
     label: 'Board',
 
@@ -35,4 +35,4 @@ export const boardBase: BaseProvider = {
     unmount: () => {},
 }
 
-export default boardBase
+export default boardType

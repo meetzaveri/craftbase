@@ -1,4 +1,4 @@
-import type { RandomUsername } from '../types/board'
+import type { RandomUsername } from '../types/base'
 
 // True on macOS/iOS, where ⌘ (metaKey) is the primary shortcut modifier; Ctrl
 // elsewhere. Prefer the modern userAgentData.platform, fall back to the legacy

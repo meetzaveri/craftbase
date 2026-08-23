@@ -2,7 +2,7 @@
 // Apollo writes each field it requested into its cache; returning {} causes a
 // "Missing field" cache error and can crash components that consume the data.
 // Values mirror the components."componentType" seed rows.
-const GQL_MOCK_RESPONSES = {
+export const GQL_MOCK_RESPONSES = {
     getComponentTypes: {
         componentTypes: [
             { label: 'rectangle', width: 120, height: 120, fill: '#f4f4f2', textColor: '#000', metadata: {}, logo: null },
@@ -17,6 +17,66 @@ const GQL_MOCK_RESPONSES = {
     updateUserRevisitCount: {
         update_users_user_revisits_by_pk: { count: 1, user_id: 'test-user-id' },
     },
+    // Share path. persistBase creates a base, bulk-inserts its components and
+    // publishes it; each needs a shaped response or Apollo's cache write fails.
+    createBase: {
+        base: { id: '99999999-9999-9999-9999-999999999999', createdBy: 'test-user-id' },
+    },
+    // The mutation selects `returning { baseId componentType id }`, so the mock
+    // must carry it — a missing field makes Apollo reject and the whole share
+    // aborts before the base is ever published.
+    insertBulkComponents: {
+        insert_components_component: {
+            __typename: 'components_component_mutation_response',
+            affected_rows: 0,
+            returning: [],
+        },
+    },
+    updateBaseVisibility: {
+        update_bases_base_by_pk: {
+            id: '99999999-9999-9999-9999-999999999999',
+            isPublic: true,
+        },
+    },
+    sharePersistedBase: {
+        base: {
+            id: '99999999-9999-9999-9999-999999999999',
+            isPublic: true,
+        },
+    },
+}
+
+/**
+ * A `bases_base` row for the getComponentsForBase mock.
+ *
+ * That query returns the base ROW as well as its components (the base type and
+ * map georeference have to be known before the canvas mounts, so they ride the
+ * query that already gates loading). Any spec that opens a persisted base must
+ * therefore answer with a `base` field — `null` is valid and means "no server
+ * config", which is what a board base created before these columns looks like.
+ *
+ * Pass `anchor`/`landing` as `{ lngLat: [lng, lat], zoom }` to describe a
+ * shared map.
+ */
+export function baseRow({
+    id = '11111111-1111-1111-1111-111111111111',
+    type = 'board',
+    isPublic = true,
+    anchor = null,
+    landing = null,
+} = {}) {
+    return {
+        __typename: 'bases_base',
+        id,
+        type,
+        isPublic,
+        mapAnchorLng: anchor ? anchor.lngLat[0] : null,
+        mapAnchorLat: anchor ? anchor.lngLat[1] : null,
+        mapAnchorZoom: anchor ? anchor.zoom : null,
+        landingLng: landing ? landing.lngLat[0] : null,
+        landingLat: landing ? landing.lngLat[1] : null,
+        landingZoom: landing ? landing.zoom : null,
+    }
 }
 
 /**
@@ -25,7 +85,7 @@ const GQL_MOCK_RESPONSES = {
  * rendering. Without proper mock data, Apollo logs cache errors that can
  * crash sidebar components and break canvas interactions.
  */
-export async function setupLocalBoard(page) {
+export async function setupLocalBase(page) {
     await page.route('**/v1/graphql', async (route) => {
         let responseData = {}
         try {
@@ -43,7 +103,7 @@ export async function setupLocalBoard(page) {
         localStorage.setItem('userId', 'test-user-id')
         // Disable the first-visit welcome sketch for e2e: its seeded elements
         // would inflate element counts and its entrance animation would race
-        // assertions. Setting the dismissal flag makes the board load as a
+        // assertions. Setting the dismissal flag makes the base load as a
         // returning visitor (empty canvas). Mirrors WELCOME_DISMISSED_KEY in
         // src/constants/misc.ts.
         localStorage.setItem('craftbase_welcome_dismissed', '1')
@@ -133,9 +193,32 @@ async function waitForNewElement(page, countBefore, { timeout } = {}) {
 }
 
 /**
+ * Waits until the canvas holds exactly `expected` distinct components.
+ *
+ * `data-component-id` is NOT 1:1 with DOM nodes, so counting matched nodes
+ * overcounts: attachVertexHandles (src/components/utils/vertexHandles.ts)
+ * stamps the owning element's id onto every draggable vertex handle, so a
+ * curvedLine/route/area with N vertices matches 1 group + N handle paths.
+ * A 4-vertex curved line is 5 nodes but one component. De-dupe by id.
+ */
+export async function expectComponentCount(page, expected, { timeout } = {}) {
+    await page.waitForFunction(
+        (want) =>
+            new Set(
+                Array.from(
+                    document.querySelectorAll('[data-component-id]'),
+                    (el) => el.getAttribute('data-component-id')
+                )
+            ).size === want,
+        expected,
+        { timeout }
+    )
+}
+
+/**
  * Click the toolbar icon for the given aria-label and wait for the icon's
  * parent button to take its `bg-accent` active state — this confirms
- * setCurrentElementInBoard fired and the corresponding draw mode is armed.
+ * setCurrentElementInBase fired and the corresponding draw mode is armed.
  */
 async function clickToolbarShape(page, ariaLabel) {
     await page.click(`[aria-label="${ariaLabel}"]`)

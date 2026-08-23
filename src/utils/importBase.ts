@@ -1,7 +1,7 @@
-import type { ComponentRecord, ComponentStore } from '../types/board'
+import type { ComponentRecord, ComponentStore } from '../types/base'
 import { GROUP_COMPONENT } from '../constants/misc'
 
-export interface BoardViewport {
+export interface BaseViewport {
     scale: number
     tx: number
     ty: number
@@ -11,7 +11,7 @@ export interface ParsedImport {
     /** Only the records that passed validation. */
     components: ComponentStore
     /** Restored on "Open as new canvas"; null when the file carried none. */
-    viewport: BoardViewport | null
+    viewport: BaseViewport | null
     /** Total records seen in the file (valid + skipped). */
     total: number
     /** Records dropped for being malformed / unknown. */
@@ -23,7 +23,7 @@ export interface ParsedImport {
  * if the user cancels. Accepts both the branded export (`.json`) and the raw
  * draft backup the load-side rescue produces (same `components` shape).
  */
-export function openBoardFilePicker(): Promise<string | null> {
+export function openBaseFilePicker(): Promise<string | null> {
     return new Promise((resolve) => {
         const input = document.createElement('input')
         input.type = 'file'
@@ -55,7 +55,7 @@ function isValidRecord(value: unknown): value is ComponentRecord {
     )
 }
 
-function isValidViewport(value: unknown): value is BoardViewport {
+function isValidViewport(value: unknown): value is BaseViewport {
     if (!value || typeof value !== 'object') return false
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const v = value as any
@@ -67,17 +67,17 @@ function isValidViewport(value: unknown): value is BoardViewport {
 }
 
 /**
- * Parse + validate an imported board file. Mirrors `persistBoard`'s defensive
+ * Parse + validate an imported base file. Mirrors `persistBase`'s defensive
  * skip: records missing a `componentType` (or geometry) are dropped and
  * counted rather than failing the whole import. Throws only when the file
  * isn't valid JSON or has no `components` object at all.
  */
-export function parseImportedBoard(text: string): ParsedImport {
+export function parseImportedBase(text: string): ParsedImport {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = JSON.parse(text) as any // throws on malformed JSON
     const rawComponents = raw?.components
     if (!rawComponents || typeof rawComponents !== 'object') {
-        throw new Error('File does not contain a board (no components).')
+        throw new Error('File does not contain a canvas (no components).')
     }
 
     const entries = Object.entries(rawComponents as Record<string, unknown>)

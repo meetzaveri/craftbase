@@ -5,7 +5,7 @@
 // automatically. The debounce in the search UI is what keeps us inside that
 // budget, so don't call this on every keystroke.
 
-import type { MapAnchor } from '../bases/types'
+import type { MapAnchor } from '../baseTypes/types'
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const RESULT_LIMIT = 5
@@ -31,7 +31,7 @@ interface NominatimRow {
 /**
  * Search for places by free text. Returns [] for blank input, network failure
  * or a malformed response — a failed lookup should quietly show "no results",
- * never break the board.
+ * never break the base.
  */
 export async function searchPlaces(
     query: string,

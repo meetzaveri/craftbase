@@ -2,9 +2,9 @@ import { useRef, useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
 import { Link } from 'react-router-dom'
 import routes from '../../routes'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { downloadViewportAsImage } from '../../utils/exportViewport'
-import { exportBoardAsJson } from '../../utils/exportBoard'
+import { exportBaseAsJson } from '../../utils/exportBase'
 import Modal from '../common/modal'
 import Button from '../common/button'
 import SettingsModal from './settingsModal'
@@ -131,13 +131,13 @@ const MenuDrawer = (): ReactElement => {
     const [showExportSubmenu, setShowExportSubmenu] = useState(false)
     const [showImportSubmenu, setShowImportSubmenu] = useState(false)
     const {
-        clearBoard,
+        clearBase,
         stateRefForComponentStore,
         twoJSInstance,
-        beginBoardImport,
-        readBaseConfig,
-        captureBaseBackdrop,
-    } = useBoardContext()
+        beginBaseImport,
+        readBaseTypeConfig,
+        captureBaseTypeBackdrop,
+    } = useBaseContext()
 
     useEffect(() => {
         const handleClick = (e: MouseEvent): void => {
@@ -178,7 +178,7 @@ const MenuDrawer = (): ReactElement => {
         setShowMenu(false)
         try {
             setIsExporting(true)
-            await downloadViewportAsImage(captureBaseBackdrop)
+            await downloadViewportAsImage(captureBaseTypeBackdrop)
         } catch (err) {
             console.error('Failed to export viewport as image', err)
         } finally {
@@ -197,10 +197,10 @@ const MenuDrawer = (): ReactElement => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(
+        exportBaseAsJson(
             stateRefForComponentStore.current,
             viewport,
-            readBaseConfig()
+            readBaseTypeConfig()
         )
         setShowExportSubmenu(false)
         setShowMenu(false)
@@ -209,12 +209,12 @@ const MenuDrawer = (): ReactElement => {
     const handleImportJson = (): void => {
         setShowImportSubmenu(false)
         setShowMenu(false)
-        // board.tsx owns the file-pick → parse → chooser flow.
-        beginBoardImport()
+        // base.tsx owns the file-pick → parse → chooser flow.
+        beginBaseImport()
     }
 
     const handleConfirmClear = (): void => {
-        clearBoard()
+        clearBase()
         setShowConfirm(false)
     }
 
@@ -423,7 +423,7 @@ const MenuDrawer = (): ReactElement => {
                             >
                                 <span className="flex items-center gap-2.5">
                                     <DownloadIcon />
-                                    <span>Export board</span>
+                                    <span>Export canvas</span>
                                 </span>
                                 <ChevronRightIcon
                                     className="w-3.5 h-3.5"
@@ -475,7 +475,7 @@ const MenuDrawer = (): ReactElement => {
                             >
                                 <span className="flex items-center gap-2.5">
                                     <UploadIcon />
-                                    <span>Import board</span>
+                                    <span>Import canvas</span>
                                 </span>
                                 <ChevronRightIcon
                                     className="w-3.5 h-3.5"
@@ -566,7 +566,7 @@ const MenuDrawer = (): ReactElement => {
                         Clear canvas?
                     </h2>
                     <p className="text-sm text-ink-mid mb-6">
-                        This will permanently remove all elements on the board.
+                        This will permanently remove all elements on this canvas.
                         This cannot be undone.
                     </p>
                     <div className="flex gap-2 justify-end">

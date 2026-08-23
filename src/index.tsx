@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App'
 import * as serviceWorker from './serviceWorker'
+import { runStorageMigration } from './utils/storageMigration'
 
 Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
@@ -14,7 +15,7 @@ Sentry.init({
 })
 
 // Stale-deploy recovery: when a tab loaded before a deploy lazy-imports a chunk
-// (e.g. the board chunk + its CSS), the old fingerprinted asset 404s and Vite
+// (e.g. the base chunk + its CSS), the old fingerprinted asset 404s and Vite
 // fires `vite:preloadError`. Reload once to fetch the fresh index.html + current
 // asset hashes. The sessionStorage flag prevents an infinite reload loop if the
 // asset is genuinely missing rather than just stale; it's cleared on a clean
@@ -33,6 +34,10 @@ window.addEventListener('vite:preloadError', (event) => {
 window.addEventListener('load', () => {
     sessionStorage.removeItem(PRELOAD_RELOAD_KEY)
 })
+
+// Bring localStorage up to the current vocabulary before anything reads it.
+// One-shot and self-guarding -- see storageMigration.ts.
+runStorageMigration()
 
 const rootEl = document.getElementById('root')
 if (rootEl) {

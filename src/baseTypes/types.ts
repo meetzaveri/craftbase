@@ -1,19 +1,22 @@
-// Base providers — the swappable substrate a board is drawn on.
+// Base-type providers — the swappable substrate a base is drawn on.
 //
-// A "base" is the backdrop behind the Two.js scene plus the tool set that makes
-// sense on it. The board base is today's parchment; the map base is an
-// OpenStreetMap view. The critical property is that **ink never moves across a
-// switch**: element coordinates live in Two.js surface space and are untouched,
-// so switching a base only swaps the backdrop renderer and re-anchors it to the
-// current ZUI camera.
+// A **base** is the workspace: the document a user opens, shares and persists.
+// Its **type** is the substrate underneath — `board` (parchment whiteboard),
+// `map` (OpenStreetMap), and `image` (still to come). A provider is the backdrop
+// renderer for one type plus the tool set that makes sense on it.
 //
-// Providers are resolved through `registry.ts` with a dynamic import, so a base
+// The critical property is that **ink never moves across a switch**: element
+// coordinates live in Two.js surface space and are untouched, so changing a
+// base's type only swaps the backdrop renderer and re-anchors it to the current
+// ZUI camera.
+//
+// Providers are resolved through `registry.ts` with a dynamic import, so a type
 // nobody activates costs nothing at load time.
 
-import type { CameraChangeEvent } from '../types/board'
+import type { CameraChangeEvent } from '../types/base'
 import type { PrimaryElement } from '../utils/constants'
 
-export type BaseId = 'board' | 'map'
+export type BaseType = 'board' | 'map'
 
 /** Where a map base is pinned. `lngLat` is [lng, lat] — MapLibre's order. */
 export interface MapAnchor {
@@ -22,12 +25,12 @@ export interface MapAnchor {
 }
 
 /**
- * Persisted per-board base state. Written to `craftbase_base_<boardId>` only
- * when the user explicitly switches — opening an older board never writes one,
- * which is what keeps pre-existing boards byte-identical in storage.
+ * Persisted per-base type state. Written to `craftbase_base_type_<baseId>` only
+ * when the user explicitly switches — opening an older base never writes one,
+ * which is what keeps pre-existing bases byte-identical in storage.
  */
-export interface BaseConfig {
-    base: BaseId
+export interface BaseTypeConfig {
+    type: BaseType
     mapAnchor?: MapAnchor | null
 }
 
@@ -36,8 +39,8 @@ export interface BaseConfig {
  * to its own shape internally (e.g. the map base carries the MapLibre map); no
  * caller outside the provider should reach into it.
  */
-export interface BaseHandle {
-    readonly id: BaseId
+export interface BaseTypeHandle {
+    readonly id: BaseType
 }
 
 /**
@@ -46,13 +49,13 @@ export interface BaseHandle {
  * geolocation well after mount — so it reports back through here rather than
  * the host having to poll.
  */
-export interface BaseMountContext {
-    /** Persist a partial config update for the current board. */
-    saveConfig(patch: Partial<BaseConfig>): void
+export interface BaseTypeMountContext {
+    /** Persist a partial config update for the current base. */
+    saveConfig(patch: Partial<BaseTypeConfig>): void
 }
 
-export interface BaseProvider {
-    readonly id: BaseId
+export interface BaseTypeProvider {
+    readonly id: BaseType
     /**
      * Human name for this base. Note the base switcher does NOT read it: it
      * lists bases that aren't loaded yet (and one that isn't built yet), and
@@ -67,15 +70,15 @@ export interface BaseProvider {
      */
     mount(
         container: HTMLElement,
-        config: BaseConfig,
-        ctx: BaseMountContext
-    ): Promise<BaseHandle>
+        config: BaseTypeConfig,
+        ctx: BaseTypeMountContext
+    ): Promise<BaseTypeHandle>
 
     /**
      * Mirror the ZUI camera onto the backdrop. Called on every camera event, so
      * it must be cheap and synchronous.
      */
-    syncCamera(handle: BaseHandle, camera: CameraChangeEvent): void
+    syncCamera(handle: BaseTypeHandle, camera: CameraChangeEvent): void
 
     /** Tools removed from the shapes toolbar while this base is active. */
     readonly hiddenTools: ReadonlySet<string>
@@ -92,7 +95,7 @@ export interface BaseProvider {
      * before any provider is loaded — providers are dynamic imports, so on a
      * page load the saved viewport is restored while this one is still the
      * board base, and a map camera would be clamped to the whiteboard's floor.
-     * `BASE_ZOOM_LIMITS` is keyed `Record<BaseId, ...>`, so a new base cannot
+     * `BASE_TYPE_ZOOM_LIMITS` is keyed `Record<BaseType, ...>`, so a new base cannot
      * forget to declare its range: the type checker demands an entry.
      */
 
@@ -110,7 +113,7 @@ export interface BaseProvider {
      * provider with nothing to contribute simply returns null.
      */
     captureBackdrop(
-        handle: BaseHandle,
+        handle: BaseTypeHandle,
         width: number,
         height: number
     ): Promise<string | null>
@@ -120,15 +123,15 @@ export interface BaseProvider {
      * (the map base returns its current anchor). Returns null when there's
      * nothing to persist.
      */
-    readConfig?(handle: BaseHandle): Partial<BaseConfig> | null
+    readConfig?(handle: BaseTypeHandle): Partial<BaseTypeConfig> | null
 
     /**
      * Recentre the backdrop (map base: jump to a searched place). Absent on
      * bases with nothing to recentre.
      */
-    setAnchor?(handle: BaseHandle, anchor: MapAnchor): void
+    setAnchor?(handle: BaseTypeHandle, anchor: MapAnchor): void
 
-    unmount(handle: BaseHandle): void
+    unmount(handle: BaseTypeHandle): void
 }
 
-export const DEFAULT_BASE: BaseId = 'board'
+export const DEFAULT_BASE_TYPE: BaseType = 'board'

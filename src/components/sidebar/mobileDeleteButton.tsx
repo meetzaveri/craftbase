@@ -11,7 +11,7 @@
 // from both of them.
 
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import { dispatchDeleteKey } from '../../utils/deleteKey'
 
@@ -50,7 +50,7 @@ const MobileDeleteButton = ({
         isTextDrawMode,
         deleteComponentFromLocalStore,
         stateRefForComponentStore,
-    } = useBoardContext()
+    } = useBaseContext()
     const { isMobile } = useMediaQueryUtils()
 
     if (!isMobile) return null

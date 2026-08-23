@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import CurvedLineFactory from '../../factory/curvedLine'
 import { strokeTypeToDashes } from '../../utils/misc'
@@ -33,10 +33,10 @@ function CurvedLine(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
-        zuiInBoard,
+        zuiInBase,
         selectedComponent,
         updateComponentBulkPropertiesInLocalStore,
-    } = useBoardContext()
+    } = useBaseContext()
 
     const two = props.twoJSInstance
 
@@ -46,12 +46,12 @@ function CurvedLine(props: ElementProps): ReactElement {
 
     // Live values read inside DOM drag handlers registered once at mount — keep
     // them in refs to dodge the stale-closure trap (see CLAUDE.md).
-    const zuiRef = useRef<ShapeLike>(zuiInBoard)
+    const zuiRef = useRef<ShapeLike>(zuiInBase)
     const persistRef = useRef(updateComponentBulkPropertiesInLocalStore)
     const idRef = useRef<string>(props.id)
     useEffect(() => {
-        zuiRef.current = zuiInBoard
-    }, [zuiInBoard])
+        zuiRef.current = zuiInBase
+    }, [zuiInBase])
     useEffect(() => {
         persistRef.current = updateComponentBulkPropertiesInLocalStore
     }, [updateComponentBulkPropertiesInLocalStore])

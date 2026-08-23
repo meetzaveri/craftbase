@@ -7,7 +7,7 @@ import {
     getShapeTextNodes,
     pollUntilElement,
 } from '../utils/canvasUtils'
-import type { ComponentRecord, ComponentStore } from '../types/board'
+import type { ComponentRecord, ComponentStore } from '../types/base'
 import type { HistoryEntry } from './useComponentHistory'
 
 // Two.js scene objects are typed loosely here; canvas-side typing converges
@@ -42,7 +42,7 @@ interface MousePosition {
 export interface CanvasClipboardOptions {
     twoJSInstance: TwoLike | null
     zuiInstanceRef: MutableRefObject<ZuiInstanceLike | null>
-    boardId: string
+    baseId: string
     addToLocalComponentStore: (
         id: string,
         componentType: string,
@@ -64,7 +64,7 @@ export interface CanvasClipboardApi {
 export function useCanvasClipboard({
     twoJSInstance,
     zuiInstanceRef,
-    boardId,
+    baseId,
     addToLocalComponentStore,
     recordBatchToHistoryLog,
     renderGroupRef,
@@ -272,7 +272,7 @@ export function useCanvasClipboard({
                 const newItem: any = cloneElementData(
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     src as any,
-                    boardId,
+                    baseId,
                     px,
                     py
                 )
@@ -335,7 +335,7 @@ export function useCanvasClipboard({
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const cloned: any = cloneElementData(
                         c,
-                        boardId,
+                        baseId,
                         rX,
                         rY
                     )
@@ -458,7 +458,7 @@ export function useCanvasClipboard({
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const newGroup: any = {
                     id: generateUUID(),
-                    boardId,
+                    baseId,
                     componentType: GROUP_COMPONENT,
                     x: px,
                     y: py,
@@ -494,7 +494,7 @@ export function useCanvasClipboard({
         window.addEventListener('keydown', onPasteEvent)
         return (): void => window.removeEventListener('keydown', onPasteEvent)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [boardId, addToLocalComponentStore])
+    }, [baseId, addToLocalComponentStore])
 
     return { clipboardRef, lastMouseRef }
 }

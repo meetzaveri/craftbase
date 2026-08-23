@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     drawRectangle,
     drawShape,
     drawArrow,
@@ -66,7 +66,7 @@ test.describe('Undo (local mode, keyboard Cmd/Ctrl+Z)', () => {
         test(`removes ${name} from DOM and localStorage draft`, async ({
             page,
         }) => {
-            await setupLocalBoard(page)
+            await setupLocalBase(page)
 
             // Anchor rectangle: keeps the component store non-empty after the
             // undo so the debounced localStorage save fires
@@ -103,7 +103,7 @@ test.describe('Undo (local mode, keyboard Cmd/Ctrl+Z)', () => {
 })
 
 test('Undo button removes the last drawn rectangle', async ({ page }) => {
-    await setupLocalBoard(page)
+    await setupLocalBase(page)
 
     const anchor = await drawRectangle(page, ANCHOR_COORDS)
     const anchorId = await anchor.getAttribute('data-component-id')

@@ -18,9 +18,9 @@
  * The map zoom that ZUI `scale = 1` ("100%") represents, and therefore the zoom
  * every fresh anchor is pinned at. z16 is shop/area detail — the zoom you draw
  * at most. The reachable window spans roughly [zoom - 4.1, zoom + 3] given the
- * map base's ZUI scale limits; see mapBase.ts for that arithmetic.
+ * map base's ZUI scale limits; see mapType.ts for that arithmetic.
  *
- * It lives here rather than in mapBase so the host can reference it without
+ * It lives here rather than in mapType so the host can reference it without
  * importing the map provider — that module carries the ~1MB maplibre chunk
  * behind a dynamic import, and a static import would defeat it.
  */

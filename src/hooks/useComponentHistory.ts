@@ -14,7 +14,7 @@ import {
 import { lineHeightFor } from '../utils/textLayout'
 import { buildPointVisual, pointColorOf, pointLabelOf } from '../factory/point'
 import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
-import type { ComponentRecord, ComponentStore } from '../types/board'
+import type { ComponentRecord, ComponentStore } from '../types/base'
 import {
     VERTEX_PATH_TYPES,
     VERTEX_PATH_REVERTED_EVENT,
@@ -119,7 +119,7 @@ export type HistoryEntry =
 // ---- hook options ----
 
 // Apollo mutate signatures vary by typing source; keep them loose at the
-// boundary. board.tsx (Stage 10) will wire in real Apollo types.
+// boundary. base.tsx (Stage 10) will wire in real Apollo types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ApolloMutate = (options?: any) => any
 
@@ -127,7 +127,7 @@ export interface ComponentHistoryOptions {
     twoJSInstanceRef: MutableRefObject<TwoLike | null>
     stateRefForComponentStore: MutableRefObject<ComponentStore>
     isPersistedRef: MutableRefObject<boolean>
-    boardId: string
+    baseId: string
     isPersisted: boolean
     insertComponent: ApolloMutate
     deleteComponent: ApolloMutate
@@ -280,7 +280,7 @@ export function useComponentHistory({
     twoJSInstanceRef,
     stateRefForComponentStore,
     isPersistedRef,
-    boardId,
+    baseId,
     insertComponent,
     deleteComponent,
     updateComponentInfo,
@@ -367,10 +367,10 @@ export function useComponentHistory({
         // A DELETE entry snapshots prevState as { ...store[id] }; if the
         // component wasn't in the store at delete time (transient/group ids,
         // double-delete, already-removed), that snapshot is {}. Restoring it
-        // would write a { boardId }-only entry that later breaks Share's bulk
+        // would write a { baseId }-only entry that later breaks Share's bulk
         // insert (componentType NOT NULL). Same guard as applyBatch.
         if (!componentInfo || !componentInfo.componentType) return
-        const restoredState = { ...componentInfo, boardId }
+        const restoredState = { ...componentInfo, baseId }
         const updatedStore = {
             ...stateRefForComponentStore.current,
             [id]: restoredState,
@@ -756,7 +756,7 @@ export function useComponentHistory({
                           ? e.componentInfo
                           : undefined
                 if (!source) return
-                const restoredState = { ...source, boardId }
+                const restoredState = { ...source, baseId }
                 updatedStore[e.action === 'DELETE' ? e.id : e.id] =
                     restoredState
                 if (isPersistedRef.current) {

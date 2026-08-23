@@ -23,7 +23,7 @@ function Pencil(props: ElementProps): ReactElement {
 
     // A pencil drawn on a geographic base resists zoom the way a route does:
     // only the stroke width counter-scales, so the strokes stay glued to the
-    // geography while remaining visible when the world zooms out. A board
+    // geography while remaining visible when the world zooms out. A board-base
     // scribble is untouched — see isStrokeScaled.
     const geoResist = isStrokeScaled(props)
     // pencil's `metadata` is the vertex array, so `.resist` is undefined and

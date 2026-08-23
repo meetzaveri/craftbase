@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useMemo, useState } from 'react'
 
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import ColorPicker from '../utils/colorPicker'
 import OpacitySlider from '../utils/opacitySlider'
@@ -556,7 +556,7 @@ const MobileTabBar = ({
 )
 
 const ElementPropertiesToolbar = () => {
-    const ctx = useBoardContext()
+    const ctx = useBaseContext()
 
     const {
         isPencilMode,

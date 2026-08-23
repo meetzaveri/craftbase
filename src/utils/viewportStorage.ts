@@ -1,22 +1,23 @@
-// Per-board, per-base viewport persistence.
+// Per-base, per-base-type viewport persistence.
 //
-// Each base is its own workspace, so it keeps its own camera: panning around a
-// map must not drag the whiteboard's view with it, and vice versa. Switching
-// bases therefore restores that base's last camera rather than carrying the
-// current one across.
+// Each base type is its own workspace, so it keeps its own camera: panning
+// around a map must not drag the whiteboard's view with it, and vice versa.
+// Switching type therefore restores that type's last camera rather than
+// carrying the current one across.
 //
-// Key shape: `craftbase_viewport_<boardId>` for the board base and
-// `craftbase_viewport_<boardId>__<base>` for every other base. The board base
-// deliberately keeps the *unsuffixed* legacy key, so viewports saved before
-// bases existed still restore on the board — no migration, no reset.
+// Key shape: `craftbase_viewport_<baseId>` for the board type and
+// `craftbase_viewport_<baseId>__<type>` for every other type. The board type
+// deliberately keeps the *unsuffixed* key, so viewports saved before base types
+// existed still restore — no migration, no reset. This is also why the rename
+// left these keys alone: they never carried the word "board" to begin with.
 
 import {
     VIEWPORT_KEY_PREFIX,
     MOBILE_VIEWPORT_KEY_PREFIX,
     VIEWPORT_TTL_MS,
 } from '../constants/misc'
-import { DEFAULT_BASE } from '../bases/types'
-import type { BaseId } from '../bases/types'
+import { DEFAULT_BASE_TYPE } from '../baseTypes/types'
+import type { BaseType } from '../baseTypes/types'
 
 export interface StoredViewport {
     scale: number
@@ -29,29 +30,29 @@ interface RawViewport extends StoredViewport {
 }
 
 /**
- * Storage key for a board's camera on a given base. Desktop and mobile keep
+ * Storage key for a base's camera on a given baseType. Desktop and mobile keep
  * separate cameras (they have very different usable viewports), which is why
  * the prefix differs rather than the suffix.
  */
 export function viewportKeyFor(
-    boardId: string,
-    base: BaseId,
+    baseId: string,
+    baseType: BaseType,
     isMobile: boolean
 ): string {
     const prefix = isMobile ? MOBILE_VIEWPORT_KEY_PREFIX : VIEWPORT_KEY_PREFIX
-    return base === DEFAULT_BASE
-        ? `${prefix}${boardId}`
-        : `${prefix}${boardId}__${base}`
+    return baseType === DEFAULT_BASE_TYPE
+        ? `${prefix}${baseId}`
+        : `${prefix}${baseId}__${baseType}`
 }
 
-/** Read a base's saved camera, or null when absent, expired or malformed. */
+/** Read a baseType's saved camera, or null when absent, expired or malformed. */
 export function readViewport(
-    boardId: string,
-    base: BaseId,
+    baseId: string,
+    baseType: BaseType,
     isMobile: boolean
 ): StoredViewport | null {
-    if (!boardId) return null
-    const key = viewportKeyFor(boardId, base, isMobile)
+    if (!baseId) return null
+    const key = viewportKeyFor(baseId, baseType, isMobile)
     try {
         const raw = localStorage.getItem(key)
         if (!raw) return null
@@ -80,17 +81,17 @@ export function readViewport(
     }
 }
 
-/** Persist a base's camera. Swallows quota/private-mode failures. */
+/** Persist a baseType's camera. Swallows quota/private-mode failures. */
 export function writeViewport(
-    boardId: string,
-    base: BaseId,
+    baseId: string,
+    baseType: BaseType,
     isMobile: boolean,
     viewport: StoredViewport
 ): void {
-    if (!boardId) return
+    if (!baseId) return
     try {
         localStorage.setItem(
-            viewportKeyFor(boardId, base, isMobile),
+            viewportKeyFor(baseId, baseType, isMobile),
             JSON.stringify({ ...viewport, savedAt: Date.now() })
         )
     } catch {
@@ -98,5 +99,5 @@ export function writeViewport(
     }
 }
 
-/** The camera a base opens on when it has nothing saved. */
+/** The camera a baseType opens on when it has nothing saved. */
 export const IDENTITY_VIEWPORT: StoredViewport = { scale: 1, tx: 0, ty: 0 }

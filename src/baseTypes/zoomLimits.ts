@@ -1,18 +1,18 @@
-// How far each base's camera may zoom, as ZUI scale.
+// How far each baseType's camera may zoom, as ZUI scale.
 //
 // Split out of the providers because the camera needs these BEFORE a provider
-// exists. Providers load through a dynamic import (the map base carries ~1MB of
+// exists. Providers load through a dynamic import (the map baseType carries ~1MB of
 // maplibre), so on a page load the canvas is created — and the saved viewport
-// restored — while `baseProvider` is still the board base. Restoring a map
-// camera against the board's floor silently clamps it, which is how a board
+// restored — while `baseTypeProvider` is still the board base. Restoring a map
+// camera against the board base's floor silently clamps it, which is how a base
 // saved at map z8 came back at z11. This table is plain arithmetic with no
 // dependencies, so the camera can be given the right range immediately.
 //
-// `BaseProvider.zoomLimits` reads from here, so there is still exactly one
-// definition per base.
+// `BaseTypeProvider.zoomLimits` reads from here, so there is still exactly one
+// definition per baseType.
 
 import { DEFAULT_ANCHOR_ZOOM } from '../utils/timezoneCities'
-import type { BaseId } from './types'
+import type { BaseType } from './types'
 
 export interface ZoomLimits {
     min: number
@@ -24,8 +24,8 @@ export interface ZoomLimits {
  * `mapZoom = anchor.zoom + log2(zuiScale)` — the ZUI scale limits that produce
  * it. z1 is the whole world in view; z19 is OSM's deepest tile.
  *
- * This is why the map can't just inherit the board's 6%–800%: that range spans
- * only ~7 zoom levels, which pins a z16-anchored board to roughly z12–z19 and
+ * This is why the map can't just inherit the board base's 6%–800%: that range spans
+ * only ~7 zoom levels, which pins a z16-anchored base to roughly z12–z19 and
  * makes "zoom out to see another continent" impossible. The relation between
  * the two zooms is fixed (it's what keeps ink glued to the map), so the only
  * way to widen what the user can see is to widen the scale range itself.
@@ -41,12 +41,12 @@ const MAP_LIMITS: ZoomLimits = {
     max: Math.pow(2, MAX_MAP_ZOOM - DEFAULT_ANCHOR_ZOOM),
 }
 
-export const BASE_ZOOM_LIMITS: Record<BaseId, ZoomLimits> = {
+export const BASE_TYPE_ZOOM_LIMITS: Record<BaseType, ZoomLimits> = {
     board: BOARD_LIMITS,
     map: MAP_LIMITS,
 }
 
-/** Limits for a base, falling back to the board's for anything unrecognised. */
-export function zoomLimitsForBase(base: BaseId): ZoomLimits {
-    return BASE_ZOOM_LIMITS[base] ?? BOARD_LIMITS
+/** Limits for a base type, falling back to the board base's for anything unrecognised. */
+export function zoomLimitsForBaseType(baseType: BaseType): ZoomLimits {
+    return BASE_TYPE_ZOOM_LIMITS[baseType] ?? BOARD_LIMITS
 }

@@ -6,7 +6,7 @@ import Two from 'two.js'
 const factoryModules: Record<string, () => Promise<any>> = import.meta.glob(
     '../../factory/*.ts'
 )
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import getEditComponents from '../utils/editWrapper'
 import {
     VERTEX_PATH_TYPES,
@@ -89,8 +89,8 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
-        zuiInBoard,
-    } = useBoardContext()
+        zuiInBase,
+    } = useBaseContext()
 
     const two = props.twoJSInstance
     const [deleteGroupElements, setDeleteGroupElements] =
@@ -505,7 +505,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         // members as each resolved (a per-child two.update each), while newCanvas
         // hid the originals up-front, left a blank frame (the flicker) between
         // "originals hidden" and "members painted". Factories are prefetched
-        // (board.tsx warm list), so Promise.all resolves on the next microtask
+        // (base.tsx warm list), so Promise.all resolves on the next microtask
         // on a warm cache.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const loaders = props.children.map((item: any) => {
@@ -578,7 +578,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 applyCounterScaleToCopy(
                     coreObject,
                     item,
-                    (zuiInBoard as ShapeLike)?.zui?.scale ?? two?.scene?.scale
+                    (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
                 )
                 group.add(coreObject)
             })

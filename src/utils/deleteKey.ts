@@ -1,4 +1,4 @@
-// Fire the board's Delete key programmatically.
+// Fire the canvas's Delete key programmatically.
 //
 // Deleting is spread across four owners, each listening for the same keydown:
 // the selection controller (rect/circle/diamond/text), the focus-based handlers
@@ -12,7 +12,7 @@
 // CLAUDE.md — and would then drift from the keyboard behaviour it is meant to
 // mirror. Pressing the key is exactly what the button means.
 
-/** Legacy `keyCode` for Delete. Every handler on the board switches on this. */
+/** Legacy `keyCode` for Delete. Every handler on the canvas switches on this. */
 const DELETE_KEY_CODE = 46
 
 /**

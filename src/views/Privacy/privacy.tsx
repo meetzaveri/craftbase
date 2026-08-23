@@ -54,7 +54,7 @@ const PrivacyPage: React.FC = () => {
                             px-2 py-1 rounded-md hover:bg-accent/30 transition-all ease-in duration-150"
                     >
                         <ChevronLeft />
-                        <span>{isMobile ? 'Back' : 'Back to board'}</span>
+                        <span>{isMobile ? 'Back' : 'Back to canvas'}</span>
                     </Link>
                 </div>
             </nav>
@@ -84,7 +84,7 @@ const PrivacyPage: React.FC = () => {
                         sign-up. You're an anonymous, randomly-named identity
                         stored in your own browser. Anything you draw stays in
                         your browser until <em>you</em> explicitly choose to
-                        share a board &mdash; at which point that board becomes
+                        share a canvas &mdash; at which point that canvas becomes
                         publicly viewable. We use a privacy-first analytics tool
                         that doesn't set cookies or store your IP address.
                     </p>
@@ -115,7 +115,7 @@ const PrivacyPage: React.FC = () => {
                     </p>
                 </Section>
 
-                <Section title="Your boards and what you draw">
+                <Section title="Your canvases and what you draw">
                     <p>
                         <strong>Local mode (the default).</strong> While you're
                         just sketching, everything you create &mdash; shapes,
@@ -124,12 +124,12 @@ const PrivacyPage: React.FC = () => {
                         cannot see it.
                     </p>
                     <p>
-                        <strong>Shared boards.</strong> When you choose to share
-                        a board, we ask you to confirm first. Once you confirm,
-                        that board and its contents are uploaded to the cloud
+                        <strong>Shared canvases.</strong> When you choose to share
+                        a canvas, we ask you to confirm first. Once you confirm,
+                        that canvas and its contents are uploaded to the cloud
                         and become <strong>publicly viewable</strong> by anyone
                         with the link. Please don't put confidential or
-                        sensitive information on a board you intend to share.
+                        sensitive information on a canvas you intend to share.
                         Sharing is always your explicit choice &mdash; nothing
                         leaves your browser until you opt in.
                     </p>
@@ -171,7 +171,7 @@ const PrivacyPage: React.FC = () => {
                         </li>
                         <li>Device fingerprints or cross-site trackers</li>
                         <li>
-                            The contents of boards you keep in local mode and
+                            The contents of canvases you keep in local mode and
                             never share
                         </li>
                     </ul>
@@ -181,13 +181,13 @@ const PrivacyPage: React.FC = () => {
                 <Section title="Your controls">
                     <p>
                         You can reset your anonymous identity and wipe all
-                        locally-stored boards at any time by clearing this
+                        locally-stored canvases at any time by clearing this
                         site's data in your browser settings.
                     </p>
                     <p>
-                        Note that once a board has been shared it is public, and
+                        Note that once a canvas has been shared it is public, and
                         copies that other people have opened may persist
-                        independently. If you'd like a shared board taken down,
+                        independently. If you'd like a shared canvas taken down,
                         contact us at the address below.
                     </p>
                 </Section>

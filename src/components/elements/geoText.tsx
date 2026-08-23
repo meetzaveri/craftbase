@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import type { ReactElement } from 'react'
 import interact from 'interactjs'
 import { useImmer } from 'use-immer'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import { elementOnBlurHandler } from '../../utils/misc'
 import getEditComponents from '../utils/editWrapper'
@@ -14,18 +14,25 @@ import {
 import { lineHeightFor } from '../../utils/textLayout'
 import { readOpacity } from '../../utils/canvasUtils'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
-import { DEFAULT_TEXT_FONT_FAMILY } from '../../constants/misc'
+import {
+    DEFAULT_TEXT_FONT_FAMILY,
+    GEO_TEXT_RESIST,
+} from '../../constants/misc'
+import { computeCounterScale } from '../../utils/counterScale'
 
 // GeoText renders exactly like NewText — same NewTextFactory, same multiline
 // editing, resize handles and floating-toolbar contract. What separates the two
 // is not how they draw but where they belong: geoText carries
-// `objectClass: 'geo'`, so it lives on the map base and hides on the board
+// `objectClass: 'geo'`, so it lives on the map base and hides on the board base
 // (geoVisibility.ts), while newText is whiteboard text.
 //
-// It used to counter-scale itself like a point pin. That was deliberately
-// dropped: annotation text on a map should scale with the geography it labels,
-// the way every other mark on the canvas does. The point's own label keeps its
-// counter-scale — a pin is a fixed marker, not a caption.
+// It counter-scales like a point pin (GEO_TEXT_RESIST). That was dropped once,
+// on the reasoning that annotation text should scale with the geography it
+// labels — which reads well until you price it against the map base's zoom
+// range. Surface-space text renders at `fontSize * zuiScale`, and zuiScale is
+// `2^(mapZoom - anchor.zoom)` over 18 stops, so an 18px label sits at 0.3px
+// over a county and 0.0005px at world view. "Scales with the geography" and
+// "is readable" cannot both hold across 18 stops; readable wins.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -48,8 +55,8 @@ function GeoText(props: ElementProps): ReactElement {
         isArrowDrawMode,
         isTextDrawMode,
         isArrowSelected,
-        zuiInBoard,
-    } = useBoardContext()
+        zuiInBase,
+    } = useBaseContext()
 
     const { isMobile } = useMediaQueryUtils()
     const [showToolbar, toggleToolbar] = useState(false)
@@ -67,8 +74,10 @@ function GeoText(props: ElementProps): ReactElement {
     // ref to the layout sync so the metadata effect can re-run it.
     const extraLineNodesRef = useRef<ShapeLike[]>([])
     const syncMultilineRef = useRef<(() => void) | null>(null)
+    const selectorRef = useRef<ShapeLike>(null)
 
     const two = props.twoJSInstance
+    const resist = props.metadata?.resist ?? GEO_TEXT_RESIST
 
     let selectorInstance: ShapeLike = null
     let groupObject: ShapeLike = null
@@ -115,6 +124,27 @@ function GeoText(props: ElementProps): ReactElement {
         twoTextRef.current = twoText
         groupObject = group
         groupRef.current = group
+
+        // Seed the counter-scale from the current camera so the text is sized
+        // correctly before the first zoom event fires. The base context holds
+        // the addZUI wrapper ({ zui, ... }); the live scale is on the nested ZUI
+        // instance (fall back to the scene scale). Mirrors point.tsx.
+        const initialScale =
+            (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
+        if (initialScale) {
+            group.scale = computeCounterScale(initialScale, resist)
+        }
+
+        /**
+         * On-screen scale of anything inside this group: the camera's scale
+         * times the group's own zoom-resist counter-scale. Both multiplications
+         * apply to the selector outline and to the editing overlay's font size.
+         */
+        const effectiveScale = (): number => {
+            const sceneScale = two?.scene?.scale || 1
+            const groupScale = typeof group.scale === 'number' ? group.scale : 1
+            return sceneScale * groupScale || 1
+        }
 
         // Multiline rendering: `twoText` holds line 1; satellite Two.Text nodes
         // hold lines 2..N. We honor only hard newlines (Shift+Enter). The whole
@@ -198,6 +228,8 @@ function GeoText(props: ElementProps): ReactElement {
 
         const { selector } = getEditComponents(two, group, 4)
         selectorInstance = selector
+        selectorRef.current = selector
+        selector.setScale(effectiveScale())
         two.update()
 
         // Resize via corner handles (proportional font-size scaling).
@@ -242,7 +274,8 @@ function GeoText(props: ElementProps): ReactElement {
                 bRect.left - 4,
                 bRect.right + 4,
                 bRect.top - 4,
-                bRect.bottom + 4
+                bRect.bottom + 4,
+                effectiveScale()
             )
 
             setTextSize(newSize)
@@ -337,10 +370,12 @@ function GeoText(props: ElementProps): ReactElement {
             groupDomElem.style.display = 'none'
 
             // The editing overlay must render at the same on-screen size as
-            // the glyphs it covers, which is the text size through the camera.
+            // the glyphs it covers. That is the text size through the camera
+            // AND through the group's zoom-resist counter-scale — the camera
+            // alone was what made the textarea microscopic on a zoomed-out map,
+            // exactly like the glyphs underneath it.
             const fontSize = twoText.size || 36
-            const sceneScale = two?.scene?.scale || 1
-            const cssFontSize = fontSize * sceneScale
+            const cssFontSize = fontSize * effectiveScale()
             const lineH = Math.ceil(cssFontSize * 1.6)
             const vertPad = Math.ceil((lineH - cssFontSize) / 2) + 4
 
@@ -419,7 +454,8 @@ function GeoText(props: ElementProps): ReactElement {
                     bRect.left - 4,
                     bRect.right + 4,
                     bRect.top - 4,
-                    bRect.bottom + 4
+                    bRect.bottom + 4,
+                    effectiveScale()
                 )
                 selectorInstance.show()
                 two.update()
@@ -450,7 +486,17 @@ function GeoText(props: ElementProps): ReactElement {
                     measureSpan.parentNode.removeChild(measureSpan)
                 }
 
-                groupDomElem.style.display = 'block'
+                // Restore to '' — NOT 'block'. This inline style only exists
+                // to hide the text while the textarea overlays it, and an
+                // inline `display` OVERRIDES the `display` attribute Two.js
+                // writes from its own `.visible` flag. Hard-coding 'block' here
+                // pinned the element visible: create text on the board base,
+                // then switch to the map (the switcher click is what blurs the
+                // editor) and `applyBaseTypeVisibility` correctly set
+                // visible=false + display="none" on the <g>, but the inline
+                // block won and the text lingered over the map until reload.
+                // Clearing the property hands display back to Two.js.
+                groupDomElem.style.display = ''
 
                 // Raw text — may contain hard newlines from Shift+Enter.
                 const newContent = input.value
@@ -467,7 +513,8 @@ function GeoText(props: ElementProps): ReactElement {
                     bRect.left - 4,
                     bRect.right + 4,
                     bRect.top - 4,
-                    bRect.bottom + 4
+                    bRect.bottom + 4,
+                    effectiveScale()
                 )
                 selectorInstance.hide()
                 two.update()
@@ -511,7 +558,8 @@ function GeoText(props: ElementProps): ReactElement {
                 bRect.left - 4,
                 bRect.right + 4,
                 bRect.top - 4,
-                bRect.bottom + 4
+                bRect.bottom + 4,
+                effectiveScale()
             )
             two.update()
             toggleToolbar(true)
@@ -552,6 +600,28 @@ function GeoText(props: ElementProps): ReactElement {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    // Counter-scale the text on every camera change so it stays legible when
+    // the world zooms out. Reads the scale from the event each fire — no stale
+    // closure (see the React + Two.js stale-closure note in CLAUDE.md).
+    useEffect(() => {
+        const onZoom = (e: Event): void => {
+            const group = groupRef.current
+            if (!group) return
+            const scale = (e as CustomEvent<{ scale: number }>).detail?.scale
+            if (!scale) return
+            group.scale = computeCounterScale(scale, resist)
+            // Re-normalise the selection outline so it stays a constant screen
+            // width instead of drifting thick or hairline across the map base's
+            // 18 zoom stops.
+            selectorRef.current?.setScale(scale * group.scale)
+            two.update()
+        }
+        window.addEventListener('zoomChanged', onZoom as EventListener)
+        return (): void => {
+            window.removeEventListener('zoomChanged', onZoom as EventListener)
+        }
+    }, [two, resist])
 
     useEffect(() => {
         if (internalState?.group?.data) {

@@ -1,4 +1,4 @@
-// "Where should the map open?" — asked once, on a board's first visit to the
+// "Where should the map open?" — asked once, on a base's first visit to the
 // map base, before there is any map content to disturb.
 //
 // It replaces an automatic `navigator.geolocation` prompt, which asked for a
@@ -17,7 +17,7 @@ import Modal from '../common/modal'
 import Button from '../common/button'
 import { searchPlaces } from '../../utils/placeSearch'
 import type { PlaceResult } from '../../utils/placeSearch'
-import type { MapAnchor } from '../../bases/types'
+import type { MapAnchor } from '../../baseTypes/types'
 
 /** Matches PlaceSearch: Nominatim asks for ~1 req/sec, so this is politeness. */
 const DEBOUNCE_MS = 450
@@ -78,7 +78,10 @@ export default function MapStartLocationModal({
         <Modal open={open} onClose={onSkip} locked={false}>
             <div
                 className="p-2 text-left"
-                style={{ minWidth: '360px', maxWidth: '420px' }}
+                style={{
+                    minWidth: 'min(360px, calc(100vw - 96px))',
+                    maxWidth: '420px',
+                }}
             >
                 <h2 className="text-lg font-semibold mb-1 text-ink">
                     Where are you mapping?

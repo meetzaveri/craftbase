@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 
 import ElementFactory from '../../factory/diamond'
 import { strokeTypeToDashes } from '../../utils/misc'
@@ -14,7 +14,7 @@ type ElementProps = any
 type ShapeLike = any
 
 function Diamond(props: ElementProps): ReactElement {
-    const { isPencilMode, isArrowDrawMode, isArrowSelected } = useBoardContext()
+    const { isPencilMode, isArrowDrawMode, isArrowSelected } = useBaseContext()
 
     const groupRef = useRef<ShapeLike>(null)
     const shapeRef = useRef<ShapeLike>(null)

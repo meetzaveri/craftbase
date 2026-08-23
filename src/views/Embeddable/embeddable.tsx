@@ -98,7 +98,7 @@ const EmbeddablePage: React.FC = () => {
                             px-2 py-1 rounded-md hover:bg-accent/30 transition-all ease-in duration-150"
                     >
                         <ChevronLeft />
-                        <span>{isMobile ? 'Back' : 'Back to board'}</span>
+                        <span>{isMobile ? 'Back' : 'Back to canvas'}</span>
                     </Link>
                 </div>
             </nav>
@@ -113,7 +113,7 @@ const EmbeddablePage: React.FC = () => {
                     <p className="text-sm tablet-landscape:text-base text-ink-muted leading-relaxed">
                         Craftbase is an open-source, embeddable whiteboard canvas
                         you can drop into any React app as a single component.
-                        Mount the <code className="text-accent-dark">{'<Board />'}</code>{' '}
+                        Mount the <code className="text-accent-dark">{'<Base />'}</code>{' '}
                         and you get a full sketching surface — shapes, arrows,
                         text, freehand drawing, pan and zoom — rendered with
                         Two.js. No backend is required to get started: your
@@ -138,7 +138,7 @@ const EmbeddablePage: React.FC = () => {
 
                 <Section title="Drop it into your app">
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        Import the <code className="text-accent-dark">Board</code>{' '}
+                        Import the <code className="text-accent-dark">Base</code>{' '}
                         component and render it inside a sized container. That's
                         the whole integration — Craftbase owns the canvas, tools
                         and interactions.
@@ -168,7 +168,7 @@ export default function Whiteboard() {
                             the canvas works fully offline.
                         </li>
                         <li>
-                            The board is restored automatically on reload from
+                            The canvas is restored automatically on reload from
                             the saved localStorage draft.
                         </li>
                         <li>
@@ -180,7 +180,7 @@ export default function Whiteboard() {
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed">
                         Because the draft is just localStorage, clearing the
                         browser's site data (or opening the app in a different
-                        browser/device) starts a fresh board. When you're ready
+                        browser/device) starts a fresh canvas. When you're ready
                         to sync across devices, Craftbase can be wired to a
                         backend, but that's entirely opt-in.
                     </p>

@@ -21,7 +21,7 @@ export const DEFAULT_ERASER_SIZE: EraserSize = 'medium'
 export const ERASER_SIZES: readonly EraserSize[] = ['small', 'medium', 'large']
 
 // On-screen DIAMETER in px of the dot the size selector shows for each size.
-// This is the eraser's visual identity: the trail drawn on the board uses the
+// This is the eraser's visual identity: the trail drawn on the canvas uses the
 // exact same number, so the beam is the same circle as the swatch that was
 // picked. Change it here and both move together.
 export const ERASER_DOT_PX: Record<EraserSize, number> = {
@@ -55,7 +55,7 @@ export const VIEWPORT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 // means the same thing over a map — circling a district, scribbling a route by
 // hand — so it is offered on both bases. A stroke drawn here is tagged
 // `objectClass: 'geo'` at creation, which is what keeps map scribbles off the
-// board and board scribbles off the map. See newCanvas's pencil commit.
+// board base and board scribbles off the map. See newCanvas's pencil commit.
 export const GEO_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
     'shapes',
     'rectangle',
@@ -72,17 +72,17 @@ export const GEO_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
 export const GEO_VISIBILITY_RETRIES = 60
 
 // Hard ceiling on that retry loop. The budget above is *reset* whenever the
-// scene is still growing (elements mount lazily, and a big board can take well
+// scene is still growing (elements mount lazily, and a big base can take well
 // over a second to land), but `scene.children.length` also moves when selection
 // chrome and previews come and go — so without a ceiling a user fiddling on the
 // canvas could hold the loop open forever. ~10s at 60fps.
 export const GEO_VISIBILITY_MAX_FRAMES = 600
 
-// Per-board base (board / map) — a sidecar key deliberately kept OUT of the
+// Per-base type (board / map) — a sidecar key deliberately kept OUT of the
 // draft blob so the draft's size guard and rescue path are unaffected by it,
-// and so a board that never touches the switcher writes nothing at all. Shares
+// and so a base that never touches the switcher writes nothing at all. Shares
 // the viewport TTL and its sweep. See src/bases/baseStorage.ts.
-export const BASE_KEY_PREFIX = 'craftbase_base_'
+export const BASE_TYPE_KEY_PREFIX = 'craftbase_base_type_'
 
 export const componentTypes = {
     rectangle: 'rectangle',
@@ -112,7 +112,7 @@ export const isGeoType = (type: string | null | undefined): boolean =>
 // variant). They render identically and share every text code path (properties
 // toolbar, group apply, history revert, clipboard); the only difference is that
 // geoText carries `objectClass: 'geo'`, so it shows on the map base and hides on
-// the board. Use this everywhere a "is this standalone text?" decision is made
+// the canvas. Use this everywhere a "is this standalone text?" decision is made
 // so both stay in lockstep.
 export const isStandaloneTextType = (
     type: string | null | undefined
@@ -135,8 +135,20 @@ export const GEO_DRAW_PROPS_KEY = 'geoDrawProps'
 export const GEO_POINT_PLACE_MODE_KEY = 'geoPointPlaceMode'
 
 // Pin/point counter-scale: 1/scale^resist keeps the pin legible when zoomed
-// out (0 = fully fixed on screen, 1 = scales with the world).
+// out. apparent size ∝ scale^(1 - resist), so 0 = scales with the world and
+// 1 = fully fixed on screen (see utils/counterScale.ts for the derivation).
 export const DEFAULT_GEO_RESIST = 0.9
+
+// Map text (geoText) counter-scale. Text on a map base spans 18 zoom stops
+// (map zoom 1..19 against a z16 anchor), and at resist 0 an 18px label renders
+// at 18 * 2^(mapZoom - 16) px — 0.3px over a county, which is why map text was
+// unreadable anywhere but the anchor zoom. At 0.9 that same label stays within
+// roughly 6px..22px across the whole range.
+//
+// This is the knob to turn when tuning legibility: 1 pins text to a constant
+// screen size (true map-label behaviour), 0 restores the old scales-with-the-
+// geography model. Per-record `metadata.resist` overrides it.
+export const GEO_TEXT_RESIST = 0.9
 // The generic point: a small filled circle with an editable label beside it.
 // One design, no categories. POINT_RADIUS is the circle radius in surface units
 // at scale 1 — the group counter-scales (DEFAULT_GEO_RESIST above), so the pin
@@ -202,9 +214,14 @@ export const PENCIL_DEFAULT_COLOR = '#000'
 export const SHAPE_DEFAULT_STROKE = '#000'
 
 // Draft persistence
+// Bumped whenever a localStorage key or payload shape changes; drives the
+// one-shot migration in src/utils/storageMigration.ts.
+export const STORAGE_VERSION_KEY = 'craftbase_storage_version'
+export const STORAGE_VERSION = 2
+
 export const DRAFT_STORAGE_KEY = 'craftbase_local_draft'
 export const DRAFT_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000
-export const BACKGROUND_BOARD_STORAGE_KEY = 'craftbase_background_board_id'
+export const BACKGROUND_BASE_STORAGE_KEY = 'craftbase_background_base_id'
 export const STORAGE_QUOTA_ERROR_NAME = 'QuotaExceededError'
 
 // First-visit welcome sketch: once dismissed (user added their first element),
@@ -230,7 +247,7 @@ export const DRAG_SCANS_ENABLED_KEY = 'craftbase_drag_scans_enabled'
 
 // Feature-flag preference: viewport culling. Hides scene elements whose
 // screen-space bounds fall outside the viewport so the SVG renderer skips
-// painting them — the lever against the pan/zoom paint cost on dense boards.
+// painting them — the lever against the pan/zoom paint cost on dense bases.
 // Read live (see `src/utils/featureFlags.ts`). Defaults to disabled.
 export const VIEWPORT_CULLING_ENABLED_KEY = 'craftbase_viewport_culling_enabled'
 
