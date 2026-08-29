@@ -116,6 +116,7 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     WELCOME_DISMISSED_KEY,
+    LOCAL_BASE_ID_KEY,
 } from '../../constants/misc'
 import {
     isWelcomeComponent,
@@ -183,6 +184,14 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                 if (parsed?.baseId) return parsed.baseId
             }
         } catch (_) {}
+        // No draft yet — but the user may still have answered the map base's
+        // start-location prompt, whose anchor and camera are keyed by this id.
+        // The draft stays authoritative above; this only covers the gap where
+        // something was persisted before anything was drawn.
+        try {
+            const remembered = localStorage.getItem(LOCAL_BASE_ID_KEY)
+            if (remembered) return remembered
+        } catch (_) {}
         return generateUUID()
     })
     const [isPersisted, setIsPersisted] = useState(!!baseIdFromUrl)
@@ -193,6 +202,33 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
     )
     const backgroundBaseIdRef = useRef<string | null>(null)
     const baseCreationInFlightRef = useRef<boolean>(false)
+
+    /**
+     * Claim a stable id for the local base at `/`.
+     *
+     * Called only when something worth reloading into has just been persisted
+     * against this base — today, an answer to the map start-location prompt.
+     * Deliberately not called on mount: a visit that touches nothing must leave
+     * localStorage alone, the same promise the base-type sidecar makes.
+     */
+    const rememberLocalBaseId = useCallback((): void => {
+        if (baseIdFromUrl) return
+        try {
+            localStorage.setItem(LOCAL_BASE_ID_KEY, localBaseId)
+        } catch (_) {}
+    }, [baseIdFromUrl, localBaseId])
+
+    // Keep a claimed id in step with rotations (share, import), which mint a new
+    // localBaseId. Guarded on the key already existing so this never claims one
+    // on its own — a rotation is not a reason to start remembering.
+    useEffect(() => {
+        if (baseIdFromUrl) return
+        try {
+            if (localStorage.getItem(LOCAL_BASE_ID_KEY)) {
+                localStorage.setItem(LOCAL_BASE_ID_KEY, localBaseId)
+            }
+        } catch (_) {}
+    }, [localBaseId, baseIdFromUrl])
 
     const {
         loading: getComponentsForBaseLoading,
@@ -1200,6 +1236,15 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
 
             if (!anchor || !mapHasContent) {
                 setMapAnchor(place)
+                // The place IS surface (0,0) now, and syncMapToZui puts surface
+                // (0,0) at screen (tx, ty) — which on an untouched camera is the
+                // top-left corner, not the middle. Centre it explicitly so
+                // "start here" actually lands here. Scale 1 is required, not
+                // cosmetic: mapZoom = anchor.zoom + log2(scale), so anything
+                // else would show a different zoom than the one just chosen.
+                // This also fires onCameraChange, which is what writes the
+                // viewport — the camera and the anchor land in storage together.
+                zuiInBaseRef.current?.centerOnSurface?.(0, 0, 1)
                 return
             }
 
@@ -1268,6 +1313,33 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         setShowMapStartModal(true)
     }, [activeBaseType, hadStoredMapAnchor, baseTypeProvider, componentStore])
 
+    /**
+     * Commit the timezone city as this base's real anchor.
+     *
+     * Shared by "Skip" and by every failed location lookup. Both are decisions,
+     * not silence: persisting an anchor is what retires the prompt for good, so
+     * the user is never asked the same question twice on the same base.
+     */
+    const settleOnTimezoneCity = useCallback((): void => {
+        setMapAnchor({
+            lngLat: [...timezoneCity.lngLat],
+            zoom:
+                readBaseTypeConfigForExport().mapAnchor?.zoom ??
+                DEFAULT_ANCHOR_ZOOM,
+        })
+        // Same reason as the re-anchor branch of goToPlace: the city is surface
+        // (0,0), which an untouched camera parks in the top-left corner. "Use
+        // Ahmedabad" should show Ahmedabad, and centring is also what fires
+        // onCameraChange and gets the viewport written alongside the anchor.
+        zuiInBaseRef.current?.centerOnSurface?.(0, 0, 1)
+        rememberLocalBaseId()
+    }, [
+        setMapAnchor,
+        timezoneCity,
+        readBaseTypeConfigForExport,
+        rememberLocalBaseId,
+    ])
+
     const handleMapStartPick = useCallback(
         (place: MapAnchor): void => {
             if (!mapStartPendingRef.current) return
@@ -1277,9 +1349,23 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
             // than flying the camera — which is what we want: the whole zoom
             // window re-centres on the chosen place.
             goToPlace(place)
+            rememberLocalBaseId()
         },
-        [goToPlace]
+        [goToPlace, rememberLocalBaseId]
     )
+
+    /**
+     * A location lookup failed (denied, timed out, or unsupported).
+     *
+     * Settles the base on the timezone city so it is never left anchor-less,
+     * but deliberately leaves `mapStartPendingRef` set and the dialog open: the
+     * user has not answered yet, they were only refused by their browser. They
+     * can still search, and a later pick re-anchors the (still empty) map.
+     */
+    const handleMapStartFallback = useCallback((): void => {
+        if (!mapStartPendingRef.current) return
+        settleOnTimezoneCity()
+    }, [settleOnTimezoneCity])
 
     const handleMapStartSkip = useCallback((): void => {
         if (!mapStartPendingRef.current) return
@@ -1288,13 +1374,8 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         // Persist the timezone city they are already looking at. Declining is a
         // decision, so we record it and stop asking, rather than treating it as
         // "unanswered" and re-prompting forever.
-        setMapAnchor({
-            lngLat: [...timezoneCity.lngLat],
-            zoom:
-                readBaseTypeConfigForExport().mapAnchor?.zoom ??
-                DEFAULT_ANCHOR_ZOOM,
-        })
-    }, [setMapAnchor, timezoneCity, readBaseTypeConfigForExport])
+        settleOnTimezoneCity()
+    }, [settleOnTimezoneCity])
 
     // Creates a base in the background on first interaction (non-blocking).
     // Stores the server base ID in state + ref + localStorage for later use.
@@ -1627,6 +1708,13 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                 // instead of no-op'ing on an empty snapshot.
                 if (val === undefined && key === 'opacity') {
                     val = readOpacity(currentComponent)
+                }
+                // Same trap as opacity: the column is unset until the user
+                // first turns the switch off, so without this the FIRST toggle
+                // snapshots nothing and undo leaves the label stuck scaling
+                // with the map. Absent means zoom-resistant — restore that.
+                if (val === undefined && key === 'zoomResistant') {
+                    val = true
                 }
                 if (val !== undefined) {
                     prevProps[key] = val
@@ -2733,6 +2821,7 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                 fallbackCity={timezoneCity.city}
                 onPick={handleMapStartPick}
                 onSkip={handleMapStartSkip}
+                onFallbackToTimezone={handleMapStartFallback}
             />
             <PermissionErrorModal
                 open={showPermissionErrorModal}

@@ -183,6 +183,8 @@ Reusable React UI components.
 
     **Element defaults vs. selected-shape edits:** `src/utils/applyProperty.ts` (`createApplyProperty`) is the single mutation path behind `elementProperties.tsx`. Every property change (1) updates the matching default via `useElementDefaults` setters, then (2) if a shape is selected, applies the same change to that shape. So editing a property with nothing selected just sets the default; editing with a shape selected sets both. Defaults store `null` for `strokeType: 'solid'` (matching what `primary.tsx` feeds new shapes); DB rows store the literal `'solid'`/`'dashed'`/`'dotted'`.
 
+    **A point's label is styled per record, off its own ladder.** The `GEO_POINT` set carries `fill` (the pin) plus `textSize` and `textFont` (the label; its colour is fixed by design). Both text keys live in `metadata.textFontSize`/`metadata.textFontFamily`, and `applyProperty` handles them in the point branch rather than the shared text path — a point's label is a bare `Two.Text` in the point's group, not a text layer, and `selectedComponent.shape.data` for a point is the _circle_, so the shared handlers would restyle nothing. Sizes resolve against `POINT_LABEL_SIZES` (14/18/24/32), not `TEXT_SIZES_ARRAY` (24–72) whose smallest step already exceeds the point default. **The style is inherited like any other text style**: both keys feed the usual `useElementDefaults` sync, and `handlePointElement` seeds a new point from them. What makes that work across two ladders is that `defaultTextSize` travels as a *label* (`'S'…'XL'`), never a pixel count — so XL picked on a geoText (72px) makes the next point the point ladder's XL (32px), via `pointLabelSizeFor`. Resolve the label through the point ladder at every creation site; never copy a pixel size across. The label is **centred by hand, not by `baseline: 'middle'`** — SVG's middle baseline centres the x-height, which left the label floating ~0.1em above the pin (2px at S, 4px at XL, and a different amount per font). It is drawn on the alphabetic baseline and offset by `capCenterOffset` (`utils/fontMetrics.ts`, cap height measured per family via canvas and cached only once the webfont is loaded), so re-place it on any size *or* family change — `applyProperty` does, and `buildPointVisual` does on every rebuild. Every read goes through `pointFontFamilyOf`/`pointFontSizeOf`, and `buildPointVisual` must be handed both — it rebuilds the pin from scratch, so anything not threaded through it (the undo rebuild in `useComponentHistory` included) silently reverts to the design default. That undo rebuild **replaces** `elementData.metadata` rather than merging it: styling an unstyled point adds a key, and reverting means removing it. Covered by `tests/e2e/point-label-text.spec.js`.
+
 - **`common/`**: Shared utility components
     - `button.tsx` - Base button component
     - `modal.tsx`, `modalContainer.tsx` - Modal system
@@ -567,6 +569,7 @@ a bare String. Adding a fourth type is one `INSERT`, not a constraint swap.
   id: uuid,               // primary key, default: gen_random_uuid()
   componentType: text,    // NOT NULL
   objectClass: text,      // 'geo' marks the geo toolset's output
+  zoomResistant: boolean | null, // geoText ONLY; see "Zoom resistance" below
   baseId: uuid,           // NOT NULL, FK -> bases.base(id)
   baseName: text | null,
   x: float8, y: float8,
@@ -597,3 +600,38 @@ a bare String. Adding a fourth type is one `INSERT`, not a constraint swap.
 Note `metadata` is a union type Postgres cannot constrain and Hasura types as
 opaque `jsonb`; the client branches on `Array.isArray(metadata)` in several
 places. Splitting the vertex array into its own column is a known follow-up.
+
+## Zoom resistance
+
+Geo elements counter-scale against the ZUI camera so they stay legible when the
+world zooms out: `apparentSize ∝ zuiScale^(1 - resist)`
+(`utils/counterScale.ts`). **`resolveResist(item)` is the single reader** — use
+it rather than reaching for the fields yourself, or a live element and the
+detached copy in a group overlay will disagree.
+
+Two inputs, and they are not interchangeable:
+
+- **`metadata.resist`** — the numeric strength, and the _only_ mechanism for
+  `point` / `area` / `route` / geo `pencil`. Point and geoText counter-scale
+  the whole group; area/route/geo-pencil counter-scale stroke width only
+  (`GROUP_SCALED_TYPES` vs `isStrokeScaled` — don't unify them).
+- **`zoomResistant` (column)** — the user-facing on/off switch, surfaced as
+  **Zoom resistant** in the `GEO_TEXT` property set. Read for **`geoText` only**;
+  `false` forces resist 0 (the label scales with the map), `null`/absent/`true`
+  means `GEO_TEXT_RESIST`. Every other `componentType` ignores the column.
+
+It is **per record, never a default**. `applyProperty` deliberately skips the
+`useElementDefaults` sync for this key (same as `opacity`), so turning it off on
+one label does not follow the selection onto the next or onto newly created
+text. Two labels on one map run two different models through the same
+`zoomChanged` broadcast.
+
+Because `ElementRenderWrapper` freezes element props at mount, a column write
+never reaches a live `geoText` through React. The toggle and its undo/redo both
+announce `GEO_TEXT_RESIST_CHANGED_EVENT` with `{ id, resist }`; the component
+filters on `id` and re-scales against the current camera. Two more consequences
+of it being a column rather than a metadata key: `cloneElementData` must name it
+explicitly or paste drops it, and the `prevProps` snapshot in
+`updateComponentBulkPropertiesInLocalStore` needs the `undefined → true`
+fallback or the first undo is a no-op. Covered by
+`tests/e2e/geo-text-zoom-resist.spec.js`.

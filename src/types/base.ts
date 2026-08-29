@@ -33,6 +33,13 @@ export interface ComponentRecord {
     componentType: string
     /** Distinguishes geo objects (point/area/route) from regular shapes. */
     objectClass?: 'shape' | 'geo'
+    /**
+     * geoText only: `false` lets the label scale with the map (counter-scale
+     * resist 0). `null`/absent/`true` = zoom-resistant at GEO_TEXT_RESIST.
+     * Every other componentType ignores this column and keeps the numeric
+     * `metadata.resist` — see resolveResist() in utils/counterScale.ts.
+     */
+    zoomResistant?: boolean | null
     x: number
     y: number
     x1: number

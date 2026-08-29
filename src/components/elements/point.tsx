@@ -5,6 +5,8 @@ import { useBaseContext } from '../../views/Base/baseContext'
 
 import PointFactory, {
     getPointLabelNode,
+    pointFontFamilyOf,
+    pointFontSizeOf,
     pointLabelOf,
     POINT_CHROME_FLAG,
 } from '../../factory/point'
@@ -12,9 +14,7 @@ import getEditComponents from '../utils/editWrapper'
 import { computeCounterScale } from '../../utils/counterScale'
 import {
     DEFAULT_GEO_RESIST,
-    DEFAULT_TEXT_FONT_FAMILY,
     POINT_LABEL_COLOR,
-    POINT_LABEL_FONT_SIZE,
     POINT_LABEL_GAP,
     POINT_RADIUS,
 } from '../../constants/misc'
@@ -211,7 +211,12 @@ function Point(props: ElementProps): ReactElement {
             const sceneScale = two?.scene?.scale || 1
             const groupScale = typeof group.scale === 'number' ? group.scale : 1
             const effScale = sceneScale * groupScale
-            const cssFontSize = POINT_LABEL_FONT_SIZE * effScale
+            // Read the type off elementData rather than props: size and family
+            // are editable from the toolbar, and props are frozen at mount, so
+            // the prop copy goes stale the moment the user picks either.
+            const record = group.elementData ?? props
+            const fontFamily = pointFontFamilyOf(record)
+            const cssFontSize = pointFontSizeOf(record) * effScale
             const lineH = Math.ceil(cssFontSize * 1.4)
 
             // The rendered label steps aside while its editor is open, so the
@@ -244,7 +249,7 @@ function Point(props: ElementProps): ReactElement {
             input.style.margin = '0'
             input.style.color = POINT_LABEL_COLOR
             input.style.fontSize = `${cssFontSize}px`
-            input.style.fontFamily = DEFAULT_TEXT_FONT_FAMILY
+            input.style.fontFamily = fontFamily
             input.style.lineHeight = `${lineH}px`
             input.style.height = `${lineH}px`
             input.style.left = `${circleRect.right + POINT_LABEL_GAP * effScale}px`
@@ -258,7 +263,7 @@ function Point(props: ElementProps): ReactElement {
             measure.style.visibility = 'hidden'
             measure.style.whiteSpace = 'pre'
             measure.style.fontSize = `${cssFontSize}px`
-            measure.style.fontFamily = DEFAULT_TEXT_FONT_FAMILY
+            measure.style.fontFamily = fontFamily
             document.body.appendChild(measure)
 
             const autoSize = (): void => {

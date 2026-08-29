@@ -8,6 +8,7 @@ import {
     POINT_LABEL_FONT_SIZE,
     DEFAULT_TEXT_FONT_FAMILY,
 } from '../constants/misc'
+import { capCenterOffset } from '../utils/fontMetrics'
 
 export interface PointProperties {
     fill?: string
@@ -16,6 +17,17 @@ export interface PointProperties {
         /** The location name shown beside the circle. Empty until typed. */
         label?: string
         resist?: number
+        /**
+         * The label's font family. Absent on every point written before the
+         * font control existed — those read as `DEFAULT_TEXT_FONT_FAMILY`.
+         */
+        textFontFamily?: string
+        /**
+         * The label's font size, in surface units. Absent on every point
+         * written before the size control existed — those read as
+         * `POINT_LABEL_FONT_SIZE`.
+         */
+        textFontSize?: number
         /**
          * Legacy: the pre-generic point catalog wrote a category id here and
          * derived the pin's colour from it. Its presence is the marker for an
@@ -49,6 +61,32 @@ export function pointColorOf(record: ShapeLike): string {
     return record?.fill || record?.stroke || POINT_COLOR
 }
 
+/**
+ * The font family a point's label should render in.
+ *
+ * Stored per record, seeded at creation from the shared text default (see
+ * `handlePointElement` in primary.tsx) — a point written before the control
+ * existed carries nothing and falls back to the design default.
+ */
+export function pointFontFamilyOf(record: ShapeLike): string {
+    const family = record?.metadata?.textFontFamily
+    return typeof family === 'string' && family
+        ? family
+        : DEFAULT_TEXT_FONT_FAMILY
+}
+
+/**
+ * The font size a point's label should render at, in surface units.
+ *
+ * Stored per record, like the family — but seeded through the point's OWN
+ * ladder (`pointLabelSizeFor`), because the shared default is a size *label*,
+ * not a pixel count. See `pointFontFamilyOf`.
+ */
+export function pointFontSizeOf(record: ShapeLike): number {
+    const size = record?.metadata?.textFontSize
+    return typeof size === 'number' && size > 0 ? size : POINT_LABEL_FONT_SIZE
+}
+
 /** The label text of a point record, normalised to a string. */
 export function pointLabelOf(record: ShapeLike): string {
     const label = record?.metadata?.label
@@ -67,7 +105,12 @@ export function pointLabelOf(record: ShapeLike): string {
 export function buildPointVisual(
     two: ShapeLike,
     group: ShapeLike,
-    opts: { color?: string; label?: string }
+    opts: {
+        color?: string
+        label?: string
+        fontFamily?: string
+        fontSize?: number
+    }
 ): void {
     const color = opts.color || POINT_COLOR
 
@@ -84,15 +127,23 @@ export function buildPointVisual(
     circle.noStroke()
     group.add(circle)
 
+    const family = opts.fontFamily || DEFAULT_TEXT_FONT_FAMILY
+    const size = opts.fontSize || POINT_LABEL_FONT_SIZE
+
+    // Drawn on the ALPHABETIC baseline and positioned by hand, not with
+    // `baseline: 'middle'`. SVG's middle baseline centres the x-height, which
+    // leaves the label floating ~0.1em above the circle — visible at every size
+    // and by a different amount per font. `capCenterOffset` puts the cap band's
+    // centre on the circle's centre instead. See utils/fontMetrics.ts.
     const label = new (Two as ShapeLike).Text(
         opts.label ?? '',
         POINT_RADIUS + POINT_LABEL_GAP,
-        0
+        capCenterOffset(family, size)
     )
     label.alignment = 'left'
-    label.baseline = 'middle'
-    label.size = POINT_LABEL_FONT_SIZE
-    label.family = DEFAULT_TEXT_FONT_FAMILY
+    label.baseline = 'baseline'
+    label.size = size
+    label.family = family
     // Fixed by design — the label is never recoloured with the circle.
     label.fill = POINT_LABEL_COLOR
     label.noStroke()
@@ -130,6 +181,8 @@ export default class PointFactory extends Main<PointProperties> {
         buildPointVisual(two, group, {
             color: pointColorOf(this.properties),
             label: pointLabelOf(this.properties),
+            fontFamily: pointFontFamilyOf(this.properties),
+            fontSize: pointFontSizeOf(this.properties),
         })
 
         group.translation.x = parseInt(String(this.x))

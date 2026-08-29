@@ -55,6 +55,7 @@ export const GET_COMPONENTS_FOR_BASE_QUERY: TypedDocumentNode<
             id
             componentType
             objectClass
+            zoomResistant
             children
             metadata
             x

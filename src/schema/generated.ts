@@ -864,6 +864,8 @@ export type Components_Component = {
   y: Scalars['float8']['output'];
   y1: Scalars['float8']['output'];
   y2: Scalars['float8']['output'];
+  /** geoText only. false = the label scales with the map (counter-scale resist 0). NULL or true = zoom-resistant (GEO_TEXT_RESIST). NULL means "never set" and reads as true. Every other componentType ignores this column: point/area/route/pencil keep their numeric metadata.resist. */
+  zoomResistant?: Maybe<Scalars['Boolean']['output']>;
 };
 
 
@@ -1300,6 +1302,7 @@ export type Components_Component_Bool_Exp = {
   y?: InputMaybe<Float8_Comparison_Exp>;
   y1?: InputMaybe<Float8_Comparison_Exp>;
   y2?: InputMaybe<Float8_Comparison_Exp>;
+  zoomResistant?: InputMaybe<Boolean_Comparison_Exp>;
 };
 
 /** unique or primary key constraints on table "components.component" */
@@ -1383,6 +1386,8 @@ export type Components_Component_Insert_Input = {
   y?: InputMaybe<Scalars['float8']['input']>;
   y1?: InputMaybe<Scalars['float8']['input']>;
   y2?: InputMaybe<Scalars['float8']['input']>;
+  /** geoText only. false = the label scales with the map (counter-scale resist 0). NULL or true = zoom-resistant (GEO_TEXT_RESIST). NULL means "never set" and reads as true. Every other componentType ignores this column: point/area/route/pencil keep their numeric metadata.resist. */
+  zoomResistant?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** aggregate max on columns */
@@ -1510,6 +1515,7 @@ export type Components_Component_Order_By = {
   y?: InputMaybe<Order_By>;
   y1?: InputMaybe<Order_By>;
   y2?: InputMaybe<Order_By>;
+  zoomResistant?: InputMaybe<Order_By>;
 };
 
 /** primary key columns input for table: components.component */
@@ -1592,7 +1598,9 @@ export type Components_Component_Select_Column =
   /** column name */
   | 'y1'
   /** column name */
-  | 'y2';
+  | 'y2'
+  /** column name */
+  | 'zoomResistant';
 
 /** input type for updating data in table "components.component" */
 export type Components_Component_Set_Input = {
@@ -1630,6 +1638,8 @@ export type Components_Component_Set_Input = {
   y?: InputMaybe<Scalars['float8']['input']>;
   y1?: InputMaybe<Scalars['float8']['input']>;
   y2?: InputMaybe<Scalars['float8']['input']>;
+  /** geoText only. false = the label scales with the map (counter-scale resist 0). NULL or true = zoom-resistant (GEO_TEXT_RESIST). NULL means "never set" and reads as true. Every other componentType ignores this column: point/area/route/pencil keep their numeric metadata.resist. */
+  zoomResistant?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** aggregate stddev on columns */
@@ -1736,6 +1746,8 @@ export type Components_Component_Stream_Cursor_Value_Input = {
   y?: InputMaybe<Scalars['float8']['input']>;
   y1?: InputMaybe<Scalars['float8']['input']>;
   y2?: InputMaybe<Scalars['float8']['input']>;
+  /** geoText only. false = the label scales with the map (counter-scale resist 0). NULL or true = zoom-resistant (GEO_TEXT_RESIST). NULL means "never set" and reads as true. Every other componentType ignores this column: point/area/route/pencil keep their numeric metadata.resist. */
+  zoomResistant?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** aggregate sum on columns */
@@ -1827,7 +1839,9 @@ export type Components_Component_Update_Column =
   /** column name */
   | 'y1'
   /** column name */
-  | 'y2';
+  | 'y2'
+  /** column name */
+  | 'zoomResistant';
 
 export type Components_Component_Updates = {
   /** append existing jsonb value of filtered columns with new jsonb value */

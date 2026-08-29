@@ -5,6 +5,7 @@ import { useQuery } from '@apollo/client'
 import ShapesToolbar from './shapesToolbar'
 import BaseTypeSwitcher from './baseTypeSwitcher'
 import PlaceSearch from './placeSearch'
+import GeoTextZoomHint from '../geoTextZoomHint'
 import { GET_COMPONENT_TYPES } from '../../schema/queries'
 import SpinnerWithSize from '../common/spinnerWithSize'
 import { generateUUID } from '../../utils/misc'
@@ -22,6 +23,7 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     LAST_ADDED_ELEMENT_ID_KEY,
+    pointLabelSizeFor,
 } from '../../constants/misc'
 
 import './sidebar.css'
@@ -64,6 +66,7 @@ const PrimarySidebar = (): ReactElement => {
         defaultFill,
         defaultStrokeColor,
         defaultTextFontFamily,
+        defaultTextSize,
         activeBaseType,
     } = useBaseContext()
     const isMapBaseType = activeBaseType === 'map'
@@ -256,6 +259,15 @@ const PrimarySidebar = (): ReactElement => {
                 // the element mounts.
                 label: '',
                 resist: DEFAULT_GEO_RESIST,
+                // The label picks up the current text style, exactly like a new
+                // text element does (see buildTextShapeData). The size default
+                // travels as a ladder LABEL, so 'XL' chosen on a map label
+                // becomes the POINT ladder's XL here — the same intent, sized
+                // for a pin.
+                textFontSize: pointLabelSizeFor(defaultTextSize),
+                ...(defaultTextFontFamily && {
+                    textFontFamily: defaultTextFontFamily,
+                }),
             },
             width: POINT_RADIUS * 2,
             height: POINT_RADIUS * 2,
@@ -583,6 +595,10 @@ const PrimarySidebar = (): ReactElement => {
                     </div>
                 </div>
             )}
+            {/* One-shot tip for the "Zoom resistant" switch. Shares the
+                top: 55px slot above and stands down while a multi-click draw
+                is armed. */}
+            <GeoTextZoomHint />
             <div className="absolute top-2 right-1rem flex items-center px-2 gap-1">
                 <div
                     id="show-saving-loader"

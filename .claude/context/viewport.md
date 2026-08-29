@@ -1,5 +1,10 @@
 ### Viewport in craftbase
 
+> **Visual explainer:** [Glass Over Paper](https://claude.ai/code/artifact/e8236ce1-1319-4f50-9004-a213ac3c8e6a)
+> — interactive diagram of how the camera drives the map backdrop through the
+> anchor, and the Base → Canvas → ElementRenderer layer stack.
+
+
 In this context, viewport means the current "camera position" over the infinite canvas — specifically three numbers that describe where you're looking and how close you're
 zoomed in.
 

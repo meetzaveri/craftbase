@@ -16,9 +16,9 @@ import { readOpacity } from '../../utils/canvasUtils'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import {
     DEFAULT_TEXT_FONT_FAMILY,
-    GEO_TEXT_RESIST,
+    GEO_TEXT_RESIST_CHANGED_EVENT,
 } from '../../constants/misc'
-import { computeCounterScale } from '../../utils/counterScale'
+import { computeCounterScale, resolveResist } from '../../utils/counterScale'
 
 // GeoText renders exactly like NewText — same NewTextFactory, same multiline
 // editing, resize handles and floating-toolbar contract. What separates the two
@@ -32,7 +32,14 @@ import { computeCounterScale } from '../../utils/counterScale'
 // range. Surface-space text renders at `fontSize * zuiScale`, and zuiScale is
 // `2^(mapZoom - anchor.zoom)` over 18 stops, so an 18px label sits at 0.3px
 // over a county and 0.0005px at world view. "Scales with the geography" and
-// "is readable" cannot both hold across 18 stops; readable wins.
+// "is readable" cannot both hold across 18 stops; readable wins — as the
+// DEFAULT.
+//
+// The scales-with-the-geography model is still reachable per record, via the
+// "Zoom resistant" switch in the text properties: it writes the `zoomResistant`
+// column, `resolveResist` turns `false` into resist 0, and this component reads
+// that through resistRef. It is per record, so two labels on one map can use
+// two different models through the same zoom gesture.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -77,7 +84,11 @@ function GeoText(props: ElementProps): ReactElement {
     const selectorRef = useRef<ShapeLike>(null)
 
     const two = props.twoJSInstance
-    const resist = props.metadata?.resist ?? GEO_TEXT_RESIST
+    // Held in a ref, not a const: the "Zoom resistant" switch writes the
+    // `zoomResistant` column, but ElementRenderWrapper freezes our props at
+    // mount so that write never arrives as a re-render. The
+    // GEO_TEXT_RESIST_CHANGED_EVENT listener below is what keeps this current.
+    const resistRef = useRef<number>(resolveResist(props))
 
     let selectorInstance: ShapeLike = null
     let groupObject: ShapeLike = null
@@ -132,7 +143,7 @@ function GeoText(props: ElementProps): ReactElement {
         const initialScale =
             (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
         if (initialScale) {
-            group.scale = computeCounterScale(initialScale, resist)
+            group.scale = computeCounterScale(initialScale, resistRef.current)
         }
 
         /**
@@ -604,13 +615,17 @@ function GeoText(props: ElementProps): ReactElement {
     // Counter-scale the text on every camera change so it stays legible when
     // the world zooms out. Reads the scale from the event each fire — no stale
     // closure (see the React + Two.js stale-closure note in CLAUDE.md).
+    //
+    // At resist 0 (the switch turned off) computeCounterScale returns 1, so the
+    // group simply rides the camera and the label scales with the map. Same code
+    // path either way — only the exponent differs.
     useEffect(() => {
         const onZoom = (e: Event): void => {
             const group = groupRef.current
             if (!group) return
             const scale = (e as CustomEvent<{ scale: number }>).detail?.scale
             if (!scale) return
-            group.scale = computeCounterScale(scale, resist)
+            group.scale = computeCounterScale(scale, resistRef.current)
             // Re-normalise the selection outline so it stays a constant screen
             // width instead of drifting thick or hairline across the map base's
             // 18 zoom stops.
@@ -621,7 +636,34 @@ function GeoText(props: ElementProps): ReactElement {
         return (): void => {
             window.removeEventListener('zoomChanged', onZoom as EventListener)
         }
-    }, [two, resist])
+    }, [two])
+
+    // The "Zoom resistant" switch (and undo/redo of it) reaches us here rather
+    // than through props — see resistRef above. Re-scale against the CURRENT
+    // camera immediately so the label snaps to its new model on click, instead
+    // of waiting for the next zoom gesture. Filtered by id: every geoText on the
+    // base hears this event, only the toggled one acts on it.
+    useEffect(() => {
+        const onResistChanged = ((
+            e: CustomEvent<{ id: string; resist: number }>
+        ): void => {
+            if (e.detail?.id !== props.id) return
+            resistRef.current = e.detail.resist
+            const group = groupRef.current
+            if (!group) return
+            const scale = two?.scene?.scale || 1
+            group.scale = computeCounterScale(scale, resistRef.current)
+            selectorRef.current?.setScale(scale * group.scale)
+            two?.update()
+        }) as EventListener
+        window.addEventListener(GEO_TEXT_RESIST_CHANGED_EVENT, onResistChanged)
+        return (): void => {
+            window.removeEventListener(
+                GEO_TEXT_RESIST_CHANGED_EVENT,
+                onResistChanged
+            )
+        }
+    }, [props.id, two])
 
     useEffect(() => {
         if (internalState?.group?.data) {

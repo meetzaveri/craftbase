@@ -76,9 +76,15 @@ interface MapBaseTypeHandle extends BaseTypeHandle {
  * the user a place to search on first visit (MapStartLocationModal), and the
  * place search stays available forever after.
  *
- * This deliberately replaced a `navigator.geolocation` call, which prompted the
- * user unbidden the instant they switched base, never fired at all on some
- * mobile browsers, and left everyone else on a hard-coded city.
+ * This deliberately replaced an *automatic* `navigator.geolocation` call, which
+ * prompted the user unbidden the instant they switched base, never fired at all
+ * on some mobile browsers, and left everyone else on a hard-coded city.
+ *
+ * Geolocation is back in `utils/geolocation.ts`, but only behind an explicit
+ * tap in MapStartLocationModal — never on mount. That is what answers the first
+ * objection; the other two are answered by a timeout backstop and by this
+ * function, which is the fallback every failed lookup lands on. So this is
+ * still the anchor a base opens with, and the prompt only ever replaces it.
  */
 function defaultAnchor(): MapAnchor {
     return {

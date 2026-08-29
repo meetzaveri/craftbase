@@ -12,8 +12,19 @@ import {
     pollUntilElement,
 } from '../utils/canvasUtils'
 import { lineHeightFor } from '../utils/textLayout'
-import { buildPointVisual, pointColorOf, pointLabelOf } from '../factory/point'
-import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
+import {
+    buildPointVisual,
+    pointColorOf,
+    pointFontFamilyOf,
+    pointFontSizeOf,
+    pointLabelOf,
+} from '../factory/point'
+import {
+    DRAFT_STORAGE_KEY,
+    isStandaloneTextType,
+    GEO_TEXT_RESIST,
+    GEO_TEXT_RESIST_CHANGED_EVENT,
+} from '../constants/misc'
 import type { ComponentRecord, ComponentStore } from '../types/base'
 import {
     VERTEX_PATH_TYPES,
@@ -196,6 +207,25 @@ function applyPropertyToTwoJSGroup(
                 clearDashesOnTwoJSShape(shape)
             }
             break
+        case 'zoomResistant': {
+            // Map text's counter-scale switch. It has no Two.js field of its
+            // own — the geoText component owns group.scale and the selection
+            // outline — so mirror it onto elementData (what resolveResist and
+            // the group-overlay copies read) and let the component re-scale
+            // itself against the live camera. Covers undo and redo alike:
+            // applyBulkProps routes every reverted key through here.
+            if (group.elementData?.componentType !== 'geoText') break
+            group.elementData.zoomResistant = value
+            window.dispatchEvent(
+                new CustomEvent(GEO_TEXT_RESIST_CHANGED_EVENT, {
+                    detail: {
+                        id: group.elementData.id,
+                        resist: value === false ? 0 : GEO_TEXT_RESIST,
+                    },
+                })
+            )
+            break
+        }
         case 'opacity':
             // Opacity persists in the top-level `opacity` field. Apply at the
             // GROUP level (shape + text dim uniformly and repaint reliably) and
@@ -534,11 +564,24 @@ export function useComponentHistory({
                     elementData.fill = record.fill
                     elementData.stroke = record.stroke
                 }
-                elementData.metadata = { ...(elementData.metadata || {}), ...m }
+                // REPLACE, don't merge. A revert is as often the removal of a
+                // key as a change to one: styling a point that had never been
+                // styled writes `textFontFamily` onto a metadata object that
+                // did not have it, and merging the reverted object over the
+                // current one would leave that key standing. The store row is
+                // the reverted authority (applyBulkProps commits it first);
+                // `m` covers a revert that never reached the store.
+                const revertedMeta =
+                    record?.metadata && !Array.isArray(record.metadata)
+                        ? record.metadata
+                        : m
+                elementData.metadata = { ...(revertedMeta || {}) }
             }
             buildPointVisual(two, group, {
                 color: pointColorOf(elementData),
                 label: pointLabelOf(elementData),
+                fontFamily: pointFontFamilyOf(elementData),
+                fontSize: pointFontSizeOf(elementData),
             })
             two.update()
             return

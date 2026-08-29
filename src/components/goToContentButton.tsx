@@ -25,14 +25,17 @@ const GoToContentButton = (): ReactElement | null => {
             onClick={(): void => {
                 fitToContent()
             }}
-            style={{
-                position: 'fixed',
-                bottom: 20,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 10,
-            }}
-            className="flex items-center gap-1.5 bg-card-bg text-ink-muted hover:text-ink rounded-lg px-3 py-1.5 border border-border-panel hover:bg-accent transition-colors duration-150 text-xs font-medium select-none"
+            // Desktop keeps the bottom-centre pill. Mobile moves it under the
+            // top bar, because at the bottom it landed straight on top of the
+            // shapes toolbar (both centred around y≈790-828 on a 390x844
+            // screen) and swallowed taps meant for the pencil and eraser.
+            //
+            // Top-centre is the same slot on both base types: the map base puts
+            // the place-search field there and the board base the base-type
+            // switcher, and every control in that row sits at `top: 8px` and
+            // 46px tall (see placeSearch.tsx / baseTypeSwitcher.tsx), so
+            // 54 + an 8px gap clears whichever one is showing.
+            className="fixed left-1/2 -translate-x-1/2 z-10 top-[62px] tablet:top-auto tablet:bottom-5 flex items-center gap-1.5 bg-card-bg text-ink-muted hover:text-ink rounded-lg px-3 py-1.5 border border-border-panel hover:bg-accent transition-colors duration-150 text-xs font-medium select-none"
             title="Frame all content in view"
         >
             {/* Crosshair / recenter glyph — currentColor follows the theme. */}

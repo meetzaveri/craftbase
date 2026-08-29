@@ -149,6 +149,17 @@ export const DEFAULT_GEO_RESIST = 0.9
 // screen size (true map-label behaviour), 0 restores the old scales-with-the-
 // geography model. Per-record `metadata.resist` overrides it.
 export const GEO_TEXT_RESIST = 0.9
+
+// The user-facing on/off switch for the above is the `zoomResistant` column,
+// not metadata: `false` means resist 0, absent/true means GEO_TEXT_RESIST. It is
+// read for geoText ONLY (resolveResist in utils/counterScale.ts) — point, area,
+// route and geo pencil keep the numeric metadata.resist and ignore the column.
+//
+// Fired when that switch is toggled from the properties panel or reverted by
+// undo. ElementRenderWrapper freezes each element's props at mount, so a column
+// write never reaches the component through React — this is the same escape
+// hatch `standaloneTextReverted` uses.
+export const GEO_TEXT_RESIST_CHANGED_EVENT = 'geoTextResistChanged'
 // The generic point: a small filled circle with an editable label beside it.
 // One design, no categories. POINT_RADIUS is the circle radius in surface units
 // at scale 1 — the group counter-scales (DEFAULT_GEO_RESIST above), so the pin
@@ -169,6 +180,35 @@ export const POINT_LABEL_GAP = 5
 export const POINT_COLOR = '#FF5630'
 export const POINT_LABEL_COLOR = '#000'
 export const POINT_LABEL_FONT_SIZE = 18
+
+// The point label's own size ladder, deliberately tighter than the whiteboard's
+// TEXT_SIZES_ARRAY (24–72): a point's label is an annotation hanging off a 10px
+// pin, and the whiteboard ladder's SMALLEST step is already larger than the
+// design default. `M` is POINT_LABEL_FONT_SIZE, so a point that has never been
+// touched reads as M in the toolbar. No mobile variant — a point counter-scales
+// to a constant apparent size, so one ladder covers both.
+export const POINT_LABEL_SIZES: { label: string; value: number }[] = [
+    { label: 'S', value: 14 },
+    { label: 'M', value: POINT_LABEL_FONT_SIZE },
+    { label: 'L', value: 24 },
+    { label: 'XL', value: 32 },
+]
+
+/**
+ * The point-label size a toolbar size *label* means.
+ *
+ * The label is the unit the text defaults travel in (`defaultTextSize` is
+ * `'S' | 'M' | 'L' | 'XL'`, not a pixel count), which is what lets one default
+ * be shared across ladders: pick XL on a map label and a new point comes out at
+ * the point ladder's XL, not the whiteboard's 72px. An unknown label falls back
+ * to the design default.
+ */
+export function pointLabelSizeFor(label: string | null | undefined): number {
+    return (
+        POINT_LABEL_SIZES.find((s) => s.label === label)?.value ??
+        POINT_LABEL_FONT_SIZE
+    )
+}
 
 // Per-type initial defaults for new geo objects (distinct, map-appropriate
 // colors from the prototypes). Users recolor afterward via the properties
@@ -227,6 +267,26 @@ export const STORAGE_QUOTA_ERROR_NAME = 'QuotaExceededError'
 // First-visit welcome sketch: once dismissed (user added their first element),
 // never seed again for this browser profile.
 export const WELCOME_DISMISSED_KEY = 'craftbase_welcome_dismissed'
+
+// One-shot tip pointing at the "Zoom resistant" switch, shown under the primary
+// toolbar the first time a user zooms a map base that has text on it. Same
+// convention as WELCOME_DISMISSED_KEY: set once, never shown again.
+export const GEO_TEXT_ZOOM_HINT_DISMISSED_KEY =
+    'craftbase_geo_text_zoom_hint_dismissed'
+
+// Stable identity for the local (unsaved) base at `/`.
+//
+// `localBaseId` normally comes from the local draft, which keys the viewport and
+// base-type sidecars. But a draft only exists once the user has DRAWN something
+// — so someone who lands on `/`, switches to the map base and picks a starting
+// city has nothing to carry that id across a refresh, and would be asked the
+// same question again on every reload.
+//
+// This key is claimed lazily: nothing writes it just for visiting `/`. It is
+// written the first time an answer worth remembering is stored against the
+// local base (see `rememberLocalBaseId` in base.tsx), which keeps an untouched
+// visit byte-identical in localStorage, exactly like the base-type sidecar.
+export const LOCAL_BASE_ID_KEY = 'craftbase_local_base_id'
 
 // Feature-flag preference: connectable arrows / shape edge ports. User-toggled
 // in the Settings modal, persisted in localStorage, read live (see

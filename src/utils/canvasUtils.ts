@@ -113,6 +113,13 @@ interface ElementCloneSource {
      * Dropping it silently relocates the pasted copy to the wrong base.
      */
     objectClass?: 'shape' | 'geo'
+    /**
+     * geoText's zoom-resistance switch. Unlike a metadata key — which rides
+     * along inside the cloned `metadata` object for free — a column is only
+     * copied if it is named here, so omitting it would silently reset every
+     * pasted label to the default.
+     */
+    zoomResistant?: boolean | null
     x1: number
     y1: number
     x2: number
@@ -162,6 +169,12 @@ export function cloneElementData(
         baseId,
         componentType: src.componentType,
         ...(src.objectClass ? { objectClass: src.objectClass } : {}),
+        // Only when actually set: nothing but geoText reads this column, so an
+        // unconditional copy would stamp a value onto every pasted rectangle
+        // and carry it into the share insert.
+        ...(src.zoomResistant != null
+            ? { zoomResistant: src.zoomResistant }
+            : {}),
         x: newX,
         y: newY,
         x1: src.x1,

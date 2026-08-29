@@ -51,6 +51,23 @@ function defaultResistFor(type: string): number {
 }
 
 /**
+ * The resist exponent for an element record — the single place the
+ * `zoomResistant` column is read, so a live element and the detached copy in a
+ * group overlay can never disagree.
+ *
+ * The column is the user's on/off switch and applies to **geoText only**:
+ * `false` means "scale with the map" (resist 0), absent/null/true means
+ * zoom-resistant. `metadata.resist` stays the numeric strength knob underneath
+ * it, and remains the sole mechanism for point / area / route / geo pencil —
+ * those types never consult the column.
+ */
+export function resolveResist(item: ShapeLike): number {
+    const type = item?.componentType
+    if (type === 'geoText' && item?.zoomResistant === false) return 0
+    return item?.metadata?.resist ?? defaultResistFor(type)
+}
+
+/**
  * Stroke-resist applies to a pencil only when the stroke was drawn on a
  * geographic base. Freehand is offered on every base, so unlike area/route its
  * `componentType` does not settle the question — `objectClass` does. A board-base
@@ -73,8 +90,9 @@ export function isStrokeScaled(item: ShapeLike): boolean {
  *
  * Mirrors exactly what the live components do on mount and on every
  * `zoomChanged` — see point.tsx (whole group) and area.tsx / route.tsx (stroke
- * width only). `metadata` is a vertex array for area/route,
- * so `.resist` is undefined there and falls through to the default, same as in
+ * width only). Resist comes from resolveResist, so a geoText copy honours the
+ * `zoomResistant` column too. `metadata` is a vertex array for area/route, so
+ * `.resist` is undefined there and falls through to the default, same as in
  * those components.
  */
 export function applyCounterScaleToCopy(
@@ -86,10 +104,7 @@ export function applyCounterScaleToCopy(
     const type = item?.componentType
     if (!GROUP_SCALED_TYPES.has(type) && !isStrokeScaled(item)) return
 
-    const factor = computeCounterScale(
-        zuiScale,
-        item?.metadata?.resist ?? defaultResistFor(type)
-    )
+    const factor = computeCounterScale(zuiScale, resolveResist(item))
 
     if (GROUP_SCALED_TYPES.has(type)) {
         copy.scale = factor

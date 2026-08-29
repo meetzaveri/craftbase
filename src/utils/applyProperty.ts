@@ -4,7 +4,13 @@ import {
     strokeToAreaFill,
 } from './misc'
 import { getShapeTextNodes } from './canvasUtils'
-import { getPointCircle } from '../factory/point'
+import { getPointCircle, getPointLabelNode } from '../factory/point'
+import { POINT_LABEL_SIZES } from '../constants/misc'
+import { capCenterOffset } from '../utils/fontMetrics'
+import {
+    GEO_TEXT_RESIST,
+    GEO_TEXT_RESIST_CHANGED_EVENT,
+} from '../constants/misc'
 
 // Scene-bound selectedComponent shape: `.shape.data`, `.text.data`, and
 // `.group.data.elementData` are scaffolded by newCanvas / element renderers
@@ -27,6 +33,7 @@ type PropertyKey =
     | 'textColor'
     | 'textSize'
     | 'textFontFamily'
+    | 'zoomResistant'
 
 export interface ApplyPropertyDeps {
     selectedComponent: SelectedComponentLike | null
@@ -96,7 +103,13 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
         // 1. Update the matching default. Opacity is deliberately excluded — it
         // is a per-element property only and must never persist as a default,
         // otherwise drawing a new shape after dimming one (e.g. to 0%) would
-        // produce an invisible shape. Skipped entirely in preview mode.
+        // produce an invisible shape. `zoomResistant` is excluded for the same
+        // reason, and it is load-bearing: turning the switch off on one label
+        // must not follow the selection onto the next label or onto the next
+        // text created. A point's label participates like any other text: its
+        // size default travels as a ladder LABEL ('S'…'XL'), not a pixel count,
+        // so the same default reads correctly against the point's own ladder
+        // and the whiteboard's. Skipped entirely in preview mode.
         if (!opts?.preview) {
             if (propertyKey === 'fill') setDefaultFill(value)
             else if (propertyKey === 'stroke') setDefaultStrokeColor(value)
@@ -114,6 +127,32 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
 
         const id = selectedComponent?.group?.data?.elementData?.id
         if (!id) return
+
+        // Zoom-resistance is a real column, so this is a plain scalar write —
+        // no metadata merge. The type gate matters: nothing but geoText reads
+        // the column, and letting it onto another componentType would put a
+        // value on a row that ignores it and then ship that value into every
+        // export and every share insert.
+        if (propertyKey === 'zoomResistant') {
+            const geoTextGroup = selectedComponent?.group?.data
+            if (geoTextGroup?.elementData?.componentType !== 'geoText') return
+            if (geoTextGroup.elementData) {
+                geoTextGroup.elementData.zoomResistant = value
+            }
+            updateComponentBulkPropertiesInLocalStore(id, {
+                zoomResistant: value,
+            })
+            // The element component owns group.scale and the selection outline —
+            // it is the only place that knows the live camera and holds the
+            // selector instance. Filtered by id on the far side, so the other
+            // labels on this base are untouched.
+            window.dispatchEvent(
+                new CustomEvent(GEO_TEXT_RESIST_CHANGED_EVENT, {
+                    detail: { id, resist: value ? GEO_TEXT_RESIST : 0 },
+                })
+            )
+            return
+        }
 
         // A point's colour is its circle's fill. Two things make it more than
         // the generic fill path below: `stroke` is mirrored so anything reading
@@ -145,6 +184,53 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
             return
         }
 
+        // A point's label font and size. Both are handled here rather than by
+        // the generic text paths below: the label is a bare Two.Text parked in
+        // the point's group, not a text layer, and `selectedComponent.shape
+        // .data` for a point is the circle — so the text handlers would restyle
+        // nothing and write into a text record's metadata shape (`content` and
+        // friends) that a point does not have.
+        if (
+            pointGroup?.elementData?.componentType === 'point' &&
+            (propertyKey === 'textFontFamily' || propertyKey === 'textSize')
+        ) {
+            const elementData = pointGroup.elementData
+            const labelNode = getPointLabelNode(pointGroup)
+            // textSize arrives as a ladder label ('S'…'XL') and resolves
+            // against the point's OWN ladder — the whiteboard's starts above
+            // the point default and has a mobile variant a counter-scaled pin
+            // does not want. An unknown label is dropped rather than written.
+            const size =
+                propertyKey === 'textSize'
+                    ? POINT_LABEL_SIZES.find((s) => s.label === value)?.value
+                    : undefined
+            if (propertyKey === 'textSize' && !size) return
+            if (labelNode) {
+                if (propertyKey === 'textSize') labelNode.size = size
+                else labelNode.family = value
+                // The label is centred by hand on its cap band, and the cap
+                // band moves with BOTH the size and the family — so re-place it
+                // on either change or the pin drifts off its label until the
+                // next rebuild (see buildPointVisual / utils/fontMetrics.ts).
+                labelNode.translation.y = capCenterOffset(
+                    labelNode.family,
+                    labelNode.size
+                )
+            }
+            if (!opts?.preview) {
+                const metadata = {
+                    ...(elementData.metadata ?? {}),
+                    ...(propertyKey === 'textSize'
+                        ? { textFontSize: size }
+                        : { textFontFamily: value }),
+                }
+                elementData.metadata = metadata
+                updateComponentBulkPropertiesInLocalStore(id, { metadata })
+            }
+            twoJSInstance?.update()
+            return
+        }
+
         const shapeType = selectedComponent?.shape?.type
         const elementType =
             selectedComponent?.group?.data?.elementData?.componentType
@@ -164,8 +250,7 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
             return
         }
         if (propertyKey === 'textFontFamily') {
-            if (isShapeWithText)
-                handleRectangleTextFontFamilyChange?.(value)
+            if (isShapeWithText) handleRectangleTextFontFamilyChange?.(value)
             else handleTextFontFamilyChange?.(value)
             return
         }
