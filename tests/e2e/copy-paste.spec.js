@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     drawShape,
     drawRectangle,
     addTextToRectangle,
@@ -67,7 +67,7 @@ async function resizeFromSECorner(page, handle, dx, dy) {
 
 test.describe('Copy-paste', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     /**

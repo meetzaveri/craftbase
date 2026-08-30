@@ -31,6 +31,7 @@
         "idx": "^3.0.3",
         "immer": "^10.1.1",
         "interactjs": "^1.10.27",
+        "maplibre-gl": "^5.24.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "react-responsive": "10.0.0",
@@ -63,7 +64,8 @@
         "vite": "~6.4.3",
         "js-yaml": "^4.3.1",
         "@babel/core": "^7.29.6",
-        "subscriptions-transport-ws/ws": "^7.5.11"
+        "subscriptions-transport-ws/ws": "^7.5.11",
+        "@mapbox/jsonlint-lines-primitives": "2.0.2"
     },
     "eslintConfig": {
         "extends": "react-app/base"

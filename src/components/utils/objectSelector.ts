@@ -16,6 +16,22 @@ interface SelectorVertices {
     y2: number
 }
 
+// Handle radius in SCREEN px. Touch needs a bigger target than a mouse for the
+// same reason selectionController applies an 8px hit slop on coarse pointers —
+// except this legacy selector has no slop mechanism: the browser hit-tests the
+// SVG dot itself, so the dot IS the target and it has to grow. At the mouse
+// value these handles measured ~5px across on a zoomed-out map base, which is
+// unhittable with a finger.
+const HANDLE_RADIUS_PX_MOUSE = 4
+const HANDLE_RADIUS_PX_TOUCH = 11
+
+function handleRadiusPx(): number {
+    const coarse =
+        typeof window !== 'undefined' &&
+        window.matchMedia?.('(pointer: coarse)')?.matches
+    return coarse ? HANDLE_RADIUS_PX_TOUCH : HANDLE_RADIUS_PX_MOUSE
+}
+
 export default class Selector {
     two: TwoLike
     group: GroupLike
@@ -105,7 +121,7 @@ export default class Selector {
         this.group.add(areaGroup)
         // Batched, NOT a direct two.update(): this runs once per element that
         // has edit chrome (every pencil), so a synchronous full-scene render
-        // here is O(N²) across a board load. markSelectionChrome reads
+        // here is O(N²) across a base load. markSelectionChrome reads
         // `_renderer.elem`, so it must wait for the render — hence afterRender.
         scheduleRender(this.two, () => {
             // Tag the overlay so SVG/PNG exports can strip it — it lives inside
@@ -135,8 +151,12 @@ export default class Selector {
         const s = scale > 0 ? scale : 1
         this.area.linewidth = 2 / s
         if (this.showCircles && this.circle1) {
-            // Cap radius at 3× base so circles don't obscure the bounding box at extreme zoom-out
-            const radius = Math.min(4 / s, 12)
+            // `base / s` is the local-unit radius that renders as `base` screen
+            // px. Cap at 3× base so circles don't obscure the bounding box at
+            // extreme zoom-out. Unchanged for a mouse (base 4 → the previous
+            // `min(4 / s, 12)`); a coarse pointer gets a finger-sized dot.
+            const base = handleRadiusPx()
+            const radius = Math.min(base / s, base * 3)
             this.circle1.radius = radius
             this.circle2.radius = radius
             if (this.showCircles === 4) {

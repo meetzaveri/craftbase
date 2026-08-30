@@ -13,7 +13,7 @@ const FADE_MS = 200
 
 /**
  * Small transient notice pinned to the bottom of the canvas. Non-interactive
- * and self-dismissing — it must never sit in the way of the board, so it stays
+ * and self-dismissing — it must never sit in the way of the canvas, so it stays
  * `pointer-events-none` and fades itself out.
  */
 const Toast: React.FC<ToastProps> = ({

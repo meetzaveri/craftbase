@@ -41,7 +41,7 @@ export default class NewTextFactory extends Main<NewTextProperties> {
         group.translation.y = parseInt(String(prevY))
 
         // Batched, NOT a direct two.update(): this fires once per text element,
-        // so a synchronous full-scene render here is O(N²) across a board load.
+        // so a synchronous full-scene render here is O(N²) across a base load.
         scheduleRender(two)
 
         return { group, twoText }

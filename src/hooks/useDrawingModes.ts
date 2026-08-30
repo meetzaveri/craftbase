@@ -16,7 +16,7 @@ import {
 } from '../constants/misc'
 
 // Toggle helpers accept an optional options bag that lets the caller plug
-// in the surrounding board state (selection clear, pending-element cancel,
+// in the surrounding base state (selection clear, pending-element cancel,
 // toolbar visibility). Each callback is optional — the hook only fires
 // what's provided.
 export interface DrawingModeToggleOptions {
@@ -53,10 +53,10 @@ export interface DrawingModesApi {
         value: boolean,
         options?: DrawingModeToggleOptions
     ) => void
-    setRubberModeInBoard: (val: boolean) => void
-    setEraserSizeInBoard: (val: EraserSize) => void
-    setArrowDrawModeInBoard: (val: boolean) => void
-    setTextDrawModeInBoard: (val: boolean) => void
+    setRubberModeInBase: (val: boolean) => void
+    setEraserSizeInBase: (val: EraserSize) => void
+    setArrowDrawModeInBase: (val: boolean) => void
+    setTextDrawModeInBase: (val: boolean) => void
     clearDrawModesFromStorage: () => void
 }
 
@@ -177,7 +177,7 @@ export function useDrawingModes(): DrawingModesApi {
         }
     }
 
-    const setRubberModeInBoard = (val: boolean): void => {
+    const setRubberModeInBase = (val: boolean): void => {
         setIsRubberMode(!!val)
         if (val) {
             setPanMode(false)
@@ -196,7 +196,7 @@ export function useDrawingModes(): DrawingModesApi {
         }
     }
 
-    const setEraserSizeInBoard = (val: EraserSize): void => {
+    const setEraserSizeInBase = (val: EraserSize): void => {
         setEraserSize(val)
         try {
             localStorage.setItem(ERASER_SIZE_KEY, val)
@@ -205,9 +205,9 @@ export function useDrawingModes(): DrawingModesApi {
         }
     }
 
-    const setArrowDrawModeInBoard = (val: boolean): void =>
+    const setArrowDrawModeInBase = (val: boolean): void =>
         setIsArrowDrawMode(val)
-    const setTextDrawModeInBoard = (val: boolean): void =>
+    const setTextDrawModeInBase = (val: boolean): void =>
         setIsTextDrawMode(val)
 
     // Reflect any active draw mode as a class on #main-two-root so CSS can
@@ -250,10 +250,10 @@ export function useDrawingModes(): DrawingModesApi {
         togglePointer,
         togglePencilMode,
         togglePanMode,
-        setRubberModeInBoard,
-        setEraserSizeInBoard,
-        setArrowDrawModeInBoard,
-        setTextDrawModeInBoard,
+        setRubberModeInBase,
+        setEraserSizeInBase,
+        setArrowDrawModeInBase,
+        setTextDrawModeInBase,
         clearDrawModesFromStorage,
     }
 }

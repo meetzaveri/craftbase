@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
 import type {
     Cluster,
     PointScreenInfo,
     CameraChangeEvent,
-} from '../../types/board'
+} from '../../types/base'
 
 // Cluster scaffold + render layer (the HTML "cluster" marker variant).
 //
@@ -32,7 +32,7 @@ function setPointDisplay(id: string, display: string): void {
 
 function ClusterLayer(): ReactElement | null {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ctx = useBoardContext() as any
+    const ctx = useBaseContext() as any
     const {
         pointClusteringEnabled,
         clusterPoints,

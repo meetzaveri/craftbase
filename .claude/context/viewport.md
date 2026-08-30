@@ -1,5 +1,10 @@
 ### Viewport in craftbase
 
+> **Visual explainer:** [Glass Over Paper](https://claude.ai/code/artifact/e8236ce1-1319-4f50-9004-a213ac3c8e6a)
+> — interactive diagram of how the camera drives the map backdrop through the
+> anchor, and the Base → Canvas → ElementRenderer layer stack.
+
+
 In this context, viewport means the current "camera position" over the infinite canvas — specifically three numbers that describe where you're looking and how close you're
 zoomed in.
 
@@ -32,7 +37,7 @@ What gets persisted
 `VIEWPORT_KEY_PREFIX` is stored as `craftbase_viewport_` in misc.js
 
 ```
-craftbase_viewport_<boardId> → { tx: -340, ty: 120, scale: 1.8 }
+craftbase_viewport_<baseId> → { tx: -340, ty: 120, scale: 1.8 }
 ```
 
 That means: the scene is shifted 340px left and 120px down from origin, and zoomed in to 1.8×. On restore, those three numbers are fed back through ZUI's API to reconstruct the

@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     getCanvasBox,
     drawShape,
     clickPointerTool,
@@ -101,7 +101,7 @@ function asLabels(order, ids) {
 
 test.describe('Reorder — z-order operations on the first element (circle)', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     test('initial insertion order is circle → rectangle → diamond (back→front)', async ({

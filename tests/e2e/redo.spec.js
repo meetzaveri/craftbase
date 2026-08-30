@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     drawRectangle,
     drawShape,
     drawArrow,
@@ -76,7 +76,7 @@ test.describe('Redo (local mode, keyboard Cmd/Ctrl+Shift+Z)', () => {
         test(`restores ${name} after undo via keyboard redo`, async ({
             page,
         }) => {
-            await setupLocalBoard(page)
+            await setupLocalBase(page)
 
             // Anchor keeps the component store non-empty so the debounced
             // localStorage save still fires after we undo the target.
@@ -121,7 +121,7 @@ test.describe('Redo (local mode, keyboard Cmd/Ctrl+Shift+Z)', () => {
 })
 
 test('Redo button restores the last undone rectangle', async ({ page }) => {
-    await setupLocalBoard(page)
+    await setupLocalBase(page)
 
     const anchor = await drawRectangle(page, ANCHOR_COORDS)
     const anchorId = await anchor.getAttribute('data-component-id')

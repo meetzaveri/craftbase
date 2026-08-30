@@ -2,25 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactElement } from 'react'
 import {
     staticPrimaryElementData,
-    geoElementData,
     type PrimaryElement,
 } from '../../utils/constants'
-import { useBoardContext } from '../../views/Board/boardContext'
+import { useBaseContext } from '../../views/Base/baseContext'
+import { SHAPES_TOOLBAR_ID } from './shapesToolbarId'
 import Tooltip from '../common/tooltip'
 import UndoIcon from '../../assets/undo_amber.svg?react'
 import RedoIcon from '../../assets/redo.svg?react'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import {
-    POINT_CATEGORIES,
-    DEFAULT_POINT_CATEGORY,
-    sizedCategoryIcon,
     ERASER_SIZES,
     ERASER_DOT_PX,
     type EraserSize,
 } from '../../constants/misc'
 
 // Hover labels for the eraser size dots. The dots' pixel sizes come from
-// ERASER_DOT_PX rather than living here, because the trail drawn on the board
+// ERASER_DOT_PX rather than living here, because the trail drawn on the canvas
 // reads the same map — that's what keeps the swatch and the beam identical.
 const ERASER_SIZE_LABEL: Record<EraserSize, string> = {
     small: 'Small',
@@ -31,22 +28,6 @@ const ERASER_SIZE_LABEL: Record<EraserSize, string> = {
 const allElementsRaw = staticPrimaryElementData.flatMap(
     (section) => section.elements
 )
-
-// Whiteboard-only tools hidden once geo objects are enabled — the geo workflow
-// uses point/area/route + the zoom-resistant geoText instead. 'shapes' is the
-// mobile drawer; rectangle/circle/diamond are its desktop-flattened children.
-// 'lines' is the line/curvedLine drawer (kept as a drawer on both platforms).
-// 'text' is replaced by 'geoText' (see geoElementData).
-const GEO_HIDDEN_TOOLS = new Set([
-    'shapes',
-    'rectangle',
-    'circle',
-    'diamond',
-    'lines',
-    'arrowLine',
-    'pencil',
-    'text',
-])
 
 // Tools whose secondary drawer behaves like a hover menu: the drawer opens on
 // hover (desktop) instead of waiting for a click, and clicking the parent icon
@@ -65,11 +46,19 @@ const HOVER_DRAWER_DEFAULT_TOOL: Record<string, string> = {
 // clear of the toolbar.
 const HOVER_DRAWER_BRIDGE_PX = 6
 
-const flattenShapesForDesktop = (
-    elements: PrimaryElement[]
+// Drawers that collapse into flat buttons on desktop, where there is room for
+// them. 'lines' is deliberately absent: it is a hover drawer and stays a drawer
+// on both platforms (see constants.ts).
+const DESKTOP_FLATTENED_DRAWERS: ReadonlySet<string> = new Set([
+    'shapes',
+    'geoShapes',
+])
+
+const flattenDrawersForDesktop = (
+    elements: readonly PrimaryElement[]
 ): PrimaryElement[] =>
     elements.flatMap((el) =>
-        el.elementName === 'shapes'
+        DESKTOP_FLATTENED_DRAWERS.has(el.elementName)
             ? el.drawerData.map((d) => ({
                   elementName: d.elementName,
                   elementDisplayName: d.elementDisplayName,
@@ -82,7 +71,7 @@ const flattenShapesForDesktop = (
     )
 
 interface ShapesToolbarProps {
-    addElement: (label: string, category?: string) => void
+    addElement: (label: string) => void
 }
 
 interface DrawerAnchor {
@@ -94,43 +83,26 @@ interface DrawerAnchor {
 const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
     const {
         currentElement,
-        setCurrentElementInBoard,
+        setCurrentElementInBase,
         undoLastAction,
         redoLastAction,
         historyLog,
         bucketLog,
-        geoObjectsEnabled,
+        toolset,
+        activeBaseType,
         selectedComponent,
-        applyProperty,
         eraserSize,
-        setEraserSizeInBoard,
-    } = useBoardContext()
+        setEraserSizeInBase,
+    } = useBaseContext()
     const { isMobile } = useMediaQueryUtils()
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
     const [drawerAnchor, setDrawerAnchor] = useState<DrawerAnchor | null>(null)
     const drawerRef = useRef<HTMLDivElement | null>(null)
-    // Last category chosen for *new* points (so the drawer reflects the user's
-    // pick across placements). A selected point's own category takes priority
-    // when the drawer is opened with one focused.
-    const [pointCategory, setPointCategory] = useState<string>(
-        DEFAULT_POINT_CATEGORY
-    )
-
-    // When a point is selected, the same drawer recolors it in place (via
-    // applyProperty) instead of starting a new draw. Read its current category
-    // so the active chip reflects the selection.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const selectedElementData = (selectedComponent as any)?.group?.data
-        ?.elementData
-    const isPointSelected = selectedElementData?.componentType === 'point'
-    const activePointCategory = isPointSelected
-        ? (selectedElementData?.metadata?.category ?? DEFAULT_POINT_CATEGORY)
-        : pointCategory
-
-    // With geo objects enabled, pan is the default/home tool, but the pointer
-    // stays available so points can be selected (to edit category / tooltip);
-    // otherwise the usual pointer/select default.
-    const homeTool = geoObjectsEnabled ? 'pan' : 'pointer'
+    // The active base decides the resting tool. Both shipped bases rest on
+    // 'pointer' — a map is a substrate to draw on, so the resting gesture is
+    // still select — but it stays per-base because that is a base's call to
+    // make, and the deprecated `geoObjectsEnabled` overlay still asks for pan.
+    const homeTool = toolset.homeTool
 
     // Eraser size selector: only while the eraser is the active tool and
     // nothing on canvas is selected — a selection competing for the same
@@ -139,18 +111,23 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
 
     const allElements = (() => {
         const list = (
-            isMobile ? allElementsRaw : flattenShapesForDesktop(allElementsRaw)
+            isMobile ? allElementsRaw : flattenDrawersForDesktop(allElementsRaw)
         )
-            // Whiteboard shape tools are hidden in geo mode in favour of the
-            // geo toolset (point/area/route/geoText).
-            .filter(
-                (el) =>
-                    !geoObjectsEnabled || !GEO_HIDDEN_TOOLS.has(el.elementName)
+            // The active base hides the tools that don't suit it (the map base
+            // drops the whiteboard shape tools in favour of the geo toolset).
+            // Only the toolbar is filtered — shapes already on the canvas keep
+            // rendering and stay editable after a base switch.
+            .filter((el) => !toolset.hiddenTools.has(el.elementName))
+            // ...and contributes its own (point/area+circle/route/geoText on
+            // the map). Flattened for desktop too, or the geo shapes drawer
+            // would stay collapsed on the one platform with room for it. Note
+            // this runs AFTER the filter, which is what lets the geo circle
+            // through even though 'circle' is in the map's hiddenTools.
+            .concat(
+                isMobile
+                    ? toolset.extraTools
+                    : flattenDrawersForDesktop(toolset.extraTools)
             )
-            // Geo tools (point/area/route/geoText) appear alongside the shape
-            // tools only when the consumer opts in via the geoObjectsEnabled
-            // Board prop.
-            .concat(geoObjectsEnabled ? geoElementData : [])
 
         // The eraser (rubber) always sits last in the toolbar order, after any
         // geo tools appended above.
@@ -162,13 +139,40 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         return list
     })()
 
+    // Re-runs on every base switch, not just on mount: switching to the map has
+    // to actually move the user onto pan, and switching back has to release it.
+    // (This was mount-only while the base was a fixed build-time prop.)
+    //
+    // Gated on the toolset having caught up with the base. Providers load
+    // through a dynamic import, so `activeBaseType` flips the instant the user
+    // picks — while `toolset.homeTool` still belongs to the base being left.
+    // Firing on `activeBaseType` alone therefore applied the OUTGOING base's home
+    // tool: switching to the map left you on pointer, and back to the board base
+    // left you on pan. `appliedForBaseType` keeps it to one application per switch
+    // once they agree.
+    const isFirstBaseTypeRun = useRef(true)
+    const appliedForBaseType = useRef<string | null>(null)
     useEffect(() => {
-        // Pan needs activating (addElement) to become the live mode; pointer is
-        // the board's resting state, so a highlight is enough.
-        if (geoObjectsEnabled) addElement('pan')
-        setCurrentElementInBoard(homeTool)
+        if (toolset.baseId !== activeBaseType) return
+        if (appliedForBaseType.current === activeBaseType) return
+        appliedForBaseType.current = activeBaseType
+
+        if (isFirstBaseTypeRun.current) {
+            isFirstBaseTypeRun.current = false
+            // Mount: pan needs activating (addElement) to become the live mode;
+            // pointer is the board base's resting state, so a highlight is enough.
+            // Kept exactly as-is so a board-base load behaves as it always did.
+            if (homeTool === 'pan') addElement('pan')
+            setCurrentElementInBase(homeTool)
+            return
+        }
+        // A real switch: go through addElement either way, because that's what
+        // releases pan (`if (label !== 'pan') togglePanMode(false)`) on the way
+        // back to the board base. Highlighting alone would leave pan live.
+        addElement(homeTool)
+        setCurrentElementInBase(homeTool)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [activeBaseType, toolset.baseId])
 
     useEffect(() => {
         if (!openDrawer) return
@@ -265,6 +269,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                 </div>
             )}
             <div
+                id={SHAPES_TOOLBAR_ID}
                 className={`fixed bg-card-bg border border-border-panel rounded-card flex items-center flex-row
                     ${isMobile ? 'px-1 py-1 gap-0.5' : 'top-2 left-1/2 px-2 py-1 gap-1'}`}
                 style={
@@ -346,28 +351,10 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         })
                                         setOpenDrawer(element.elementName)
                                         addElement(defaultTool)
-                                        setCurrentElementInBoard(defaultTool)
+                                        setCurrentElementInBase(defaultTool)
                                         return
                                     }
-                                    // Point opens a category drawer rather than
-                                    // drawing immediately — the chosen category
-                                    // seeds the new point (or recolors a selected
-                                    // one). Don't touch currentElement here so a
-                                    // focused point stays selected for re-skinning.
-                                    if (element.elementName === 'point') {
-                                        const rect =
-                                            e.currentTarget.getBoundingClientRect()
-                                        setDrawerAnchor({
-                                            left: rect.left,
-                                            top: rect.bottom,
-                                            rectTop: rect.top,
-                                        })
-                                        setOpenDrawer(
-                                            openDrawer === 'point'
-                                                ? null
-                                                : 'point'
-                                        )
-                                    } else if (element.hasDrawer) {
+                                    if (element.hasDrawer) {
                                         const rect =
                                             e.currentTarget.getBoundingClientRect()
                                         setDrawerAnchor({
@@ -382,7 +369,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                                 ? null
                                                 : element.elementName
                                         )
-                                        setCurrentElementInBoard(
+                                        setCurrentElementInBase(
                                             isToggleClose
                                                 ? homeTool
                                                 : element.elementName
@@ -402,7 +389,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                             })
                                         }
                                         addElement(element.elementName)
-                                        setCurrentElementInBoard(
+                                        setCurrentElementInBase(
                                             element.elementName
                                         )
                                     }
@@ -447,7 +434,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                         }
                                     `}
                                         onClick={(): void =>
-                                            setEraserSizeInBoard(size)
+                                            setEraserSizeInBase(size)
                                         }
                                     >
                                         <span
@@ -527,7 +514,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                 `}
                                         onClick={(): void => {
                                             addElement(item.elementName)
-                                            setCurrentElementInBoard(
+                                            setCurrentElementInBase(
                                                 item.elementName
                                             )
                                             setOpenDrawer(null)
@@ -545,88 +532,10 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                 </div>
             )}
 
-            {/* Point categories — a swatch row beneath the toolbar. Picking one
-                seeds the next placed point, or recolors the focused point. */}
-            {openDrawer === 'point' && drawerAnchor && (
-                <div
-                    className={`fixed bg-sidebar rounded-card flex items-center flex-row
-                        ${isMobile ? 'px-1 py-1 gap-1 border-b-4 border-accent-dark' : 'px-2 py-1 gap-1.5 border-t-4 border-accent-dark'}`}
-                    style={
-                        isMobile
-                            ? {
-                                  bottom:
-                                      window.innerHeight -
-                                      drawerAnchor.rectTop +
-                                      6,
-                                  left: drawerAnchor.left,
-                                  zIndex: 11,
-                              }
-                            : {
-                                  top: drawerAnchor.top + 6,
-                                  left: drawerAnchor.left,
-                                  zIndex: 11,
-                              }
-                    }
-                >
-                    {Object.values(POINT_CATEGORIES).map((cat) => {
-                        const isActive = activePointCategory === cat.id
-                        return (
-                            <Tooltip
-                                key={cat.id}
-                                label={cat.label}
-                                placement={tooltipPlacement}
-                            >
-                                <button
-                                    aria-label={cat.label}
-                                    className={`${btnSize} flex items-center justify-center rounded-lg cursor-pointer transition-transform duration-150 hover:scale-105 ${
-                                        isActive ? 'scale-105' : ''
-                                    }`}
-                                    style={{
-                                        background: cat.bg,
-                                        border: cat.border
-                                            ? `2px solid ${cat.border}`
-                                            : 'none',
-                                        boxShadow: isActive
-                                            ? '0 0 0 2px #E8C87A'
-                                            : '2px 2px 0 #C4B89A',
-                                    }}
-                                    onClick={(): void => {
-                                        if (isPointSelected) {
-                                            // Recolor the focused point in place.
-                                            applyProperty?.(
-                                                'pointCategory',
-                                                cat.id
-                                            )
-                                        } else {
-                                            // Seed + arm a fresh point placement.
-                                            setPointCategory(cat.id)
-                                            addElement('point', cat.id)
-                                            setCurrentElementInBoard('point')
-                                        }
-                                        setOpenDrawer(null)
-                                    }}
-                                >
-                                    <span
-                                        className="flex items-center justify-center pointer-events-none"
-                                        // Category icons are pre-colored SVG strings.
-                                        dangerouslySetInnerHTML={{
-                                            __html: sizedCategoryIcon(
-                                                cat.svgIcon,
-                                                isMobile ? 16 : 18
-                                            ),
-                                        }}
-                                    />
-                                </button>
-                            </Tooltip>
-                        )
-                    })}
-                </div>
-            )}
-
             {/* Eraser size selector — mobile only. Reuses the same
-                above-toolbar drawer anchoring as the point-category drawer
-                above; desktop instead renders the sizes inline (see the
-                divider-separated segment next to the eraser icon). */}
+                above-toolbar drawer anchoring the shape drawers use; desktop
+                instead renders the sizes inline (see the divider-separated
+                segment next to the eraser icon). */}
             {isMobile && showEraserSizes && drawerAnchor && (
                 <div
                     className="fixed bg-card-bg border border-border-panel rounded-card flex items-center flex-row px-1 py-1 gap-0.5"
@@ -659,7 +568,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                     }
                                 `}
                                     onClick={(): void =>
-                                        setEraserSizeInBoard(size)
+                                        setEraserSizeInBase(size)
                                     }
                                 >
                                     <span

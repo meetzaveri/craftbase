@@ -1,4 +1,4 @@
-## Adding arrow to the board
+## Adding arrow to the canvas
 
 Currently the arrow functionality (when selected from sidebar) works as
 

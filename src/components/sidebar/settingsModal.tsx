@@ -15,7 +15,10 @@ const SettingsModal = ({ open, onClose }: SettingsModalProps): ReactElement => {
 
     return (
         <Modal open={open} onClose={onClose}>
-            <div style={{ minWidth: '360px', maxWidth: '460px' }}>
+            <div style={{
+                minWidth: 'min(360px, calc(100vw - 96px))',
+                maxWidth: '460px',
+            }}>
                 <h2 className="text-lg font-semibold mb-4 font-display">
                     Settings
                 </h2>

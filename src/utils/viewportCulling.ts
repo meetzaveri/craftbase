@@ -1,12 +1,12 @@
-// Viewport culling — the lever against the pan/zoom PAINT cost on dense boards.
+// Viewport culling — the lever against the pan/zoom PAINT cost on dense bases.
 //
 // Why it exists: craftbase elements are nested SVG groups (a shape is a <g> of
 // ~4–9 nodes: fill path + hit-area path + text layer + endpoint handles). A
-// 2000-element board is ~8600 SVG DOM nodes. Two.js's SVG renderer applies pan
+// 2000-element base is ~8600 SVG DOM nodes. Two.js's SVG renderer applies pan
 // as a transform on the scene root, and the browser must re-rasterise every
 // VISIBLE vector node each frame — so pan/zoom cost scales with how many
 // elements sit inside the viewport, not with total scene size. At 10% zoom the
-// whole board is on screen and every node repaints per frame; at 118% only a
+// whole base is on screen and every node repaints per frame; at 118% only a
 // handful do (which is exactly why panning feels smooth zoomed-in and janky
 // zoomed-out). Setting `visible = false` emits `display:none`, so the browser
 // skips painting that subtree entirely.
@@ -30,6 +30,19 @@ const DEFAULT_MARGIN_PX = 300
 // Marks an element hidden by culling (vs. genuinely hidden by undo/group
 // bookkeeping), so `computeContentSurfaceBounds` still counts it as content.
 export const CULLED_FLAG = '__cbCulled'
+
+// Marks an element the ACTIVE BASE says must stay hidden (a geo object on the
+// board base, a whiteboard shape on the map base). Written only by
+// `applyBaseTypeVisibility` — see geoVisibility.ts — and read here so the two
+// systems that both drive `visible` can't fight.
+//
+// They used to: cull an element on the map base (visible=false, CULLED_FLAG),
+// switch to the board base — `applyBaseTypeVisibility` wants it hidden, sees it is
+// already hidden and returns early, leaving CULLED_FLAG set — then the settle
+// timer fires `uncullViewport`, which faithfully reveals everything it "hid".
+// A geo route pops onto the whiteboard, and stays there. Base ownership wins:
+// culling never reveals a base-hidden element.
+export const BASE_TYPE_HIDDEN_FLAG = '__cbBaseTypeHidden'
 
 interface WorldBounds {
     tx: number
@@ -65,7 +78,8 @@ function worldBounds(child: SceneChild): WorldBounds | null {
     }
     if (!rect) return null
     const { left, top, right, bottom } = rect
-    if (![left, top, right, bottom].every((n) => Number.isFinite(n))) return null
+    if (![left, top, right, bottom].every((n) => Number.isFinite(n)))
+        return null
 
     const b: WorldBounds = { tx, ty, left, top, right, bottom }
     boundsCache.set(child, b)
@@ -77,6 +91,9 @@ function isCullable(child: SceneChild): boolean {
     if (!data?.id) return false // selection chrome, welcome sketch, dummies
     if (data.componentType === GROUP_COMPONENT) return false // visibility is managed
     if (data.isDummy === true) return false
+    // Hidden by the active base — that hide outranks culling, in both
+    // directions: we neither count it nor ever reveal it.
+    if (child[BASE_TYPE_HIDDEN_FLAG] === true) return false
     return true
 }
 
@@ -164,9 +181,11 @@ export function uncullViewport(two: Two): void {
     const scene = two?.scene
     if (!scene) return
     for (const child of scene.children) {
-        if (child[CULLED_FLAG]) {
-            child.visible = true
-            child[CULLED_FLAG] = false
-        }
+        if (!child[CULLED_FLAG]) continue
+        child[CULLED_FLAG] = false
+        // Second guard behind isCullable: the base may have taken ownership of
+        // this element while it was culled, and a base hide is not ours to lift.
+        if (child[BASE_TYPE_HIDDEN_FLAG] === true) continue
+        child.visible = true
     }
 }

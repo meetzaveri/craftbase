@@ -1,23 +1,27 @@
 import { test, expect } from './helpers/test.js'
-import { setupLocalBoard } from './helpers/index.js'
+import { setupLocalBase } from './helpers/index.js'
 
-const TOAST = '[role="status"]'
+// CraftbaseLoader is also role="status", so a bare [role="status"] matches the
+// loading spinner too and trips Playwright's strict mode whenever the base
+// hasn't finished loading by assertion time (flaky under parallel workers).
+// aria-live="polite" is the toast's alone.
+const TOAST = '[role="status"][aria-live="polite"]'
 const THRESHOLD = 2000
 
 /**
  * Builds a local draft with `count` trivial rectangles, written straight to
- * localStorage so the board restores it on load — the "user refreshes an
- * already-large board" path, without drawing 2000 shapes by hand.
+ * localStorage so the base restores it on load — the "user refreshes an
+ * already-large base" path, without drawing 2000 shapes by hand.
  */
 function seedDraft(count) {
-    const boardId = '11111111-1111-1111-1111-111111111111'
+    const baseId = '11111111-1111-1111-1111-111111111111'
     const components = {}
     for (let i = 0; i < count; i++) {
         const id = `seed-${i}`
         components[id] = {
             id,
             componentType: 'rectangle',
-            boardId,
+            baseId,
             x: (i % 50) * 30,
             y: Math.floor(i / 50) * 30,
             width: 20,
@@ -28,20 +32,20 @@ function seedDraft(count) {
             position: i,
         }
     }
-    return { boardId, components, timestamp: Date.now() }
+    return { baseId, components, timestamp: Date.now() }
 }
 
 test.describe('Element-count performance warning', () => {
-    test('saved board over the threshold warns from the aggregate count', async ({
+    test('saved base over the threshold warns from the aggregate count', async ({
         page,
     }) => {
-        // Registered AFTER setupLocalBoard: Playwright runs the most recently
+        // Registered AFTER setupLocalBase: Playwright runs the most recently
         // added route first, so this sees the aggregate query and falls back to
         // the catch-all mock for everything else.
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
         await page.route('**/v1/graphql', async (route, request) => {
             const body = JSON.parse(request.postData() || '{}')
-            if (body.operationName === 'getBoardComponentCount') {
+            if (body.operationName === 'getBaseComponentCount') {
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/json',
@@ -54,17 +58,17 @@ test.describe('Element-count performance warning', () => {
             await route.fallback()
         })
 
-        await page.goto('/board/22222222-2222-2222-2222-222222222222')
+        await page.goto('/base/22222222-2222-2222-2222-222222222222')
 
         await expect(page.locator(TOAST)).toBeVisible()
         await expect(page.locator(TOAST)).toContainText('2,000 elements')
     })
 
-    test('saved board under the threshold does not warn', async ({ page }) => {
-        await setupLocalBoard(page)
+    test('saved base under the threshold does not warn', async ({ page }) => {
+        await setupLocalBase(page)
         await page.route('**/v1/graphql', async (route, request) => {
             const body = JSON.parse(request.postData() || '{}')
-            if (body.operationName === 'getBoardComponentCount') {
+            if (body.operationName === 'getBaseComponentCount') {
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/json',
@@ -77,16 +81,16 @@ test.describe('Element-count performance warning', () => {
             await route.fallback()
         })
 
-        await page.goto('/board/22222222-2222-2222-2222-222222222222')
+        await page.goto('/base/22222222-2222-2222-2222-222222222222')
 
         await expect(page.locator('#main-two-root svg')).toBeVisible()
         await expect(page.locator(TOAST)).toHaveCount(0)
     })
 
-    test('local board restored over the threshold warns on refresh', async ({
+    test('local base restored over the threshold warns on refresh', async ({
         page,
     }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
         const draft = seedDraft(THRESHOLD + 1)
         await page.addInitScript((d) => {
             localStorage.setItem('craftbase_local_draft', JSON.stringify(d))
@@ -99,7 +103,7 @@ test.describe('Element-count performance warning', () => {
 
     test('the warning auto-hides after 15s', async ({ page }) => {
         test.setTimeout(60000)
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
         const draft = seedDraft(THRESHOLD + 1)
         await page.addInitScript((d) => {
             localStorage.setItem('craftbase_local_draft', JSON.stringify(d))
@@ -115,8 +119,8 @@ test.describe('Element-count performance warning', () => {
         await expect(page.locator(TOAST)).toHaveCount(0, { timeout: 10000 })
     })
 
-    test('local board under the threshold does not warn', async ({ page }) => {
-        await setupLocalBoard(page)
+    test('local base under the threshold does not warn', async ({ page }) => {
+        await setupLocalBase(page)
         const draft = seedDraft(10)
         await page.addInitScript((d) => {
             localStorage.setItem('craftbase_local_draft', JSON.stringify(d))

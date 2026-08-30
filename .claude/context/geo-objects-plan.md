@@ -1,7 +1,7 @@
 # Geo Objects (point / area / route) — Implementation Plan
 
 Adds a new **geo** category of element to craftbase, surfaced only when a
-consumer (craftmaps) opts in via a Board prop. Three types:
+consumer (craftmaps) opted in via a prop — historical; craftmaps is gone and the geo toolset is now gated by the active base type. Three types:
 
 - **point** — a circle ring with an embedded SVG icon (default "pin"), counter-scaled so it stays legible when zoomed out.
 - **area** — a closed `Two.Path` (polygon). Editable property: **stroke**. Fill = stroke color at 0.7 opacity (light shade).
@@ -53,7 +53,7 @@ No new columns needed beyond `objectClass`. Reuse:
 
 ### A4. Query/subscription/codegen changes
 
-- Add `objectClass` to the select sets of: `GET_COMPONENTS_FOR_BOARD_QUERY`, `GET_COMPONENT_INFO_QUERY`, `GET_COMPONENTS_FOR_BOARD_SUBSCRIPTION`, `GET_COMPONENT_INFO_SUBSCRIPTION`. (`metadata` is already selected — that carries the vertices.)
+- Add `objectClass` to the select sets of: `GET_COMPONENTS_FOR_BASE_QUERY`, `GET_COMPONENT_INFO_QUERY`, `GET_COMPONENTS_FOR_BOARD_SUBSCRIPTION`, `GET_COMPONENT_INFO_SUBSCRIPTION`. (`metadata` is already selected — that carries the vertices.)
 - Add a new `GET_GEO_OBJECT_TYPES` query + subscription mirroring `GET_COMPONENT_TYPES` against `components_geoObjectType`.
 - **No new insert/update/delete mutations.** `insert_components_component_one`, `update_components_component_by_pk`, and the delete mutations all carry geo rows for free once `objectClass` is tracked.
 - Run `yarn codegen` after the metadata + table land so `src/schema/generated.ts` picks up `objectClass` and the new catalog type.
@@ -66,7 +66,7 @@ The renderer needs **zero changes**: `handleSetComponentsToRender` maps
 `componentType` → `./components/elements/{type}.tsx` via the
 `import.meta.glob('./components/elements/*.tsx')` (`newCanvas.tsx:50`). Dropping
 in `point.tsx`/`area.tsx`/`route.tsx` registers them automatically. Insert/
-update/delete, the board subscription, undo-history, clipboard, and the
+update/delete, the base subscription, undo-history, clipboard, and the
 localStorage draft all flow through `componentStore` and work unchanged.
 
 ### B1. Constants — `src/constants/misc.ts`
@@ -114,7 +114,7 @@ cleanup, pointer-events effect on draw modes). No `applyShapeText` calls.
 
 ### B6. Toolbar — opt-in geo tools
 
-- **BoardProps** (`src/types/board.ts`): add `geoObjectsEnabled?: boolean` (default-free, no-op when omitted). Thread through `BoardContext` (board.tsx) so the sidebar can read it. `BoardProps` is already exported from `lib.ts` — no new export needed.
+- **BaseProps** (`src/types/base.ts`): add `geoObjectsEnabled?: boolean` (default-free, no-op when omitted). Thread through `BaseContext` (base.tsx) so the sidebar can read it. `BaseProps` is already exported from `lib.ts` — no new export needed.
 - **`src/utils/constants.ts`:** add a `geoElementData: PrimaryElement[]` (point/area/route with new icons). Add three icons to `wireframeAssets/` (pin, polygon, polyline) imported `?react`.
 - **`shapesToolbar.tsx`:** when `geoObjectsEnabled`, append `geoElementData` to `allElements` (additive, after the existing shape/arrow/pencil/text tools). Clicking calls the existing `addElement(name)` + `setCurrentElementInBoard(name)`.
 
@@ -151,7 +151,7 @@ Mirror the existing `SCENARIO_ARROW_DRAW` / `SCENARIO_TEXT_DRAW` / `SCENARIO_DRA
 
 - Add `GET_GEO_OBJECT_TYPES` (query + subscription) mirroring `GET_COMPONENT_TYPES`.
 - Add `objectClass` to the component query/subscription select sets (matches A4).
-- Fetch the geoObjectType catalog in `board.tsx` next to `getComponentTypesData` and expose via context for `primary.tsx`'s `addElement` defaults.
+- Fetch the geoObjectType catalog in `base.tsx` next to `getComponentTypesData` and expose via context for `primary.tsx`'s `addElement` defaults.
 - Re-run `yarn codegen` after the DB lands; then `yarn typecheck`.
 
 ---
