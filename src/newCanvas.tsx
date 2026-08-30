@@ -140,6 +140,7 @@ import {
     paintElementStroke,
 } from './utils/themeColorFlip'
 import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
+import { wheelZoomStep } from './utils/wheelZoom'
 import { scheduleRender } from './utils/renderScheduler'
 import { installRenderOrigin } from './canvas/renderOrigin'
 import { isRecordVisibleOnBaseType } from './utils/geoVisibility'
@@ -1099,12 +1100,10 @@ function addZUI(
     domElement.addEventListener('mousedown', mousedown, false)
     domElement.addEventListener('mousemove', hoverDetectMove, false)
     domElement.addEventListener('dblclick', dblclick, false)
-    domElement.addEventListener(
-        'mousewheel',
-        mousewheel as EventListener,
-        false
-    )
-    domElement.addEventListener('wheel', mousewheel, false)
+    // Non-passive so the handler can preventDefault. The legacy `mousewheel`
+    // alias is deliberately NOT bound: no current browser fires both, but one
+    // that did would now double-apply the zoom.
+    domElement.addEventListener('wheel', mousewheel, { passive: false })
 
     domElement.addEventListener('touchstart', touchstart, { passive: false })
     domElement.addEventListener('touchmove', touchmove, { passive: false })
@@ -1174,6 +1173,13 @@ function addZUI(
         const ed = child?.elementData
         if (!ed?.id) return
         const ct = ed.componentType
+
+        // Geo objects sit on a basemap, not on parchment: the light/dark ink
+        // palette does not apply to them, and they are not even on screen when
+        // the theme toggle is reachable (it is board-only). The predicates
+        // below all match on componentType alone, so without this a map circle
+        // or a map pencil stroke would be silently recoloured and persisted.
+        if (ed.objectClass === 'geo') return
 
         // Group selectors: the background rectangle (children[0]) is tinted from
         // the theme-aware getGroupFill(), not a flippable element color, so just
@@ -1736,10 +1742,15 @@ function addZUI(
 
         if (shape !== null && !isPencilModeRef?.current) {
             const ct = shape.elementData?.componentType
+            // Geo objects carry no inner text — geoText is the labelling tool
+            // on a map base. Without this, double-clicking a map circle (same
+            // componentType as the whiteboard circle) opens the shape text
+            // editor, which its property set has no controls for.
             if (
-                ct === componentTypes.rectangle ||
-                ct === componentTypes.diamond ||
-                ct === componentTypes.circle
+                shape.elementData?.objectClass !== 'geo' &&
+                (ct === componentTypes.rectangle ||
+                    ct === componentTypes.diamond ||
+                    ct === componentTypes.circle)
             ) {
                 const meta = shape.elementData.metadata || {}
                 showTextInput(shape, shape.elementData.id, meta)
@@ -2472,20 +2483,34 @@ function addZUI(
         })
     }
 
+    /**
+     * Start a desktop grab-drag of the camera.
+     *
+     * Two callers, and they mean different things: the pan tool, where every
+     * drag pans whatever it lands on, and the map base's empty-canvas drag,
+     * where only a drag that hit nothing pans. `mousemove` and `mouseup` own
+     * the rest of the gesture through the `isMousePanning` flag.
+     *
+     * The listeners go on `window`, not `domElement` as the other drag paths
+     * do, so that a release outside the canvas still ends the pan and a drag
+     * keeps tracking past the canvas edge.
+     */
+    function beginMousePan(e: MouseEvent) {
+        isMousePanning = true
+        mousePanLastX = e.clientX
+        mousePanLastY = e.clientY
+        const root = document.getElementById('main-two-root')
+        if (root) root.classList.add('panning')
+        window.addEventListener('mousemove', mousemove, false)
+        window.addEventListener('mouseup', mouseup, false)
+    }
+
     function mousedown(e: MouseEvent) {
         // Pan-mode (desktop): grab-and-drag translates the surface instead of
         // selecting/drawing. Runs before everything else so a click on a shape
         // pans rather than selecting it. Mirrors the single-finger touch pan.
         if (isPanMode()) {
-            isMousePanning = true
-            mousePanLastX = e.clientX
-            mousePanLastY = e.clientY
-            const root = document.getElementById('main-two-root')
-            if (root) root.classList.add('panning')
-            // Drag on window so a release outside the canvas still ends the pan
-            // (and dragging keeps tracking past the canvas edge).
-            window.addEventListener('mousemove', mousemove, false)
-            window.addEventListener('mouseup', mouseup, false)
+            beginMousePan(e)
             return
         }
 
@@ -2787,7 +2812,14 @@ function addZUI(
                         fill: drawShapeProps?.fill || '#fff',
                         stroke: drawShapeProps?.stroke || SHAPE_DEFAULT_STROKE,
                         linewidth: drawShapeProps?.linewidth || 1,
-                        opacity: DEFAULT_PREVIEW_OPACITY,
+                        // A map circle is created at 50%; previewing it at the
+                        // generic preview opacity made it visibly jump on
+                        // release. When the pending record carries its own
+                        // opacity, preview at that instead.
+                        opacity:
+                            typeof drawShapeProps?.opacity === 'number'
+                                ? drawShapeProps.opacity
+                                : DEFAULT_PREVIEW_OPACITY,
                     })
                     updateDrawPreview(
                         e.clientX,
@@ -2971,6 +3003,22 @@ function addZUI(
                     if (activeTextInput) {
                         shape = {}
                         avoidDragging = true
+                    } else if (
+                        activeBaseTypeRef.current === 'map' &&
+                        !e.shiftKey
+                    ) {
+                        // Map base: a drag over empty canvas moves the
+                        // geography, the way it does on every mapping
+                        // product. Shift+drag keeps the marquee, which is
+                        // the only way to box-select on a map now.
+                        //
+                        // Reached only when the hit test came back empty, so
+                        // a drag that starts ON a point/area/route still
+                        // moves that element. The selection clearing above
+                        // has already run, so a click that never moves still
+                        // deselects.
+                        beginMousePan(e)
+                        return
                     } else {
                         // Defer rect creation to the first mousemove. We
                         // still need mousemove/mouseup wired up below so
@@ -4359,14 +4407,30 @@ function addZUI(
     }
 
     function mousewheel(e: WheelEvent) {
-        // Wheel/scroll zooms only with a modifier held — cmd (macOS), ctrl
-        // (Windows; also what trackpad pinch-zoom emits), or shift. A plain
-        // wheel/scroll always pans the surface, in pan mode and otherwise.
-        if (e.shiftKey === true || e.metaKey === true || e.ctrlKey === true) {
-            let dy =
-                ((e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ||
-                    -e.deltaY) / 1000
-            zui.zoomBy(dy, e.clientX, e.clientY)
+        // Nothing behind this SVG scrolls — it is a fixed, full-viewport
+        // surface — so the browser's default is never wanted. Suppressing it
+        // is what stops ctrl+wheel from page-zooming the browser and stops
+        // Safari reading a horizontal two-finger swipe as back-navigation.
+        e.preventDefault()
+
+        // Which input model applies is a property of the substrate.
+        //
+        // The map base speaks the map idiom: the wheel only ever zooms, as it
+        // does on every mapping product anyone arrives from. Panning there is
+        // the drag (see the empty-canvas branch in mousedown).
+        //
+        // The board base keeps the whiteboard idiom: a plain wheel pans and a
+        // modifier zooms — cmd (macOS), ctrl (Windows, and what trackpad
+        // pinch-zoom emits everywhere) or shift. That is what Figma, Miro and
+        // Excalidraw do, and it is the expectation users bring to a canvas.
+        const zooms =
+            activeBaseTypeRef.current === 'map' ||
+            e.shiftKey === true ||
+            e.metaKey === true ||
+            e.ctrlKey === true
+
+        if (zooms) {
+            zui.zoomBy(wheelZoomStep(e), e.clientX, e.clientY)
             window.dispatchEvent(
                 new CustomEvent('zoomChanged', { detail: { scale: zui.scale } })
             )

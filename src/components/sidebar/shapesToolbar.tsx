@@ -46,11 +46,19 @@ const HOVER_DRAWER_DEFAULT_TOOL: Record<string, string> = {
 // clear of the toolbar.
 const HOVER_DRAWER_BRIDGE_PX = 6
 
-const flattenShapesForDesktop = (
-    elements: PrimaryElement[]
+// Drawers that collapse into flat buttons on desktop, where there is room for
+// them. 'lines' is deliberately absent: it is a hover drawer and stays a drawer
+// on both platforms (see constants.ts).
+const DESKTOP_FLATTENED_DRAWERS: ReadonlySet<string> = new Set([
+    'shapes',
+    'geoShapes',
+])
+
+const flattenDrawersForDesktop = (
+    elements: readonly PrimaryElement[]
 ): PrimaryElement[] =>
     elements.flatMap((el) =>
-        el.elementName === 'shapes'
+        DESKTOP_FLATTENED_DRAWERS.has(el.elementName)
             ? el.drawerData.map((d) => ({
                   elementName: d.elementName,
                   elementDisplayName: d.elementDisplayName,
@@ -103,15 +111,23 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
 
     const allElements = (() => {
         const list = (
-            isMobile ? allElementsRaw : flattenShapesForDesktop(allElementsRaw)
+            isMobile ? allElementsRaw : flattenDrawersForDesktop(allElementsRaw)
         )
             // The active base hides the tools that don't suit it (the map base
             // drops the whiteboard shape tools in favour of the geo toolset).
             // Only the toolbar is filtered — shapes already on the canvas keep
             // rendering and stay editable after a base switch.
             .filter((el) => !toolset.hiddenTools.has(el.elementName))
-            // ...and contributes its own (point/area/route/geoText on the map).
-            .concat(toolset.extraTools)
+            // ...and contributes its own (point/area+circle/route/geoText on
+            // the map). Flattened for desktop too, or the geo shapes drawer
+            // would stay collapsed on the one platform with room for it. Note
+            // this runs AFTER the filter, which is what lets the geo circle
+            // through even though 'circle' is in the map's hiddenTools.
+            .concat(
+                isMobile
+                    ? toolset.extraTools
+                    : flattenDrawersForDesktop(toolset.extraTools)
+            )
 
         // The eraser (rubber) always sits last in the toolbar order, after any
         // geo tools appended above.

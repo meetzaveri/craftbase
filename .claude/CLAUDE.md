@@ -402,6 +402,26 @@ means the document. `BaseType` is the union, `base.type` is the column,
   `BOARD_ONLY_TYPES` (rectangle/circle/diamond/arrowLine/curvedLine/pencil/
   line/divider) hide on the map type. Hidden via Two.js `visible`, never
   unmounted and never deleted — the records stay in the store, draft and DB.
+- **The map circle is the board circle plus `objectClass`.** A circle drawn on
+  a map base is `componentType: 'circle'` carrying `objectClass: 'geo'` — not a
+  fourth geo type. It reuses the factory, the component, the resize adapter,
+  undo, clipboard and export wholesale; the column is the entire
+  differentiator, exactly as it already is for the pencil. The visibility rule
+  needed no change: `objectClass === 'geo'` is tested *before* the
+  `BOARD_ONLY_TYPES` set that contains `'circle'`. What diverges is per-record
+  and deliberate: created at `GEO_CIRCLE_DEFAULTS` (50% opacity, stroke seeded
+  from fill, its own saturated fill that does **not** sync `defaultFill` — a
+  map circle's colour is its identity on the basemap, not a shape preference);
+  no opacity control (the `GEO_CIRCLE` set simply omits the section, same
+  mechanism as point/area/route); no inner text and no connector ports; and its
+  **stroke** counter-scales via `isStrokeScaled` while its geometry stays
+  world-scaled, so a 5km radius stays 5km while the ring stays readable from z4
+  to z18. In the toolbar it is a child of the `geoShapes` drawer alongside Area
+  — flattened to a flat button on desktop by `DESKTOP_FLATTENED_DRAWERS`,
+  a drawer on mobile. That flattening now runs over `toolset.extraTools` too,
+  and it runs *after* `hiddenTools`, which is what lets a tool named `'circle'`
+  survive on a base whose `GEO_HIDDEN_TOOLS` contains `'circle'`. Covered by
+  `tests/e2e/map-circle.spec.js`.
 - **Text is scoped per record, not per type.** The same `newText` type is
   authorable on more than one base type, so `buildTextShapeData` (`base.tsx`)
   stamps `metadata.baseTypeScope` with the authoring type and that pin outranks
@@ -481,7 +501,11 @@ edge **port**.
   (n/e/s/w) of a port shape's selection box. Port shapes are `rectangle`,
   `circle` and `diamond` (`PORT_SHAPE_TYPES`/`isPortShape` in
   `src/utils/shapePorts.ts` — the single gate shared by rendering, hover
-  hit-test and the radar). Rendered + hit-tested in
+  hit-test and the radar). `isPortShape` takes the whole **record**, not a bare
+  `componentType`, because it must also exclude `objectClass: 'geo'`: the map
+  circle shares `componentType: 'circle'` with the whiteboard one, and ports on
+  a map base would have nothing to dock (`arrowLine` is hidden there).
+  Rendered + hit-tested in
   `src/canvas/selectionController.ts`; geometry in `src/utils/shapePorts.ts`
   (`getShapePortPoint`, bbox-based, so circle ports sit on the cardinal points
   and diamond ports on the tips). Clicking a port pulls out a connector whose
@@ -612,9 +636,12 @@ detached copy in a group overlay will disagree.
 Two inputs, and they are not interchangeable:
 
 - **`metadata.resist`** — the numeric strength, and the _only_ mechanism for
-  `point` / `area` / `route` / geo `pencil`. Point and geoText counter-scale
-  the whole group; area/route/geo-pencil counter-scale stroke width only
-  (`GROUP_SCALED_TYPES` vs `isStrokeScaled` — don't unify them).
+  `point` / `area` / `route` / geo `pencil` / geo `circle`. Point and geoText
+  counter-scale the whole group; area/route/geo-pencil/geo-circle counter-scale
+  stroke width only (`GROUP_SCALED_TYPES` vs `isStrokeScaled` — don't unify
+  them). Two of those five are decided by `objectClass`, not `componentType`:
+  pencil and circle are offered on every base, so only the column says whether
+  a given one was drawn on a map.
 - **`zoomResistant` (column)** — the user-facing on/off switch, surfaced as
   **Zoom resistant** in the `GEO_TEXT` property set. Read for **`geoText` only**;
   `false` forces resist 0 (the label scales with the map), `null`/absent/`true`
@@ -640,6 +667,35 @@ fallback or the first undo is a no-op. Covered by
 
 Rules that live in more than one file, each of which had drifted at least once.
 
+- **The camera input model belongs to the base type, not to the app.** Both
+  handlers branch on `activeBaseTypeRef` inside `addZUI` (`newCanvas.tsx`). On
+  the **map** base the wheel only ever zooms and a drag over empty canvas pans,
+  with `shift`+drag left as the only box-select — the idiom of every mapping
+  product anyone arrives from. On the **board** base a plain wheel pans, a
+  modifier (`cmd`/`ctrl`/`shift`) zooms, and a drag marquees — the idiom of
+  Figma, Miro and Excalidraw. Neither is the "real" one; changing either means
+  reading both, which is why `map-wheel-zoom.spec.js` asserts each against the
+  other. Three things hang off this. The pan branch is reached from the
+  `shape === null` arm of mousedown, **after** the selection clearing, so a
+  click that never moves still deselects and a drag that starts on an element
+  still moves that element. `beginMousePan` binds to `window`, not
+  `domElement`, so a release outside the canvas still ends the pan. And the
+  wheel listener is `{ passive: false }` and calls `preventDefault()`
+  unconditionally: the SVG is a fixed full-viewport surface with nothing behind
+  it to scroll, and without it `ctrl`+wheel page-zooms the browser and Safari
+  reads a horizontal two-finger swipe as back-navigation. The legacy
+  `mousewheel` alias is deliberately **not** bound alongside `wheel` — a
+  browser firing both would now double-apply the zoom.
+- **A wheel event's units are per-browser and per-device.** `wheelZoomStep`
+  (`utils/wheelZoom.ts`) is the single reader. It prefers `wheelDeltaY` where it
+  exists, because that is what shipped and it is *not* a fixed multiple of
+  `deltaY` (a discrete notch reports 120 against a `deltaY` of 100; a trackpad
+  reports 3x) — deriving one from the other changes the feel of one device to
+  fix the other. Firefox sets neither and reports LINE units, which worked out
+  to a ~0.3% zoom per notch: survivable while zoom was a modifier gesture,
+  not once the bare wheel became the map's primary control. The step is clamped
+  because macOS trackpads keep emitting inertial events after the fingers lift,
+  and one of those can otherwise cross several zoom levels in a frame.
 - **The absolute-vertex-metadata family owns its geometry in `metadata`, not
   in `x`/`y`.** pencil, area, route and curvedLine store ABSOLUTE vertex coords
   and their factories rebuild the path as `metadata - (x, y)`, so `x`/`y` is
@@ -728,5 +784,9 @@ Rules that live in more than one file, each of which had drifted at least once.
   ends in `enterPanMode()`.
 
 Covered by `tests/e2e/map-mobile-controls.spec.js`,
-`tests/e2e/canvas-interaction-fixes.spec.js` and
-`tests/e2e/geo-move-paste-select.spec.js`.
+`tests/e2e/canvas-interaction-fixes.spec.js`,
+`tests/e2e/geo-move-paste-select.spec.js` and
+`tests/e2e/map-wheel-zoom.spec.js` — the last is the only spec in the suite
+that drives a real `wheel` event or a real camera drag. Every other zoom test
+reaches in through `window.__cbZui` plus a synthetic `zoomChanged`, and would
+pass no matter what the input handlers did.

@@ -15,6 +15,7 @@ import { useMediaQueryUtils } from '../../constants/exportHooks'
 import type { ComponentRecord } from '../../types/base'
 import {
     GEO_TYPE_DEFAULTS,
+    GEO_CIRCLE_DEFAULTS,
     POINT_COLOR,
     POINT_RADIUS,
     DEFAULT_GEO_RESIST,
@@ -516,6 +517,30 @@ const PrimarySidebar = (): ReactElement => {
                         fill: useShapeFill ? (defaultFill ?? fb.fill) : fb.fill,
                         textColor: fb.textColor,
                         updatedBy: userId,
+                    }
+                }
+
+                // A circle drawn on a map base is a geo object, not a
+                // whiteboard shape: map-only (objectClass is what
+                // isRecordVisibleOnBaseType reads), half-transparent so the
+                // basemap reads through it, and its outline starts as its fill
+                // so it lands as one mark. Everything else about it — factory,
+                // component, resize, undo, clipboard — is the whiteboard
+                // circle, unchanged. Same trick the pencil plays.
+                //
+                // opacity goes on the top-level column, not metadata.opacity:
+                // readOpacity prefers the column, and the column is what the
+                // insert input and the base-load query carry.
+                if (isMapBaseType && label === 'circle' && shapeData) {
+                    const geoFill = GEO_CIRCLE_DEFAULTS.fill
+                    shapeData = {
+                        ...(shapeData as ComponentRecord),
+                        objectClass: 'geo',
+                        fill: geoFill,
+                        stroke: geoFill,
+                        linewidth:
+                            defaultLinewidth ?? GEO_CIRCLE_DEFAULTS.linewidth,
+                        opacity: GEO_CIRCLE_DEFAULTS.opacity,
                     }
                 }
 

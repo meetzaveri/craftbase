@@ -68,15 +68,21 @@ export function resolveResist(item: ShapeLike): number {
 }
 
 /**
- * Stroke-resist applies to a pencil only when the stroke was drawn on a
- * geographic base. Freehand is offered on every base, so unlike area/route its
- * `componentType` does not settle the question — `objectClass` does. A board-base
- * scribble must keep scaling with the world like every other whiteboard mark.
+ * Stroke-resist applies to a pencil or a circle only when it was drawn on a
+ * geographic base. Both are offered on every base, so unlike area/route their
+ * `componentType` does not settle the question — `objectClass` does. A
+ * board-base scribble or circle must keep scaling with the world like every
+ * other whiteboard mark.
+ *
+ * A map circle marks a real-world radius, so its geometry stays world-scaled;
+ * only the outline is held near-constant, or the ring becomes a thick band at
+ * z18 and disappears at z4.
  */
 export function isStrokeScaled(item: ShapeLike): boolean {
     const type = item?.componentType
     if (STROKE_SCALED_TYPES.has(type)) return true
-    return type === 'pencil' && item?.objectClass === 'geo'
+    if (item?.objectClass !== 'geo') return false
+    return type === 'pencil' || type === 'circle'
 }
 
 /**

@@ -55,6 +55,13 @@ export interface ComponentRecord {
     radius: number | null
     iconStroke: string | null
     textColor: string | null
+    /**
+     * Per-element opacity (0–1). A real column; `metadata.opacity` is the
+     * legacy spelling, still read as a fallback by readOpacity(). Optional
+     * because most creation paths leave it unset and let readOpacity default
+     * to 1 — the map circle is the exception, seeded at GEO_CIRCLE_DEFAULTS.
+     */
+    opacity?: number | null
     baseId: string | null
     baseName: string | null
     metadata: ComponentMetadata | null

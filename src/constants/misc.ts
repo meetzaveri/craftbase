@@ -249,6 +249,18 @@ export const GEO_TYPE_DEFAULTS: Record<
     route: { stroke: '#3B82F6', linewidth: 3 },
 }
 
+// The map circle is componentType 'circle' + objectClass 'geo' — not a type of
+// its own — so it cannot live in GEO_TYPE_DEFAULTS, which is keyed by
+// GeoObjectType. Its fill is deliberately NOT the shared `defaultFill`: that
+// default is the whiteboard's pale shape fill, which at 50% over a basemap is
+// invisible. Stroke is not listed because a new map circle takes its fill as
+// its stroke, so the two read as one mark until the user separates them.
+export const GEO_CIRCLE_DEFAULTS = {
+    fill: '#A32D2D',
+    linewidth: 2,
+    opacity: 0.5,
+} as const
+
 // Multi-click draw preview (area / route / curvedLine): the dots and rubber-band
 // are a *drawing aid*, so they are sized in SCREEN pixels and divided by the
 // live camera scale before going into the scene. Without that they are plain

@@ -724,9 +724,7 @@ export default class SelectionController {
         )
         this.ui.rotation = this.currentGroup.rotation || 0
 
-        const isPortShapeSelected = isPortShape(
-            this.currentGroup?.elementData?.componentType
-        )
+        const isPortShapeSelected = isPortShape(this.currentGroup?.elementData)
         // Ports only render when the connectors feature flag is on (live).
         const portsOn = isPortShapeSelected && getConnectorsEnabled()
         this.portHandles.visible = portsOn
@@ -1042,7 +1040,7 @@ export default class SelectionController {
         // Single chokepoint for both hover (port arrow) and `hitTestPort`
         // (pull-out). Off when connectors are disabled.
         if (!getConnectorsEnabled()) return null
-        if (!isPortShape(this.currentGroup?.elementData?.componentType)) {
+        if (!isPortShape(this.currentGroup?.elementData)) {
             return null
         }
         const scale = this.zui.scale || 1

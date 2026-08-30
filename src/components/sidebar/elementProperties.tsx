@@ -104,6 +104,13 @@ const SETS = {
     GEO_POINT: ['fill', 'textSize', 'textFont'],
     GEO_AREA: ['stroke', 'strokeWidth', 'strokeType'],
     GEO_ROUTE: ['stroke', 'strokeWidth', 'strokeType'],
+    // The map circle: the same componentType as the whiteboard circle, so this
+    // set is what separates the two in the toolbar. It keeps fill (a circle is
+    // a filled mark, unlike an area whose fill is derived) but drops opacity —
+    // a map circle is created half-transparent so the basemap reads through it,
+    // and that is the behaviour, not a knob. Omitting the section IS how the
+    // control is hidden, same as for point/area/route.
+    GEO_CIRCLE: ['fill', 'stroke', 'strokeWidth', 'strokeType'],
     RECT_WITH_TEXT: [
         'fill',
         'stroke',
@@ -141,6 +148,7 @@ const SET_LABELS = {
     GEO_POINT: 'Point',
     GEO_AREA: 'Area',
     GEO_ROUTE: 'Route',
+    GEO_CIRCLE: 'Circle',
 }
 
 interface ResolveSetKeyOptions {
@@ -154,6 +162,10 @@ interface ResolveSetKeyOptions {
     // Active tool from the toolbar (e.g. 'route'/'area'/'point' while a geo
     // draw is in progress, before any vertex/element is selected).
     currentElement: string | null
+    // The active base type. Needed only for the armed-tool branch: 'circle' is
+    // one tool name serving two elements, and with nothing selected yet there
+    // is no record to read objectClass off.
+    activeBaseType: string | null
 }
 
 function resolveSetKey({
@@ -163,6 +175,7 @@ function resolveSetKey({
     selectedGroup,
     isTextDrawMode,
     currentElement,
+    activeBaseType,
 }: ResolveSetKeyOptions): string | null {
     // A focused group beats every other mode — show the union toolbar.
     if (selectedGroup) return 'GROUP'
@@ -177,9 +190,18 @@ function resolveSetKey({
         // otherwise fall into the SHAPE branch below, and a point's circle
         // would read as a plain shape and offer stroke/width controls it has
         // no use for.
+        const objectClass =
+            selectedComponent?.group?.data?.elementData?.objectClass
         if (elementType === 'point') return 'GEO_POINT'
         if (elementType === 'area') return 'GEO_AREA'
         if (elementType === 'route') return 'GEO_ROUTE'
+        // The map circle shares componentType 'circle' with the whiteboard
+        // circle — objectClass is the only thing telling them apart. It has to
+        // be resolved here, above both the isShapeWithText and SHAPE branches,
+        // because either of those would hand it the opacity control it must
+        // not have.
+        if (elementType === 'circle' && objectClass === 'geo')
+            return 'GEO_CIRCLE'
         // Map text, before the isStandaloneTextType checks below would fold it
         // into the shared TEXT set. Both spellings are checked because
         // `shape.type` is set from elementData.componentType for a selection
@@ -233,6 +255,15 @@ function resolveSetKey({
     // Point is excluded: its category lives in the toolbar drawer, not here.
     if (currentElement === 'area') return 'GEO_AREA'
     if (currentElement === 'route') return 'GEO_ROUTE'
+    // Circle armed on a map base. Gated on the base type rather than the tool
+    // name alone, because the whiteboard circle deliberately shows no armed
+    // panel (it is drag-to-draw, and its defaults are edited via a selection).
+    if (
+        currentElement === 'circle' &&
+        activeBaseType &&
+        activeBaseType !== 'board'
+    )
+        return 'GEO_CIRCLE'
     // Curved-line tool armed (multi-click): show the line panel so a stroke
     // tweak seeds the next draw, mirroring pencil/geo behavior.
     if (currentElement === 'curvedLine') return 'LINE'
@@ -631,6 +662,7 @@ const ElementPropertiesToolbar = () => {
         selectedComponent,
         selectedGroup,
         currentElement,
+        activeBaseType,
         applyProperty,
         applyGroupProperty,
         reorderSelected,
@@ -657,6 +689,7 @@ const ElementPropertiesToolbar = () => {
                 selectedGroup,
                 isTextDrawMode,
                 currentElement,
+                activeBaseType,
             }),
         [
             isRubberMode,
@@ -665,6 +698,7 @@ const ElementPropertiesToolbar = () => {
             selectedGroup,
             isTextDrawMode,
             currentElement,
+            activeBaseType,
         ]
     )
 
@@ -796,10 +830,13 @@ const ElementPropertiesToolbar = () => {
                     onChangeComplete={handle('fill')}
                     isExpanded={expandedSection === 'fill'}
                     onToggleExpand={() => toggleSection('fill')}
-                    // A point's quick row runs dark; every other fill
-                    // stays pastel. See pointFillEssentialShades.
+                    // Map fills run dark; every other fill stays pastel. See
+                    // pointFillEssentialShades — the pastels are tuned to sit
+                    // behind text, and on CARTO Positron's pale greys they
+                    // disappear. A map circle is half-transparent on top of
+                    // that, so it needs the saturated row even more than a pin.
                     essentialColors={
-                        setKey === 'GEO_POINT'
+                        setKey === 'GEO_POINT' || setKey === 'GEO_CIRCLE'
                             ? pointFillEssentialShades
                             : fillEssentialShades
                     }

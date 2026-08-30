@@ -105,6 +105,14 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
             setDefaultTextFontFamily,
         } = deps
 
+        // The map circle: componentType 'circle' carrying objectClass 'geo'.
+        // Needed before the default sync below, which is why it is read here
+        // rather than alongside the other selection lookups further down.
+        const selectedElementData = selectedComponent?.group?.data?.elementData
+        const isGeoCircle =
+            selectedElementData?.componentType === 'circle' &&
+            selectedElementData?.objectClass === 'geo'
+
         // 1. Update the matching default. Opacity is deliberately excluded — it
         // is a per-element property only and must never persist as a default,
         // otherwise drawing a new shape after dimming one (e.g. to 0%) would
@@ -115,9 +123,17 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
         // size default travels as a ladder LABEL ('S'…'XL'), not a pixel count,
         // so the same default reads correctly against the point's own ladder
         // and the whiteboard's. Skipped entirely in preview mode.
+        //
+        // A map circle's fill opts out too, for the same per-element reason:
+        // it is that circle's identity on the basemap, not a shape preference.
+        // Syncing it would repaint the next whiteboard rectangle in map red,
+        // and the reverse would seed the next map circle with the whiteboard's
+        // pale #f4f4f2 — which at 50% over a basemap is invisible. Only fill,
+        // not stroke/width/type: those keep syncing, matching area and route.
         if (!opts?.preview) {
-            if (propertyKey === 'fill') setDefaultFill(value)
-            else if (propertyKey === 'stroke') setDefaultStrokeColor(value)
+            if (propertyKey === 'fill') {
+                if (!isGeoCircle) setDefaultFill(value)
+            } else if (propertyKey === 'stroke') setDefaultStrokeColor(value)
             else if (propertyKey === 'linewidth') setDefaultLinewidth(value)
             else if (propertyKey === 'strokeType')
                 setDefaultStrokeType(value === 'solid' ? null : value)

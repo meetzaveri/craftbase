@@ -268,8 +268,10 @@ export const staticPrimaryElementData: PrimarySection[] = [
     },
 ]
 
-// Geo tools (point / area / route). Surfaced in the toolbar only when the
-// consumer passes `geoObjectsEnabled` — appended alongside the shape tools.
+// Geo tools (point / area+circle / route / text). Appended to the toolbar by
+// the active base type's `extraTools` — see mapType.ts — after `hiddenTools`
+// has stripped the board tools, which is why the circle entry below survives
+// even though 'circle' is in GEO_HIDDEN_TOOLS.
 export const geoElementData: PrimaryElement[] = [
     {
         elementName: 'point',
@@ -280,12 +282,32 @@ export const geoElementData: PrimaryElement[] = [
         drawerData: [],
     },
     {
-        elementName: 'area',
-        elementDisplayName: 'Area',
-        elementIcon: PolygonIcon,
-        hasDrawer: false,
-        noAction: false,
-        drawerData: [],
+        // Area + Circle share one slot. On desktop this is flattened into two
+        // flat buttons (see DESKTOP_FLATTENED_DRAWERS in shapesToolbar); on
+        // mobile it stays a drawer, whose trigger shows the circle icon.
+        //
+        // The circle child keeps elementName 'circle' — the same name the
+        // whiteboard tool uses — because that is what buys the reuse:
+        // addElement('circle') already lands on the drag-to-draw path. What
+        // makes it a map object is objectClass: 'geo', stamped at creation in
+        // primary.tsx, exactly as the pencil does.
+        elementName: 'geoShapes',
+        elementDisplayName: 'Shapes',
+        elementIcon: CircleIcon,
+        hasDrawer: true,
+        noAction: true,
+        drawerData: [
+            {
+                elementName: 'area',
+                elementDisplayName: 'Area',
+                elementIcon: PolygonIcon,
+            },
+            {
+                elementName: 'circle',
+                elementDisplayName: 'Circle',
+                elementIcon: CircleIcon,
+            },
+        ],
     },
     {
         elementName: 'route',

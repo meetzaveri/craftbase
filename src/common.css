@@ -47,6 +47,20 @@
     cursor: grabbing !important;
 }
 
+/* Map base, select mode: empty canvas drags the geography, so the bare surface
+   carries the same grab affordance the pan tool does. Deliberately NOT applied
+   to shapes or text — on a map those are still grabbed and moved, and the
+   per-shape cursor is the honest signal for that. Below the pan-mode rules so
+   an explicit pan tool still wins on everything. */
+.map-drag-pan {
+    cursor: grab;
+}
+.map-drag-pan.panning,
+.map-drag-pan.panning .dragger-picker,
+.map-drag-pan.panning text {
+    cursor: grabbing !important;
+}
+
 .rounded-50-percent {
     border-radius: 50%;
 }

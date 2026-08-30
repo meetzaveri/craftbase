@@ -773,6 +773,19 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         zuiInBaseRef.current?.setZoomLimits?.(limits.min, limits.max)
     }, [activeBaseType, zuiInBase])
 
+    // Grab affordance for the map base's empty-canvas drag-to-pan (common.css).
+    // Gated on the select tool specifically, not merely "no draw mode": with a
+    // geo tool armed the next drag authors an object, and a grab cursor would
+    // be promising the wrong gesture.
+    useEffect(() => {
+        const root = document.getElementById('main-two-root')
+        if (!root) return
+        root.classList.toggle(
+            'map-drag-pan',
+            activeBaseType === 'map' && currentElement === 'pointer'
+        )
+    }, [activeBaseType, currentElement])
+
     // Re-glue every docked connector whose bound shape is present in `store`.
     // The listener in newCanvas polls for fresh mounts, so dispatching now
     // (before the elements mount) is safe.
