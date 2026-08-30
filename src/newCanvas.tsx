@@ -551,9 +551,23 @@ function addZUI(
      * The value must carry any scale the element has, because it REPLACES what
      * Two.js rendered, matrix and all. The zoom-resistant geo elements (point
      * pins, geoText) keep their whole counter-scale there, so dropping it would
-     * snap them to world size mid-drag. Emitting translate → scale reproduces
-     * Two.js's own composition; rotation never reaches here (rotated elements
-     * are ineligible for this path).
+     * snap them to world size mid-drag. Rotation never reaches here (rotated
+     * elements are ineligible for this path).
+     *
+     * It must be ONE `matrix(...)`, never `translate(...) scale(...)`. The two
+     * are numerically identical — translate-then-scale composes to exactly this
+     * matrix — but Blink does not treat them identically for paint
+     * invalidation. Far from a map anchor the surface coordinates are huge (San
+     * Francisco is ~18.2M units out on a base anchored in Ahmedabad, past the
+     * 2^24 float32 integer limit), and with the transform-list form the element
+     * was placed correctly and then never repainted: it vanished for the length
+     * of the drag and came back on release, when two.update() rewrote the
+     * matrix. Position was never wrong, which is why it does not look like a
+     * coordinate bug and why `getBoundingClientRect` reads clean throughout.
+     * Emitting the same form Two.js itself renders costs nothing and keeps the
+     * element on the browser's fast, well-trodden path. It reproduces only on a
+     * real GPU; headless rasterization paints it fine, so no headless test can
+     * catch a regression here.
      */
     const cssMoveTransform = (
         x: number,
@@ -562,11 +576,9 @@ function addZUI(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         scale?: any
     ): string => {
-        const translate = `translate(${x}, ${y})`
         const sx = typeof scale === 'number' ? scale : (scale?.x ?? 1)
         const sy = typeof scale === 'number' ? scale : (scale?.y ?? 1)
-        if (sx === 1 && sy === 1) return translate
-        return `${translate} scale(${sx}, ${sy})`
+        return `matrix(${sx} 0 0 ${sy} ${x} ${y})`
     }
 
     /**

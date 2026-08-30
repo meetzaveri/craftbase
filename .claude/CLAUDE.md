@@ -778,6 +778,18 @@ Rules that live in more than one file, each of which had drifted at least once.
   selection chrome) or Two.js sees a clean node and leaves the last drag frame
   standing. The win being protected is skipping the full-scene `two.update()`
   per frame — never the compositing.
+- **That attribute must be one `matrix(...)`, never `translate(...) scale(...)`.**
+  They are numerically identical, and Blink still does not invalidate them
+  alike. Far from a map anchor the coordinates are enormous (San Francisco sits
+  ~18.2M surface units out on a base anchored in Ahmedabad, past the 2^24
+  float32 integer limit), and in the transform-list form the element was placed
+  correctly and then simply not repainted: it vanished for the whole drag and
+  returned on release, when `two.update()` rewrote the matrix. It hit every
+  element type, not one, because the fast path is shared. Two traps for whoever
+  debugs the next one of these: the position is never wrong, so
+  `getBoundingClientRect` reads clean the entire time and only pixels show it;
+  and it needs a real GPU, so headless rasterization paints it correctly and no
+  headless test can catch the regression.
 - **Paste moves the selection to the clone.** The clipboard clears the source's
   chrome and dispatches `SELECT_COMPONENT_EVENT` once the clone has mounted;
   `newCanvas` answers it — `selectionController.attach` for the shapes it owns,
