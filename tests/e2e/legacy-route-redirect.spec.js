@@ -6,7 +6,7 @@
 // in App.tsx. It is three lines, which is exactly why it needs a test: it is
 // easy to delete by accident and nothing else in the suite touches it.
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from './helpers/test.js'
 
 const BASE_ID = '11111111-1111-1111-1111-111111111111'
 

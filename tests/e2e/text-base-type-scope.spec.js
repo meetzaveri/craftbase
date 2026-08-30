@@ -11,6 +11,10 @@
 
 import { test, expect } from './helpers/test.js'
 import { setupLocalBase, getCanvasBox } from './helpers/index.js'
+// Asserted in Node: this is a pure predicate over a record. Reaching it with
+// `await import('/src/…​.ts')` inside page.evaluate only worked against the Vite
+// dev server, so it 404'd against the deploy preview's production bundle.
+import { isRecordVisibleOnBaseType } from '../../src/utils/geoVisibility'
 
 /** Double-click empty canvas to create a text element, then type into it. */
 async function createText(page, content) {
@@ -47,51 +51,29 @@ test.describe('text is scoped to its authoring base type', () => {
         scopes.forEach((s) => expect(s).toBe('board'))
     })
 
-    test('the visibility rule hides unscoped legacy newText on the map', async ({
-        page,
-    }) => {
+    test('the visibility rule hides unscoped legacy newText on the map', () => {
         // Exercises the rule directly against a record shaped like one written
         // before `baseTypeScope` existed — the case a fresh-draw test cannot
         // produce any more, and the one users are actually carrying.
-        const verdicts = await page.evaluate(async () => {
-            const mod = await import('/src/utils/geoVisibility.ts')
-            const legacyText = { componentType: 'newText', metadata: {} }
-            const scopedToBoard = {
-                componentType: 'newText',
-                metadata: { baseTypeScope: 'board' },
-            }
-            const geoText = {
-                componentType: 'geoText',
-                objectClass: 'geo',
-                metadata: {},
-            }
-            return {
-                legacyOnBoard: mod.isRecordVisibleOnBaseType(
-                    legacyText,
-                    'board'
-                ),
-                legacyOnMap: mod.isRecordVisibleOnBaseType(legacyText, 'map'),
-                scopedOnBoard: mod.isRecordVisibleOnBaseType(
-                    scopedToBoard,
-                    'board'
-                ),
-                scopedOnMap: mod.isRecordVisibleOnBaseType(
-                    scopedToBoard,
-                    'map'
-                ),
-                geoOnBoard: mod.isRecordVisibleOnBaseType(geoText, 'board'),
-                geoOnMap: mod.isRecordVisibleOnBaseType(geoText, 'map'),
-            }
-        })
+        const legacyText = { componentType: 'newText', metadata: {} }
+        const scopedToBoard = {
+            componentType: 'newText',
+            metadata: { baseTypeScope: 'board' },
+        }
+        const geoText = {
+            componentType: 'geoText',
+            objectClass: 'geo',
+            metadata: {},
+        }
 
         // Board text belongs to the board base, both legacy and scoped.
-        expect(verdicts.legacyOnBoard).toBe(true)
-        expect(verdicts.legacyOnMap).toBe(false)
-        expect(verdicts.scopedOnBoard).toBe(true)
-        expect(verdicts.scopedOnMap).toBe(false)
+        expect(isRecordVisibleOnBaseType(legacyText, 'board')).toBe(true)
+        expect(isRecordVisibleOnBaseType(legacyText, 'map')).toBe(false)
+        expect(isRecordVisibleOnBaseType(scopedToBoard, 'board')).toBe(true)
+        expect(isRecordVisibleOnBaseType(scopedToBoard, 'map')).toBe(false)
         // Map text is the mirror image — the asymmetry that made this a bug.
-        expect(verdicts.geoOnBoard).toBe(false)
-        expect(verdicts.geoOnMap).toBe(true)
+        expect(isRecordVisibleOnBaseType(geoText, 'board')).toBe(false)
+        expect(isRecordVisibleOnBaseType(geoText, 'map')).toBe(true)
     })
 })
 

@@ -18,6 +18,7 @@ import {
     GQL_MOCK_RESPONSES,
     setupLocalBase,
     getCanvasBox,
+    readCamera,
 } from './helpers/index.js'
 
 const BASE_ID = '11111111-1111-1111-1111-111111111111'
@@ -79,13 +80,6 @@ async function openMapBase(page, { components = [] } = {}) {
     // The landing camera is applied a beat after mount; read a stable camera.
     await page.waitForTimeout(1200)
 }
-
-/** The live ZUI camera, via the dev-only handle newCanvas exposes. */
-const readCamera = () => ({
-    scale: window.__cbTwo?.scene?.scale ?? null,
-    tx: window.__cbTwo?.scene?.translation?.x ?? null,
-    ty: window.__cbTwo?.scene?.translation?.y ?? null,
-})
 
 test.describe('map base: the wheel zooms', () => {
     test('a plain wheel changes scale, not translation alone', async ({
@@ -228,14 +222,16 @@ test.describe('map base: a drag over empty canvas pans', () => {
     }) => {
         await openMapBase(page, { components: [point()] })
 
+        // null means "no pin on the canvas", which is a real assertion below.
+        // A missing handle is a different failure and must not masquerade as it.
         const pointPos = () =>
             page.evaluate(() => {
-                const g = Array.from(
-                    window.__cbTwo?.scene?.children ?? []
-                ).find((c) => c?.elementData?.componentType === 'point')
-                return g
-                    ? { x: g.translation.x, y: g.translation.y }
-                    : null
+                const two = window.__cbTwo
+                if (!two) throw new Error('__cbTwo is missing')
+                const g = Array.from(two.scene.children).find(
+                    (c) => c?.elementData?.componentType === 'point'
+                )
+                return g ? { x: g.translation.x, y: g.translation.y } : null
             })
 
         const startPos = await pointPos()

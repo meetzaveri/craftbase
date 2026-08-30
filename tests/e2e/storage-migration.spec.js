@@ -8,7 +8,7 @@
 // Mirrors src/utils/storageMigration.ts. Seeds the PRE-rename shape, loads the
 // app, and asserts the post-rename shape.
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from './helpers/test.js'
 
 const BASE_ID = '11111111-1111-1111-1111-111111111111'
 

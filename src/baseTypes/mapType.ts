@@ -23,6 +23,7 @@ import type {
 import type { CameraChangeEvent } from '../types/base'
 import { geoElementData } from '../utils/constants'
 import { GEO_HIDDEN_TOOLS } from '../constants/misc'
+import { E2E_HOOKS } from '../utils/e2eHooks'
 import {
     resolveTimezoneCity,
     DEFAULT_ANCHOR_ZOOM,
@@ -207,9 +208,10 @@ export const mapType: BaseTypeProvider = {
             disposed: false,
         }
 
-        // Dev-only handle for inspecting the camera mirror from the console or a
-        // headless harness — same pattern as __cbZui / __cbTwo in newCanvas.
-        if (import.meta.env.DEV) {
+        // Debug handle for inspecting the camera mirror from the console or a
+        // headless harness — same pattern, and same gate, as __cbZui / __cbTwo
+        // in newCanvas. See src/utils/e2eHooks.ts.
+        if (E2E_HOOKS) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ;(window as any).__cbMap = handle
         }

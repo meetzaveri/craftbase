@@ -530,3 +530,28 @@ export async function addTextToRectangle(page, rectHandle, text) {
         groupId
     )
 }
+
+/**
+ * The live ZUI camera, read through the `window.__cbTwo` handle newCanvas
+ * exposes. Pass it straight to `page.evaluate(readCamera)`.
+ *
+ * It THROWS when the handle is absent rather than returning nulls. The two
+ * copies this replaced were optional-chained (`?? null`), which is what turned
+ * a build shipping without `VITE_E2E_HOOKS` into four baffling
+ * `expect(null).toBeCloseTo(...)` failures instead of one obvious one. If this
+ * message ever appears, the build lacks the handles — see src/utils/e2eHooks.ts.
+ */
+export const readCamera = () => {
+    const two = window.__cbTwo
+    if (!two) {
+        throw new Error(
+            '__cbTwo is missing: this build was made without VITE_E2E_HOOKS ' +
+                '(see src/utils/e2eHooks.ts and netlify.toml)'
+        )
+    }
+    return {
+        scale: two.scene.scale,
+        tx: two.scene.translation.x,
+        ty: two.scene.translation.y,
+    }
+}

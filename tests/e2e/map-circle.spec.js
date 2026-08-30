@@ -20,6 +20,13 @@ import {
     getCanvasBox,
     drawShape,
 } from './helpers/index.js'
+// The three rules below are pure predicates over a record, so they are asserted
+// directly in Node. They used to be reached with `await import('/src/…​.ts')`
+// inside page.evaluate, which only the Vite dev server can serve: against the
+// deploy preview's production bundle that path 404s.
+import { isRecordVisibleOnBaseType } from '../../src/utils/geoVisibility'
+import { isStrokeScaled } from '../../src/utils/counterScale'
+import { isPortShape } from '../../src/utils/shapePorts'
 
 const BASE_ID = '11111111-1111-1111-1111-111111111111'
 const ANCHOR = { lngLat: [-121.95, 37.35], zoom: 16 }
@@ -256,81 +263,43 @@ test.describe('the rules that separate the two circles', () => {
         await setupLocalBase(page)
     })
 
-    test('visibility: geo circle is map-only, plain circle is board-only', async ({
-        page,
-    }) => {
-        const verdicts = await page.evaluate(async () => {
-            const mod = await import('/src/utils/geoVisibility.ts')
-            const geoCircle = { componentType: 'circle', objectClass: 'geo' }
-            const boardCircle = { componentType: 'circle' }
-            return {
-                geoOnMap: mod.isRecordVisibleOnBaseType(geoCircle, 'map'),
-                geoOnBoard: mod.isRecordVisibleOnBaseType(geoCircle, 'board'),
-                boardOnMap: mod.isRecordVisibleOnBaseType(boardCircle, 'map'),
-                boardOnBoard: mod.isRecordVisibleOnBaseType(
-                    boardCircle,
-                    'board'
-                ),
-            }
-        })
+    test('visibility: geo circle is map-only, plain circle is board-only', () => {
+        const geoCircle = { componentType: 'circle', objectClass: 'geo' }
+        const boardCircle = { componentType: 'circle' }
 
         // This works with no change to geoVisibility at all: the objectClass
         // check runs BEFORE the BOARD_ONLY_TYPES set that contains 'circle'.
-        expect(verdicts.geoOnMap).toBe(true)
-        expect(verdicts.geoOnBoard).toBe(false)
-        expect(verdicts.boardOnMap).toBe(false)
-        expect(verdicts.boardOnBoard).toBe(true)
+        expect(isRecordVisibleOnBaseType(geoCircle, 'map')).toBe(true)
+        expect(isRecordVisibleOnBaseType(geoCircle, 'board')).toBe(false)
+        expect(isRecordVisibleOnBaseType(boardCircle, 'map')).toBe(false)
+        expect(isRecordVisibleOnBaseType(boardCircle, 'board')).toBe(true)
     })
 
-    test('only the geo circle counter-scales its stroke', async ({ page }) => {
-        const verdicts = await page.evaluate(async () => {
-            const mod = await import('/src/utils/counterScale.ts')
-            return {
-                geoCircle: mod.isStrokeScaled({
-                    componentType: 'circle',
-                    objectClass: 'geo',
-                }),
-                boardCircle: mod.isStrokeScaled({ componentType: 'circle' }),
-                geoPencil: mod.isStrokeScaled({
-                    componentType: 'pencil',
-                    objectClass: 'geo',
-                }),
-                boardPencil: mod.isStrokeScaled({ componentType: 'pencil' }),
-                area: mod.isStrokeScaled({ componentType: 'area' }),
-            }
-        })
-
+    test('only the geo circle counter-scales its stroke', () => {
         // Geometry stays world-scaled (a 5km radius stays 5km); only the ring
         // is held near-constant, or it is a thick band at z18 and gone at z4.
-        expect(verdicts.geoCircle).toBe(true)
+        expect(
+            isStrokeScaled({ componentType: 'circle', objectClass: 'geo' })
+        ).toBe(true)
         // The whiteboard circle is untouched — everything scales, as before.
-        expect(verdicts.boardCircle).toBe(false)
+        expect(isStrokeScaled({ componentType: 'circle' })).toBe(false)
         // The pencil rule this one is modelled on still holds.
-        expect(verdicts.geoPencil).toBe(true)
-        expect(verdicts.boardPencil).toBe(false)
-        expect(verdicts.area).toBe(true)
+        expect(
+            isStrokeScaled({ componentType: 'pencil', objectClass: 'geo' })
+        ).toBe(true)
+        expect(isStrokeScaled({ componentType: 'pencil' })).toBe(false)
+        expect(isStrokeScaled({ componentType: 'area' })).toBe(true)
     })
 
-    test('a geo circle exposes no connector ports', async ({ page }) => {
-        const verdicts = await page.evaluate(async () => {
-            const mod = await import('/src/utils/shapePorts.ts')
-            return {
-                geoCircle: mod.isPortShape({
-                    componentType: 'circle',
-                    objectClass: 'geo',
-                }),
-                boardCircle: mod.isPortShape({ componentType: 'circle' }),
-                boardRect: mod.isPortShape({ componentType: 'rectangle' }),
-                area: mod.isPortShape({ componentType: 'area' }),
-            }
-        })
-
+    test('a geo circle exposes no connector ports', () => {
         // arrowLine is hidden on a map base, so ports there dock to nothing.
-        expect(verdicts.geoCircle).toBe(false)
+        expect(
+            isPortShape({ componentType: 'circle', objectClass: 'geo' })
+        ).toBe(false)
         // The board shapes keep theirs.
-        expect(verdicts.boardCircle).toBe(true)
-        expect(verdicts.boardRect).toBe(true)
-        expect(verdicts.area).toBe(false)
+        expect(isPortShape({ componentType: 'circle' })).toBe(true)
+        expect(isPortShape({ componentType: 'rectangle' })).toBe(true)
+        expect(isPortShape({ componentType: 'area' })).toBe(false)
     })
 
     test('the whiteboard circle is unchanged: opaque, with an opacity control', async ({

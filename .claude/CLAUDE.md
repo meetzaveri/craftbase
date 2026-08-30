@@ -344,6 +344,42 @@ Child components access this context via `useContext(BaseContext)`.
 - Be sure to typecheck when you're done making a series of code changes
 - Prefer running single tests, and not the whole test suite, for performance
 
+## E2E tests run against a production build
+
+`yarn test:e2e` is one suite with one target. CI
+(`.github/workflows/e2e-deploy-preview.yml`) points it at a **Netlify deploy
+preview**, which serves a production bundle, not a dev server. Three rules
+follow, and all three were broken at once by specs authored locally and merged
+without ever running against a preview.
+
+- **Never gate a test affordance on `import.meta.env.DEV`.** That is a
+  compile-time constant, so the block is dead-code-eliminated out of the bundle
+  and the affordance is simply absent on CI. `src/utils/e2eHooks.ts` owns the
+  gate (`E2E_HOOKS`), widened by `VITE_E2E_HOOKS`, which `netlify.toml` sets for
+  the deploy-preview context only. Production still ships without the handles.
+- **Never `import('/src/**.ts')` inside `page.evaluate`.** Serving raw TypeScript
+  is a Vite dev-server behaviour; against a bundle it 404s. A pure function is
+  asserted in **Node**, by importing it at the top of the spec. Playwright
+  transpiles those imports, and the closure is checked to be free of
+  `import.meta` and module-scope DOM access.
+- **Read the camera through `readCamera` (`tests/e2e/helpers/index.js`), and let
+  it throw.** The two copies it replaced were optional-chained, which turned a
+  missing handle into `expect(null).toBeCloseTo(...)` and disguised one cause as
+  four unrelated assertion failures.
+
+Also: every spec must import `test` from `./helpers/test.js`, never from
+`@playwright/test`. That fixture carries the CI timeouts and hides the Netlify
+Drawer, an iframe the preview injects that wins the hit test on `isMobile`
+viewports and cannot reproduce locally.
+
+**Before merging a spec, run it against a real bundle.** This is the check that
+was missing:
+
+```
+VITE_E2E_HOOKS=true yarn build && yarn preview
+PLAYWRIGHT_BASE_URL=http://localhost:4173 CI=1 yarn test:e2e
+```
+
 ## Mobile testing on local network
 
 When testing on a real mobile device (laptop and phone on same WiFi):

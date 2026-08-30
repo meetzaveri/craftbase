@@ -11,7 +11,11 @@
 // base row, and the recipient's camera opens on the shared view — once.
 
 import { test, expect } from './helpers/test.js'
-import { baseRow, GQL_MOCK_RESPONSES } from './helpers/index.js'
+import { baseRow, GQL_MOCK_RESPONSES, readCamera } from './helpers/index.js'
+// The landing camera is derived from pure projection math, so it is computed in
+// Node. It used to run in-page via `await import('/src/…​.ts')`, which only the
+// Vite dev server can serve — against the deploy preview's bundle that 404s.
+import { scaleForMapZoom, lngLatToSurface } from '../../src/baseTypes/mercator'
 
 const BASE_ID = '11111111-1111-1111-1111-111111111111'
 
@@ -68,27 +72,24 @@ async function mockBase(page, { base, components = [] } = {}) {
     return requests
 }
 
-/** The live ZUI camera, via the dev-only handle newCanvas exposes. */
-const readCamera = () => ({
-    scale: window.__cbTwo?.scene?.scale ?? null,
-    tx: window.__cbTwo?.scene?.translation?.x ?? null,
-    ty: window.__cbTwo?.scene?.translation?.y ?? null,
-})
-
-/** What the app itself thinks the landing camera should be — same math, in-page. */
+/**
+ * What the app itself thinks the landing camera should be — same math, run here.
+ *
+ * The projection is pure, so it happens in Node; only the viewport dimensions
+ * have to come from the page, because tx/ty are pixel translations against the
+ * live canvas size.
+ */
 async function expectedCamera(page, anchor, landing) {
-    return page.evaluate(
-        async ([a, l]) => {
-            const m = await import('/src/baseTypes/mercator.ts')
-            const scale = m.scaleForMapZoom(l.zoom, a)
-            const { x, y } = m.lngLatToSurface(l.lngLat, a)
-            const two = window.__cbTwo
-            const vw = two.width || window.innerWidth
-            const vh = two.height || window.innerHeight
-            return { scale, tx: vw / 2 - x * scale, ty: vh / 2 - y * scale }
-        },
-        [anchor, landing]
-    )
+    const scale = scaleForMapZoom(landing.zoom, anchor)
+    const { x, y } = lngLatToSurface(landing.lngLat, anchor)
+    const { vw, vh } = await page.evaluate(() => {
+        const two = window.__cbTwo
+        return {
+            vw: two.width || window.innerWidth,
+            vh: two.height || window.innerHeight,
+        }
+    })
+    return { scale, tx: vw / 2 - x * scale, ty: vh / 2 - y * scale }
 }
 
 test.describe('a shared map lands the recipient on the shared spot', () => {

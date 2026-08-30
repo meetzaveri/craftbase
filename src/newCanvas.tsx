@@ -143,6 +143,7 @@ import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
 import { wheelZoomStep } from './utils/wheelZoom'
 import { scheduleRender } from './utils/renderScheduler'
 import { installRenderOrigin } from './canvas/renderOrigin'
+import { E2E_HOOKS } from './utils/e2eHooks'
 import { isRecordVisibleOnBaseType } from './utils/geoVisibility'
 import { SELECTION_CHROME_ATTR } from './utils/svgExportShared'
 import { computeCounterScale } from './utils/counterScale'
@@ -5228,9 +5229,12 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // element's translation in absolute surface coords.
         const renderOrigin = installRenderOrigin(two)
 
-        // Dev-only handles for profiling the camera from the console or a
-        // headless perf harness (drive the zoom/pan without synthesising input).
-        if (import.meta.env.DEV) {
+        // Debug handles for profiling the camera from the console or a
+        // headless harness (drive the zoom/pan without synthesising input), and
+        // the channel the canvas e2e specs read the camera through. Gated on
+        // E2E_HOOKS, not on DEV: a deploy preview is a production build, and
+        // the specs run against one. See src/utils/e2eHooks.ts.
+        if (E2E_HOOKS) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             ;(window as any).__cbZui = zui_instance.zui
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
