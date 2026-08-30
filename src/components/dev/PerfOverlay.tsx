@@ -5,7 +5,7 @@
 // rasteriser). Shows live FPS, the worst frame gap over the last window (the
 // stutter metric), the total element count, how many are currently
 // viewport-culled, and the live zoom. Includes a viewport-culling toggle and a
-// "seed N shapes" button so a dense board can be reproduced on demand.
+// "seed N shapes" button so a dense base can be reproduced on demand.
 //
 // Reads the dev-only `window.__cbTwo` handle exposed by newCanvas. Rendered
 // only under import.meta.env.DEV, so it ships in no production bundle.
@@ -43,7 +43,7 @@ function countElements(two: Two): { total: number; culled: number } {
 }
 
 // Seed N simple shapes into a local draft and reload — mirrors the real
-// board-load path (draft restore), which is exactly the code we want to stress.
+// base-load path (draft restore), which is exactly the code we want to stress.
 function seedShapes(n: number): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const components: Record<string, any> = {}
@@ -66,7 +66,7 @@ function seedShapes(n: number): void {
             stroke: '#1c1c1c',
             linewidth: 2,
             strokeType: 'solid',
-            boardId: 'perf-board',
+            baseId: 'perf-base',
         }
         if (type === 'line') {
             base.x1 = x
@@ -79,7 +79,7 @@ function seedShapes(n: number): void {
     localStorage.setItem(
         DRAFT_STORAGE_KEY,
         JSON.stringify({
-            boardId: 'perf-board',
+            baseId: 'perf-base',
             components,
             timestamp: Date.now(),
         })

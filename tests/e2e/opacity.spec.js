@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     getCanvasBox,
     drawShape,
     drawArrow,
@@ -95,7 +95,7 @@ function expectHalfOpacity(value, label) {
 
 test.describe('Opacity — changing the slider dims the selected element', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     test('shape with text: both the shape and its text dim to 50%', async ({

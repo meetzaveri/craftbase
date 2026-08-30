@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     getCanvasBox,
     drawArrow,
     drawPencilStroke,
@@ -11,7 +11,7 @@ import {
     getDraftComponents,
 } from './helpers/index.js'
 
-// The board loads at camera scale 1 with no pan, so 1 viewport px == 1 surface
+// The base loads at camera scale 1 with no pan, so 1 viewport px == 1 surface
 // unit: moving the group by exactly 50px must shift every member's stored
 // coordinate by exactly 50. commitGroupMove writes each child's new x/y (and,
 // for the absolute-metadata family — pencil/curvedLine — its shifted vertex
@@ -100,7 +100,7 @@ const TYPES = ['line', 'arrowLine', 'pencil', 'curvedLine']
 
 test.describe('Line/CurvedLine group move — members displace by exactly 50', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     test('moving the group +50 on the x-axis shifts every member x by 50', async ({

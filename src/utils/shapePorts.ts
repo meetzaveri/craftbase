@@ -15,8 +15,20 @@ export type PortEdge = 'n-resize' | 'e-resize' | 's-resize' | 'w-resize'
 // diamond (custom path with width/height accessors) all provide.
 export const PORT_SHAPE_TYPES = new Set(['rectangle', 'circle', 'diamond'])
 
-export function isPortShape(componentType: unknown): boolean {
-    return typeof componentType === 'string' && PORT_SHAPE_TYPES.has(componentType)
+export function isPortShape(elementData: unknown): boolean {
+    const record = elementData as {
+        componentType?: unknown
+        objectClass?: unknown
+    } | null
+    // Geo objects never take connectors: arrowLine is hidden on a map base, so
+    // ports there would have nothing to dock. Matters because the map circle
+    // shares componentType 'circle' with the whiteboard one — objectClass is
+    // the only thing separating them.
+    if (record?.objectClass === 'geo') return false
+    return (
+        typeof record?.componentType === 'string' &&
+        PORT_SHAPE_TYPES.has(record.componentType)
+    )
 }
 
 // `gap` (surface units) pushes the anchor outward past the edge so the tail
@@ -136,7 +148,7 @@ export function findNearestPort(
     let bestSq = thresholdSq
 
     for (const group of groups) {
-        if (!isPortShape(group?.elementData?.componentType)) continue
+        if (!isPortShape(group?.elementData)) continue
         const shapeId = group?.elementData?.id
         if (excludeShapeId && shapeId === excludeShapeId) continue
 

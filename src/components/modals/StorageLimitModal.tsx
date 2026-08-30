@@ -5,7 +5,7 @@ import Button from '../common/button'
 interface StorageLimitModalProps {
     open: boolean
     onClose: () => void
-    boardUrl?: string | null
+    baseUrl?: string | null
     onStartNew: () => void
     onContinue: () => void
 }
@@ -13,13 +13,13 @@ interface StorageLimitModalProps {
 export default function StorageLimitModal({
     open,
     onClose,
-    boardUrl,
+    baseUrl,
     onStartNew,
     onContinue,
 }: StorageLimitModalProps): ReactElement {
     return (
         <Modal open={open} onClose={onClose} locked={false}>
-            <div className="p-4" style={{ minWidth: '400px' }}>
+            <div className="p-4" style={{ minWidth: 'min(400px, calc(100vw - 96px))' }}>
                 <h2 className="text-lg font-semibold mb-2">
                     Storage Limit Reached
                 </h2>
@@ -27,14 +27,14 @@ export default function StorageLimitModal({
                     Your local storage is full. Your current work has been
                     saved to the server.
                 </p>
-                {boardUrl && (
+                {baseUrl && (
                     <p className="text-sm text-neutrals-n700 mb-4 break-all">
-                        Saved board URL:{' '}
+                        Saved canvas URL:{' '}
                         <a
-                            href={boardUrl}
+                            href={baseUrl}
                             className="text-accent-dark underline"
                         >
-                            {boardUrl}
+                            {baseUrl}
                         </a>
                     </p>
                 )}
@@ -48,7 +48,7 @@ export default function StorageLimitModal({
                     <Button
                         intent="secondary"
                         size="medium"
-                        label="Continue on Saved Board"
+                        label="Continue on Saved Canvas"
                         onClick={onContinue}
                     />
                 </div>

@@ -1,11 +1,15 @@
-// Library entry. Consumers (e.g. craftmaps) import the Board view + a few
-// hooks/contexts from here. The standalone craftbase app keeps using its own
-// src/index.js — this file is purely the public surface.
+// Internal barrel.
+//
+// This was once the published surface for craftmaps. That consumer is gone and
+// nothing outside this repo imports it, so adding to or narrowing this file
+// carries no compatibility promise — see "Craftbase is a standalone product,
+// not a library" in CLAUDE.md. It survives as one convenient import point for
+// the app's own top-level pieces.
 
-export { default as Board } from './views/Board'
-// Context comes from the dedicated stable module (not board.tsx) so its identity
-// survives HMR — see boardContext.ts for the rationale.
-export { BoardContext, useBoardContext } from './views/Board/boardContext'
+export { default as Base } from './views/Base'
+// Context comes from the dedicated stable module (not base.tsx) so its identity
+// survives HMR — see baseContext.ts for the rationale.
+export { BaseContext, useBaseContext } from './views/Base/baseContext'
 
 export { useDrawingModes } from './hooks/useDrawingModes'
 export { useElementDefaults } from './hooks/useElementDefaults'
@@ -13,24 +17,23 @@ export { useMobileToolbarPanels } from './hooks/useMobileToolbarPanels'
 export { useLocalDraftPersistence } from './hooks/useLocalDraftPersistence'
 export { useComponentHistory } from './hooks/useComponentHistory'
 export { useCanvasClipboard } from './hooks/useCanvasClipboard'
+export { useActiveBaseType } from './hooks/useActiveBaseType'
 
-// Re-exports for consumer apps that need to set up the same Apollo wiring as
-// the standalone craftbase app. Keeps craftmaps from duplicating the user-
-// bootstrap mutation or username generator.
 export { INSERT_USER_ONE } from './schema/mutations'
 export { generateRandomUsernames } from './utils/misc'
 
-// Point categories — the built-in 7-category catalog a consumer can read to
-// build its own legend/filters. The `category` lives in a point's
-// metadata.category and drives its pin look.
-export { POINT_CATEGORIES, DEFAULT_POINT_CATEGORY } from './constants/misc'
-export type { PointCategory } from './constants/misc'
-
-// Public type surface. Re-export from the canonical types module so consumers
-// can `import type { BoardProps, BoardContextValue, ComponentRecord } from 'craftbase'`.
+// Base types — the swappable substrate a base is drawn on (board / map, with
+// image to come). `<Base defaultBaseType="map" />` opens on the map.
 export type {
-    BoardProps,
-    BoardContextValue,
+    BaseType,
+    BaseTypeConfig,
+    BaseTypeProvider,
+    MapAnchor,
+} from './baseTypes/types'
+
+export type {
+    BaseProps,
+    BaseContextValue,
     ComponentRecord,
     ComponentStore,
     ComponentMetadata,
@@ -42,4 +45,4 @@ export type {
     CurrentElement,
     HistoryEntry,
     RandomUsername,
-} from './types/board'
+} from './types/base'

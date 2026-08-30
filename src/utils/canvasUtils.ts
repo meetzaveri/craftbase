@@ -65,7 +65,7 @@ export function setArrowEndpointsVisible(
 // Single source of truth for reading an element's opacity off a store row /
 // props / elementData. Opacity is persisted in the top-level `opacity` column
 // for every element type. The legacy `metadata.opacity` read is kept as a
-// fallback so boards saved before the migration still render dimmed (pencil
+// fallback so bases saved before the migration still render dimmed (pencil
 // never used metadata.opacity — its metadata is the vertex array — so the
 // Array guard also covers it). Absent everywhere → fully opaque.
 export function readOpacity(
@@ -101,11 +101,25 @@ export function applyShapeStyle(
 }
 
 // Component-row shape passed into cloneElementData. Loose-but-honest mapping
-// over the DB schema; full ComponentRecord shape lives in src/types/board.ts
+// over the DB schema; full ComponentRecord shape lives in src/types/base.ts
 // but cloneElementData also handles canvas-only fields (relativeX/Y), hence
 // the local interface.
 interface ElementCloneSource {
     componentType: string
+    /**
+     * Which base the element belongs to. MUST be carried through a clone: it is
+     * the only thing marking a geo object as geo, and for the pencil — offered
+     * on every base — it is the only thing that says which base it was drawn on.
+     * Dropping it silently relocates the pasted copy to the wrong base.
+     */
+    objectClass?: 'shape' | 'geo'
+    /**
+     * geoText's zoom-resistance switch. Unlike a metadata key — which rides
+     * along inside the cloned `metadata` object for free — a column is only
+     * copied if it is named here, so omitting it would silently reset every
+     * pasted label to the default.
+     */
+    zoomResistant?: boolean | null
     x1: number
     y1: number
     x2: number
@@ -137,7 +151,7 @@ interface ElementCloneSource {
 
 interface ClonedElement extends ElementCloneSource {
     id: string
-    boardId: string
+    baseId: string
     x: number
     y: number
 }
@@ -146,14 +160,21 @@ interface ClonedElement extends ElementCloneSource {
 // and positioning at (newX, newY).
 export function cloneElementData(
     src: ElementCloneSource,
-    boardId: string,
+    baseId: string,
     newX: number,
     newY: number
 ): ClonedElement {
     const cloned: ClonedElement = {
         id: generateUUID(),
-        boardId,
+        baseId,
         componentType: src.componentType,
+        ...(src.objectClass ? { objectClass: src.objectClass } : {}),
+        // Only when actually set: nothing but geoText reads this column, so an
+        // unconditional copy would stamp a value onto every pasted rectangle
+        // and carry it into the share insert.
+        ...(src.zoomResistant != null
+            ? { zoomResistant: src.zoomResistant }
+            : {}),
         x: newX,
         y: newY,
         x1: src.x1,
@@ -580,7 +601,7 @@ export function shapeTextStyleFromMeta(meta: ShapeLike): {
 /**
  * Reflow a shape's text to its current width and render it into the text
  * layer. Single entry point used by the rectangle/diamond/circle components
- * on mount and whenever width/metadata change, so persisted boards reflow
+ * on mount and whenever width/metadata change, so persisted bases reflow
  * deterministically from raw content + width (no wrapped text is stored).
  * Caller owns `two.update()`.
  *

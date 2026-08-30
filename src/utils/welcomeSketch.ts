@@ -15,7 +15,7 @@ import { generateUUID } from './misc'
 import { pollUntilElement } from './canvasUtils'
 import { themeDefaultInk } from './themeColorFlip'
 import { DEFAULT_TEXT_FONT_FAMILY } from '../constants/misc'
-import type { ComponentRecord, ComponentStore } from '../types/board'
+import type { ComponentRecord, ComponentStore } from '../types/base'
 
 const SKETCH_OPACITY = 0.45
 const SKETCH_FONT = DEFAULT_TEXT_FONT_FAMILY
@@ -24,6 +24,22 @@ interface WelcomeMetadata {
     [key: string]: unknown
     isWelcome: true
     opacity: number
+    /**
+     * Pins these elements to the board base for good — see `baseTypeScope` in
+     * geoVisibility.ts.
+     *
+     * `isWelcome` alone is not enough, because it does not survive the user's
+     * first real interaction: `promoteWelcomeSketch` strips it to turn the
+     * sketch into the user's own content. The sketch's rectangles and arrows
+     * stay hidden off the board base regardless (their *types* are board-only),
+     * but its standalone text needs an explicit pin: text is scoped per record,
+     * and the sketch is seeded rather than authored, so it never passes through
+     * `buildTextShapeData` where that stamp is normally applied. Setting it here
+     * is what keeps promoted welcome copy ("Pick a shape", "Double-tap anywhere
+     * to add text") off the map. This tag is deliberately NOT one of the two
+     * that promotion removes.
+     */
+    baseTypeScope: 'board'
     // Marks the one element that types itself in first; the rest of the sketch
     // is held back until it finishes. See playWelcomeSketchEntrance.
     welcomeRole?: 'headline'
@@ -39,13 +55,20 @@ interface WelcomeMetadata {
 }
 
 function welcomeMetadata(
-    extra: Partial<Omit<WelcomeMetadata, 'isWelcome' | 'opacity'>> = {}
+    extra: Partial<
+        Omit<WelcomeMetadata, 'isWelcome' | 'opacity' | 'baseTypeScope'>
+    > = {}
 ): WelcomeMetadata {
-    return { isWelcome: true, opacity: SKETCH_OPACITY, ...extra }
+    return {
+        isWelcome: true,
+        baseTypeScope: 'board',
+        opacity: SKETCH_OPACITY,
+        ...extra,
+    }
 }
 
 function makeText(
-    boardId: string,
+    baseId: string,
     x: number,
     y: number,
     content: string,
@@ -70,8 +93,8 @@ function makeText(
         radius: null,
         iconStroke: null,
         textColor: themeDefaultInk(),
-        boardId,
-        boardName: null,
+        baseId,
+        baseName: null,
         metadata: welcomeMetadata({
             content,
             fontSize,
@@ -90,19 +113,19 @@ function makeText(
  * is revealed. See playWelcomeSketchEntrance.
  */
 function makeHeadline(
-    boardId: string,
+    baseId: string,
     x: number,
     y: number,
     content: string,
     fontSize: number
 ): ComponentRecord {
-    const rec = makeText(boardId, x, y, content, fontSize)
+    const rec = makeText(baseId, x, y, content, fontSize)
     ;(rec.metadata as WelcomeMetadata).welcomeRole = 'headline'
     return rec
 }
 
 function makeRect(
-    boardId: string,
+    baseId: string,
     x: number,
     y: number,
     width: number,
@@ -126,8 +149,8 @@ function makeRect(
         radius: null,
         iconStroke: null,
         textColor: themeDefaultInk(),
-        boardId,
-        boardName: null,
+        baseId,
+        baseName: null,
         metadata: welcomeMetadata(),
         children: null,
         isDummy: null,
@@ -143,7 +166,7 @@ function makeRect(
  * is shaped — one component, not a rect + separate text overlay.
  */
 function makeRectWithText(
-    boardId: string,
+    baseId: string,
     x: number,
     y: number,
     width: number,
@@ -169,8 +192,8 @@ function makeRectWithText(
         radius: null,
         iconStroke: null,
         textColor: themeDefaultInk(),
-        boardId,
-        boardName: null,
+        baseId,
+        baseName: null,
         metadata: welcomeMetadata({
             hasText: true,
             textContent: text,
@@ -189,7 +212,7 @@ function makeRectWithText(
 type StrokeType = 'solid' | 'dashed' | 'dotted'
 
 function makeArrow(
-    boardId: string,
+    baseId: string,
     x: number,
     y: number,
     x1: number,
@@ -217,8 +240,8 @@ function makeArrow(
         radius: null,
         iconStroke: null,
         textColor: null,
-        boardId,
-        boardName: null,
+        baseId,
+        baseName: null,
         metadata: welcomeMetadata(),
         children: null,
         isDummy: null,
@@ -247,7 +270,7 @@ export interface WelcomeSketchViewport {
  * points "Pick a shape" arrow down-left at the bottom toolbar.
  */
 function buildMobileWelcomeSketch(
-    boardId: string,
+    baseId: string,
     width: number,
     height: number
 ): ComponentStore {
@@ -257,21 +280,21 @@ function buildMobileWelcomeSketch(
         // Subhead — two compact lines in the upper-left, sitting well inside
         // the corner. Both lines type themselves in (top line first), then the
         // rest of the sketch follows.
-        makeHeadline(boardId, 72, 132, 'A minimal "infinite" whiteboard.', 22),
-        makeHeadline(boardId, 72, 164, 'Start drawing →', 20),
+        makeHeadline(baseId, 72, 132, 'A minimal "infinite" whiteboard.', 22),
+        makeHeadline(baseId, 72, 164, 'Start drawing →', 20),
 
         // Rect-with-text centered. "Tap me" since drag-on-touch is two-finger.
-        makeRectWithText(boardId, cx, 220, 150, 80, 'Tap me', 22),
+        makeRectWithText(baseId, cx, 220, 150, 80, 'Tap me', 22),
 
         // Standalone label below the rect.
-        makeText(boardId, cx - 110, 290, 'Double-tap anywhere to add text', 18),
+        makeText(baseId, cx - 110, 290, 'Double-tap anywhere to add text', 18),
 
         // Arrow pointing straight DOWN to the bottom shapes toolbar.
         // Group origin centered horizontally; arrowhead lands just above the
         // toolbar row.
-        makeArrow(boardId, cx, height - 250, 0, 0, 0, 170, 'dashed'),
+        makeArrow(baseId, cx, height - 250, 0, 0, 0, 170, 'dashed'),
         makeText(
-            boardId,
+            baseId,
             cx - 60,
             height - 280,
             '↓ Pick a shape OR draw with pencil',
@@ -289,7 +312,7 @@ function buildMobileWelcomeSketch(
  * center and the arrow + label sit right of center.
  */
 function buildLargeWelcomeSketch(
-    boardId: string,
+    baseId: string,
     width: number,
     height: number
 ): ComponentStore {
@@ -300,23 +323,23 @@ function buildLargeWelcomeSketch(
         // Subhead — two-line sketch text in the upper-left region, sitting well
         // inside the corner and clear of the top-center shapes toolbar. Both
         // lines type themselves in (top line first), then the rest follows.
-        makeHeadline(boardId, 150, 175, 'A minimal "infinite" whiteboard.', 32),
-        makeHeadline(boardId, 150, 215, 'Start drawing →', 28),
+        makeHeadline(baseId, 150, 175, 'A minimal "infinite" whiteboard.', 32),
+        makeHeadline(baseId, 150, 215, 'Start drawing →', 28),
 
         // Rect-with-text: the rectangle carries its "Drag me" label via
         // metadata (hasText + textContent), matching the existing
         // RECT_WITH_TEXT element kind. One component, not a rect + overlay.
-        makeRectWithText(boardId, cx - 200, cy + 20, 180, 100, 'Drag me', 26),
+        makeRectWithText(baseId, cx - 200, cy + 20, 180, 100, 'Drag me', 26),
 
         // Arrow pointing UP toward the top shapes toolbar + label below it.
         // Anchored at screen center so it sits above the centered label below;
         // arrowhead lands near the toolbar row (~y=80 in screen space).
-        makeArrow(boardId, cx, cy - 110, 0, 0, 0, -(cy - 180), 'dashed'),
+        makeArrow(baseId, cx, cy - 110, 0, 0, 0, -(cy - 180), 'dashed'),
         // Label horizontally centered on screen. Text is left-aligned, so its
         // origin sits ~half the rendered width left of center. Vertical position
         // is unchanged.
         makeText(
-            boardId,
+            baseId,
             cx - 150,
             cy - 80,
             '↑ Pick a shape OR draw with pencil',
@@ -325,7 +348,7 @@ function buildLargeWelcomeSketch(
 
         // Standalone label — no arrow. Double-click is a canvas-wide action.
         makeText(
-            boardId,
+            baseId,
             cx + 60,
             cy + 100,
             'Double-click anywhere to add text',
@@ -334,9 +357,9 @@ function buildLargeWelcomeSketch(
 
         // Arrow toward the bottom-left zoom controls + label above it.
         // Zoom controls sit at roughly (80, H-40); arrowhead lands just above.
-        makeArrow(boardId, 240, height - 180, 0, 0, -150, 110, 'dashed'),
+        makeArrow(baseId, 240, height - 180, 0, 0, -150, 110, 'dashed'),
         makeText(
-            boardId,
+            baseId,
             250,
             height - 210,
             '↙ Zoom in / out with button OR "Cmd/Ctrl" + "Scroll" ',
@@ -348,14 +371,14 @@ function buildLargeWelcomeSketch(
 }
 
 export function buildWelcomeSketch(
-    boardId: string,
+    baseId: string,
     viewport: WelcomeSketchViewport
 ): ComponentStore {
     const { width, height, isMobile } = viewport
     if (isMobile) {
-        return buildMobileWelcomeSketch(boardId, width, height)
+        return buildMobileWelcomeSketch(baseId, width, height)
     }
-    return buildLargeWelcomeSketch(boardId, width, height)
+    return buildLargeWelcomeSketch(baseId, width, height)
 }
 
 /**

@@ -44,7 +44,7 @@ export function attachStrokeCounterScale(
     }
     // Seed once at mount. Batched, NOT a direct two.update(): every line/arrow
     // seeds on mount, so a synchronous render here is one full O(scene) render
-    // per element — O(N²) across a board load. scheduleRender coalesces them
+    // per element — O(N²) across a base load. scheduleRender coalesces them
     // all into a single render for the frame.
     set(initialScale || 1)
     scheduleRender(two)
@@ -74,7 +74,7 @@ export function attachHandleCounterScale(
     initialScale: number
 ): () => void {
     // Seed once at mount — batched for the same reason as above: one sync render
-    // per mounting element is O(N²) across a board load.
+    // per mounting element is O(N²) across a base load.
     applyHandleCounterScale(handles, initialScale || 1)
     scheduleRender(two)
     // On zoom, ONLY mutate — never call two.update() here. The camera's wheel

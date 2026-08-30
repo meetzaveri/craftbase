@@ -1,1 +1,7 @@
+# The embeddable-whiteboard page is retired: craftbase is a service you come and
+# use, not a component you embed. The URL is indexed, so it gets a real 301 to
+# the marketing page rather than a blank SPA route — this line must stay ABOVE
+# the catch-all, which matches everything.
+/embeddable-whiteboard  /home  301
+
 /*  /index.html  200

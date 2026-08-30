@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBoard,
+    setupLocalBase,
     drawRectangle,
     drawShape,
     drawArrow,
@@ -9,9 +9,9 @@ import {
     getCanvasBox,
 } from './helpers/index.js'
 
-test.describe('Smoke — board loads correctly', () => {
+test.describe('Smoke — base loads correctly', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBoard(page)
+        await setupLocalBase(page)
     })
 
     test('canvas SVG is rendered', async ({ page }) => {
