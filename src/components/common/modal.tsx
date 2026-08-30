@@ -10,6 +10,13 @@ const Backdrop = styled.div`
     right: 0;
     bottom: 0;
     left: 0;
+    /* Above every piece of canvas chrome, so an open modal actually OWNS the
+       screen. Without a stacking order of its own the backdrop painted below
+       the toolbars (z-index 10–20) and the toast (50): the dimmed page still
+       took clicks, so the base switcher, menu, share, primary toolbar and the
+       element-properties button all stayed live behind a modal that had the
+       user's full attention. Kept under the dev perf overlay (10000). */
+    z-index: 1000;
     background-color: rgba(51, 51, 51, 0.3);
     backdrop-filter: blur(1px);
     opacity: 0;

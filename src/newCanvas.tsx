@@ -54,6 +54,7 @@ import {
     GEO_DRAW_TYPE_KEY,
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
+    SELECT_COMPONENT_EVENT,
     GEO_MIN_VERTICES,
     DEFAULT_GEO_RESIST,
     GEO_PREVIEW_DOT_PX,
@@ -76,6 +77,7 @@ import { elementModules } from './elementModules'
 
 import Loader from './components/utils/loader'
 import SelectionController, {
+    buildToolbarState,
     PORT_GAP,
     PORT_RADAR_RADIUS,
     SELECTION_PADDING,
@@ -88,6 +90,10 @@ import {
     PORT_TAIL_STACK_GAP,
 } from './utils/shapePorts'
 import { generateUUID } from './utils/misc'
+import {
+    hasAbsoluteVertexMetadata,
+    shiftVertexMetadata,
+} from './utils/vertexMetadata'
 import {
     getConnectorsEnabled,
     subscribeConnectorsEnabled,
@@ -498,13 +504,15 @@ function addZUI(
     let drawPreviewActive = false
     let drawScreenOriginX = 0
     let drawScreenOriginY = 0
-    // CSS-transform move-drag: while dragging a non-rotated element (including
-    // the group overlay, whose member copies + selector chrome share its node)
-    // we translate its own SVG layer via a CSS transform + will-change instead of
-    // mutating its Two.js position and calling a full-scene two.update() every
-    // frame. The scene SVG is never touched, so the drag is a GPU composite —
-    // 60fps regardless of zoom or element count. The real position is written
-    // once on mouseup, so all the existing move/persist/history logic still runs.
+    // Fast move-drag: while dragging a non-rotated element (including the group
+    // overlay, whose member copies + selector chrome share its node) we write
+    // that element's own SVG `transform` attribute per frame instead of mutating
+    // its Two.js position and calling a full-scene two.update(). The rest of the
+    // scene SVG is never touched, so the drag stays smooth regardless of zoom or
+    // element count. The real position is written once on mouseup, so all the
+    // existing move/persist/history logic still runs. (The name is historical:
+    // this wrote `style.transform` + `will-change` until that combination turned
+    // out to make elements vanish mid-drag on mobile — see cssMoveTransform.)
     let cssMoveActive = false
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let cssMoveEl: any = null
@@ -513,6 +521,8 @@ function addZUI(
         node: SVGGraphicsElement
         baseX: number
         baseY: number
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shape: any
     } | null = null
     let cssMoveBaseX = 0
     let cssMoveBaseY = 0
@@ -525,21 +535,23 @@ function addZUI(
     let cssMoveRejected = false
 
     /**
-     * The live CSS transform for one frame of a move-drag.
+     * The live transform for one frame of a move-drag.
      *
-     * Writing `style.transform` on an SVG node *replaces* the `transform`
-     * attribute Two.js rendered — matrix and all — so a bare `translate()`
-     * silently drops any scale the element carries in that matrix. The
-     * zoom-resistant geo elements (point pins, geoText) keep their whole
-     * counter-scale there, so dropping it snaps them to world size for the
-     * duration of the drag (a near-invisible speck when zoomed out) and pops
-     * them back on mouseup, when Two.js re-renders the real matrix.
+     * Written to the SVG `transform` ATTRIBUTE — the same attribute Two.js
+     * renders — not to `style.transform`. Both work on desktop, and the CSS one
+     * is what this fast path used to write, but a CSS transform on an SVG `<g>`
+     * (with `will-change: transform` promoting it to its own layer) is exactly
+     * the combination mobile browsers are unreliable about: the promoted layer
+     * can come back unpainted, so the element vanishes for the length of the
+     * drag and reappears on release, when Two.js re-renders the real matrix.
+     * The attribute has no compositing story to get wrong.
      *
-     * Re-emitting `scale()` after the translate reproduces Two.js's own
-     * translate → rotate → scale composition. Rotation never reaches here —
-     * rotated elements are ineligible for this path. Verified in Chrome against
-     * the attribute-rendered matrix: on a `<g>` the two compose identically,
-     * and transform-origin doesn't enter into it.
+     * The value must carry any scale the element has, because it REPLACES what
+     * Two.js rendered, matrix and all. The zoom-resistant geo elements (point
+     * pins, geoText) keep their whole counter-scale there, so dropping it would
+     * snap them to world size mid-drag. Emitting translate → scale reproduces
+     * Two.js's own composition; rotation never reaches here (rotated elements
+     * are ineligible for this path).
      */
     const cssMoveTransform = (
         x: number,
@@ -548,23 +560,28 @@ function addZUI(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         scale?: any
     ): string => {
-        const translate = `translate(${x}px, ${y}px)`
+        const translate = `translate(${x}, ${y})`
         const sx = typeof scale === 'number' ? scale : (scale?.x ?? 1)
         const sy = typeof scale === 'number' ? scale : (scale?.y ?? 1)
         if (sx === 1 && sy === 1) return translate
         return `${translate} scale(${sx}, ${sy})`
     }
 
-    // Clear the live CSS transforms and drop the drag state. Called on commit
-    // (mouseup) and defensively when a new gesture starts.
+    /**
+     * Drop the live transforms and the drag state. Called on commit (mouseup)
+     * and defensively when a new gesture starts.
+     *
+     * Our per-frame writes went to the same attribute Two.js renders into, so
+     * clearing means handing it back: flag the matrix dirty and the next
+     * `two.update()` restores the authoritative one. Without the flag Two.js
+     * would consider the node clean and leave our last frame standing.
+     */
     const clearCssMove = (): void => {
-        if (cssMoveNode) {
-            cssMoveNode.style.transform = ''
-            cssMoveNode.style.willChange = ''
-        }
+        if (cssMoveNode) cssMoveNode.removeAttribute('transform')
+        if (cssMoveEl) cssMoveEl._flagMatrix = true
         if (cssMoveChrome) {
-            cssMoveChrome.node.style.transform = ''
-            cssMoveChrome.node.style.willChange = ''
+            cssMoveChrome.node.removeAttribute('transform')
+            if (cssMoveChrome.shape) cssMoveChrome.shape._flagMatrix = true
         }
         cssMoveActive = false
         cssMoveEl = null
@@ -972,6 +989,53 @@ function addZUI(
         },
     })
 
+    /**
+     * Select an element by id, from outside the canvas's own pointer handling.
+     *
+     * Paste is the caller: the clone lands under the cursor, but the SOURCE
+     * element kept the selection box and the properties toolbar, so the panel
+     * you reached for was editing the thing you had copied FROM. Selection is
+     * otherwise only ever established by a real gesture, hence this door.
+     *
+     * Two kinds of element, two mechanisms. The controller owns rect/circle/
+     * diamond/newText and `attach` does everything for them. Everything else
+     * (arrow, line, pencil, and the whole geo family) draws its own selection
+     * chrome inside its component, bound to a `click` on its own SVG node — so
+     * for those we click the node, exactly as a user's finger would, and set the
+     * toolbar state ourselves.
+     */
+    const selectComponentById = (id: string): void => {
+        const group = two.scene.children.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (c: any) => c?.elementData?.id === id
+        )
+        if (!group) return
+
+        selectionController.detach()
+        if (selectionController.attach(group)) {
+            lastSelectedShape = group
+            return
+        }
+
+        const shape = group.children?.[0]
+        if (!shape) return
+        const el = document.getElementById(group.id)
+        el?.dispatchEvent(
+            new MouseEvent('click', { bubbles: true, cancelable: true })
+        )
+        lastSelectedShape = group
+        setSelectedComponentInBase(buildToolbarState(group, shape))
+        two.update()
+    }
+
+    const onSelectComponentRequest = ((
+        e: CustomEvent<{ id?: string }>
+    ): void => {
+        const id = e.detail?.id
+        if (id) selectComponentById(id)
+    }) as EventListener
+    window.addEventListener(SELECT_COMPONENT_EVENT, onSelectComponentRequest)
+
     // Delete/Backspace for element types no other delete path covers.
     //
     // The base's delete key is spread across three owners: the selection
@@ -1233,6 +1297,13 @@ function addZUI(
             finishGeoDraw({ dropLast: true })
             return
         }
+        // Pan mode navigates, it does not author. A double-click is the canvas's
+        // "edit this" gesture — on a shape it opens the text editor, on empty
+        // canvas it spawns a whole text element — and neither belongs to a tool
+        // whose entire job is moving the view. The element-owned editors
+        // (point.tsx, geoText.tsx) carry the same guard, because their dblclick
+        // listeners are bound to their own SVG nodes and never reach here.
+        if (isPanMode()) return
         shape = null
         mouse.x = e.clientX
         mouse.y = e.clientY
@@ -2873,8 +2944,24 @@ function addZUI(
 
                 if (shape === null) {
                     // Clicking empty canvas clears any active selection.
+                    //
+                    // All three of these, because "selected" is drawn by three
+                    // different owners: the controller's box (shapes), the
+                    // element-owned chrome that answers `clearSelector`
+                    // (geoText, point), and the React `selectedComponent` that
+                    // drives the properties toolbar AND area/route's vertex
+                    // handles. Only the first was cleared here; the other two
+                    // relied on the `lastChild?.id === 'two-0'` test further up,
+                    // which only matches when the press lands on the wrapper div
+                    // rather than the SVG or the map canvas underneath — so a
+                    // click on empty canvas deselected an area or a route only
+                    // sometimes, and the user had to click again (and again) to
+                    // find a spot that did. This branch is the reliable one: it
+                    // runs precisely when the hit test found no element.
                     lastSelectedShape = null
                     selectionController.detach()
+                    window.dispatchEvent(new CustomEvent('clearSelector', {}))
+                    setSelectedComponentInBase(null)
                     // When a text input overlay is active (about to blur),
                     // the click is just dismissing the input — skip the
                     // pending-selector setup so no rect is ever materialised.
@@ -3461,17 +3548,18 @@ function addZUI(
                                     cssMoveBaseY = shape.position.y
                                     cssMoveLastDxWorld = 0
                                     cssMoveLastDyWorld = 0
-                                    node!.style.willChange = 'transform'
+                                    // Deliberately no `will-change`: promoting
+                                    // an SVG node to its own layer is half of
+                                    // the mobile disappearing-while-dragged bug
+                                    // (see cssMoveTransform), and the win here
+                                    // was never the layer — it is skipping the
+                                    // full-scene two.update() each frame.
                                     // Move the selection box in lockstep so it
                                     // stays glued to the element during the drag.
                                     cssMoveChrome =
                                         selectionController.getChromeDragHandle(
                                             shape
                                         )
-                                    if (cssMoveChrome) {
-                                        cssMoveChrome.node.style.willChange =
-                                            'transform'
-                                    }
                                 }
                                 cssMoveLastDxWorld += dx / zui.scale
                                 cssMoveLastDyWorld += dy / zui.scale
@@ -3479,22 +3567,27 @@ function addZUI(
                                 // caching it at drag start, so a zoom landing
                                 // mid-drag (which re-counter-scales the element)
                                 // is picked up on the next move.
-                                cssMoveNode!.style.transform = cssMoveTransform(
-                                    cssMoveBaseX + cssMoveLastDxWorld,
-                                    cssMoveBaseY + cssMoveLastDyWorld,
-                                    shape.scale
+                                cssMoveNode!.setAttribute(
+                                    'transform',
+                                    cssMoveTransform(
+                                        cssMoveBaseX + cssMoveLastDxWorld,
+                                        cssMoveBaseY + cssMoveLastDyWorld,
+                                        shape.scale
+                                    )
                                 )
                                 if (cssMoveChrome) {
                                     // The selection chrome is never scaled (it
                                     // sizes itself in screen px), so this stays
                                     // a pure translate.
-                                    cssMoveChrome.node.style.transform =
+                                    cssMoveChrome.node.setAttribute(
+                                        'transform',
                                         cssMoveTransform(
                                             cssMoveChrome.baseX +
                                                 cssMoveLastDxWorld,
                                             cssMoveChrome.baseY +
                                                 cssMoveLastDyWorld
                                         )
+                                    )
                                 }
                                 didCssMove = true
                             } else {
@@ -4064,6 +4157,15 @@ function addZUI(
                                 restackPortConnectors(p.shapeId, p.edge)
                             )
                         } else {
+                            // Where the element sat before this drag. Captured
+                            // BEFORE the overwrite below, because the
+                            // absolute-vertex branch needs the delta and
+                            // `prevX`/`prevY` are only set by the mousedown that
+                            // started a drag (a programmatic move has neither).
+                            const originX =
+                                prevX ?? parseInt(shape.elementData.x)
+                            const originY =
+                                prevY ?? parseInt(shape.elementData.y)
                             shape.elementData.x = shape.translation.x
                             shape.elementData.y = shape.translation.y
 
@@ -4120,39 +4222,65 @@ function addZUI(
                                         ...arrowDetach,
                                     }
                                 )
-                            } else if (ed.componentType === 'curvedLine') {
-                                // curvedLine's source of truth is an ABSOLUTE
-                                // vertex array in metadata (like pencil/route/
-                                // area). A body drag moves the group but leaves
-                                // metadata at the old absolute coords, so on
-                                // reload the factory rebuilds the path at the
-                                // original spot and the move is lost. Re-derive
-                                // metadata from the moved vertices and fold it
-                                // into the SAME {x,y} update. Undo stays correct:
-                                // applyBulkProps reverts the group translation
-                                // from the snapshotted prevProps, and the
-                                // relative vertices never moved, so restoring the
-                                // translation restores the whole shape (the
-                                // array metadata is a no-op on the Two.js side).
-                                const cpath = shape.children?.[0]
-                                const movedVerts = (cpath?.vertices ?? []).map(
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    (vx: any) => ({
-                                        x: Math.round(
-                                            shape.translation.x + vx.x
-                                        ),
-                                        y: Math.round(
-                                            shape.translation.y + vx.y
-                                        ),
-                                    })
+                            } else if (
+                                hasAbsoluteVertexMetadata(ed.componentType)
+                            ) {
+                                // The absolute-metadata family — curvedLine,
+                                // area, route and pencil — keeps its geometry as
+                                // ABSOLUTE coords in `metadata`, and the factory
+                                // rebuilds the path as `metadata - (x, y)`. A
+                                // body drag moves the group but leaves metadata
+                                // where it was, so persisting the new x/y ALONE
+                                // is worse than doing nothing: on reload the
+                                // factory subtracts the new origin from the old
+                                // vertices and the shape lands exactly back
+                                // where it started. The move has to be written
+                                // into the vertex array as well, in the SAME
+                                // update so one undo reverts both.
+                                //
+                                // Rebasing the stored array by the drag delta
+                                // rather than reading the path's vertices back:
+                                // pencil's rendered vertices are Chaikin-
+                                // smoothed, so a read-back would persist the
+                                // smoothed curve and then smooth THAT again on
+                                // the next load, rounding the stroke off a
+                                // little more with every move. A delta also
+                                // preserves per-point extras (pencil's `lw`).
+                                //
+                                // Undo stays correct: applyBulkProps reverts the
+                                // group translation from the snapshotted
+                                // prevProps, and the relative vertices never
+                                // moved, so restoring the translation restores
+                                // the whole shape (array metadata is a no-op on
+                                // the Two.js side).
+                                const dx =
+                                    parseInt(shape.translation.x) - originX
+                                const dy =
+                                    parseInt(shape.translation.y) - originY
+                                const movedVerts = shiftVertexMetadata(
+                                    ed.metadata,
+                                    dx,
+                                    dy
                                 )
-                                ed.metadata = movedVerts
+                                if (movedVerts) ed.metadata = movedVerts
                                 updateComponentBulkPropertiesInLocalStore(
                                     ed.id,
                                     {
                                         x: parseInt(shape.translation.x),
                                         y: parseInt(shape.translation.y),
-                                        metadata: movedVerts,
+                                        ...(movedVerts
+                                            ? {
+                                                  // `metadata` is the
+                                                  // polymorphic column TS
+                                                  // cannot express (object for
+                                                  // text/point, vertex array
+                                                  // here) — the cast is the
+                                                  // same one every array-metadata
+                                                  // path in this file makes.
+                                                  metadata:
+                                                      movedVerts as unknown as ComponentRecord['metadata'],
+                                              }
+                                            : {}),
                                     }
                                 )
                             } else {
@@ -4446,11 +4574,16 @@ function addZUI(
             if (isSinglePanning) {
                 isSinglePanning = false
                 if (props.baseId) {
-                    writeViewport(props.baseId, activeBaseTypeRef.current, true, {
-                        tx: two.scene.translation.x,
-                        ty: two.scene.translation.y,
-                        scale: two.scene.scale,
-                    })
+                    writeViewport(
+                        props.baseId,
+                        activeBaseTypeRef.current,
+                        true,
+                        {
+                            tx: two.scene.translation.x,
+                            ty: two.scene.translation.y,
+                            scale: two.scene.scale,
+                        }
+                    )
                 }
                 const root = document.getElementById('main-two-root')
                 if (root) root.style.cursor = 'grab'

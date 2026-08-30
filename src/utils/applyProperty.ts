@@ -11,6 +11,11 @@ import {
     GEO_TEXT_RESIST,
     GEO_TEXT_RESIST_CHANGED_EVENT,
 } from '../constants/misc'
+import {
+    computeCounterScale,
+    isStrokeScaled,
+    resolveResist,
+} from './counterScale'
 
 // Scene-bound selectedComponent shape: `.shape.data`, `.text.data`, and
 // `.group.data.elementData` are scaffolded by newCanvas / element renderers
@@ -303,7 +308,23 @@ export function createApplyProperty(deps: ApplyPropertyDeps) {
             }
             updateComponentBulkPropertiesInLocalStore(id, { stroke: value })
         } else if (propertyKey === 'linewidth') {
-            if (shapeData) shapeData.linewidth = value
+            // Geo strokes are counter-scaled: what the route/area component
+            // paints is `linewidth * computeCounterScale(cameraScale, resist)`,
+            // re-applied on every `zoomChanged` (see route.tsx / area.tsx).
+            // Writing the raw value straight onto the path skipped that factor,
+            // so at map zooms below the anchor the widest step still painted
+            // hairline-thin — and only "fixed itself" on the next zoom or a
+            // reload, when the component re-applied the factor. The RECORD keeps
+            // the logical width; only what is painted is scaled.
+            if (shapeData) {
+                shapeData.linewidth = isStrokeScaled(elementData)
+                    ? value *
+                      computeCounterScale(
+                          twoJSInstance?.scene?.scale ?? 1,
+                          resolveResist(elementData)
+                      )
+                    : value
+            }
             if (elementData) elementData.linewidth = value
             updateComponentBulkPropertiesInLocalStore(id, { linewidth: value })
         } else if (propertyKey === 'strokeType') {

@@ -9,6 +9,8 @@ import Modal from '../common/modal'
 import Button from '../common/button'
 import SettingsModal from './settingsModal'
 import ShortcutsModal from './shortcutsModal'
+import PlaceSearchModal from './placeSearchModal'
+import { useMediaQueryUtils } from '../../constants/exportHooks'
 import SettingsIcon from '../../assets/settings.svg?react'
 import HelpIcon from '../../assets/help.svg?react'
 import ChevronRightIcon from '../../assets/chevron-right.svg?react'
@@ -121,12 +123,31 @@ const UploadIcon = (): ReactElement => (
     </svg>
 )
 
+const SearchIcon = (): ReactElement => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <circle cx="6.25" cy="6.25" r="4" stroke="#8C7E6A" strokeWidth="1.1" />
+        <path
+            d="M9.25 9.25L12 12"
+            stroke="#8C7E6A"
+            strokeWidth="1.1"
+            strokeLinecap="round"
+        />
+    </svg>
+)
+
 const MenuDrawer = (): ReactElement => {
     const refNode = useRef<HTMLDivElement | null>(null)
     const [showMenu, setShowMenu] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
     const [showShortcuts, setShowShortcuts] = useState(false)
+    const [showPlaceSearch, setShowPlaceSearch] = useState(false)
     const [isExporting, setIsExporting] = useState(false)
     const [showExportSubmenu, setShowExportSubmenu] = useState(false)
     const [showImportSubmenu, setShowImportSubmenu] = useState(false)
@@ -137,7 +158,19 @@ const MenuDrawer = (): ReactElement => {
         beginBaseImport,
         readBaseTypeConfig,
         captureBaseTypeBackdrop,
+        activeBaseType,
+        goToPlace,
     } = useBaseContext()
+    const { isMobile } = useMediaQueryUtils()
+    // Search lives in the top bar on desktop; on a phone that row is full, so
+    // the menu carries it (and only where it means anything — the map base).
+    const showSearchEntry = isMobile && activeBaseType === 'map'
+    // Settings is board-only, because everything inside it is: connector ports
+    // live on rectangle/circle/diamond (hidden on a map by BOARD_ONLY_TYPES),
+    // and the dot grid is the parchment backdrop the map replaces. On a map base
+    // the entry opened a dialog whose two switches changed nothing you could
+    // see.
+    const showSettingsEntry = activeBaseType !== 'map'
 
     useEffect(() => {
         const handleClick = (e: MouseEvent): void => {
@@ -172,6 +205,11 @@ const MenuDrawer = (): ReactElement => {
     const handleShortcutsClick = (): void => {
         setShowMenu(false)
         setShowShortcuts(true)
+    }
+
+    const handlePlaceSearchClick = (): void => {
+        setShowMenu(false)
+        setShowPlaceSearch(true)
     }
 
     const handleDownloadClick = async (): Promise<void> => {
@@ -253,6 +291,21 @@ const MenuDrawer = (): ReactElement => {
                     }}
                 >
                     <div className="bg-card-bg border border-border-panel rounded-lg shadow-lg py-1 w-max min-w-[188px] max-w-[calc(100vw-20px)]">
+                        {showSearchEntry && (
+                            <>
+                                <button
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                        hover:bg-accent/50 rounded cursor-pointer
+                                        transition-colors ease-in-out duration-150"
+                                    style={{ width: 'calc(100% - 8px)' }}
+                                    onClick={handlePlaceSearchClick}
+                                >
+                                    <SearchIcon />
+                                    <span>Search a place</span>
+                                </button>
+                                <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
+                            </>
+                        )}
                         <a
                             href="https://github.com/craftbase-org/craftbase/releases"
                             target="_blank"
@@ -286,31 +339,6 @@ const MenuDrawer = (): ReactElement => {
                             </div>
                             <ExternalIcon />
                         </a>
-
-                        <Link
-                            to={routes.embeddable}
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer no-underline
-                                transition-colors ease-in-out duration-150"
-                            onClick={(): void => setShowMenu(false)}
-                        >
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 14 14"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    d="M5 9.5L2.5 7 5 4.5M9 4.5L11.5 7 9 9.5"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                            </svg>
-                            <span>Embeddable whiteboard</span>
-                        </Link>
 
                         <Link
                             to={routes.support}
@@ -376,21 +404,23 @@ const MenuDrawer = (): ReactElement => {
 
                         <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
 
-                        <button
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                        {showSettingsEntry && (
+                            <button
+                                className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
                                 hover:bg-accent/50 rounded cursor-pointer
                                 transition-colors ease-in-out duration-150"
-                            style={{ width: 'calc(100% - 8px)' }}
-                            onClick={handleSettingsClick}
-                        >
-                            <SettingsIcon
-                                className="w-3.5 h-3.5"
-                                stroke="currentColor"
-                                color="currentColor"
-                                aria-hidden="true"
-                            />
-                            <span>Settings</span>
-                        </button>
+                                style={{ width: 'calc(100% - 8px)' }}
+                                onClick={handleSettingsClick}
+                            >
+                                <SettingsIcon
+                                    className="w-3.5 h-3.5"
+                                    stroke="currentColor"
+                                    color="currentColor"
+                                    aria-hidden="true"
+                                />
+                                <span>Settings</span>
+                            </button>
+                        )}
 
                         <button
                             className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
@@ -547,6 +577,12 @@ const MenuDrawer = (): ReactElement => {
                 </div>
             </div>
 
+            <PlaceSearchModal
+                open={showPlaceSearch}
+                onClose={(): void => setShowPlaceSearch(false)}
+                onPick={(place): void => goToPlace?.(place.anchor)}
+            />
+
             <SettingsModal
                 open={showSettings}
                 onClose={(): void => setShowSettings(false)}
@@ -566,8 +602,8 @@ const MenuDrawer = (): ReactElement => {
                         Clear canvas?
                     </h2>
                     <p className="text-sm text-ink-mid mb-6">
-                        This will permanently remove all elements on this canvas.
-                        This cannot be undone.
+                        This will permanently remove all elements on this
+                        canvas. This cannot be undone.
                     </p>
                     <div className="flex gap-2 justify-end">
                         <Button

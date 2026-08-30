@@ -9,7 +9,6 @@ import NoSignupSVG from '../../assets/no_signup.svg'
 import BlueStarSVG from '../../assets/blue_star.svg'
 
 // import ImageContainer from '../../components/ProgressiveImageLoader/loader'
-// import CraftbaseBoardScreenshotPNG from '../../assets/craftbase_board_screenshot.png'
 // import CraftbaseBoardScreenshotBlurJPG from '../../assets/blur_craftbase_screenshot.jpg'
 import Brainstorming from '../../assets/brainstorming_craftbase.png'
 import Button from '../../components/common/button'
@@ -113,8 +112,9 @@ const HomePage: React.FC = () => {
                                 <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     Start brainstorming in craftbase. Create as
                                     as many shared canvases as you like. Each
-                                    shared canvas gets a unique URL. No accounts.
-                                    No login/signup. Just start thinking.
+                                    shared canvas gets a unique URL. No
+                                    accounts. No login/signup. Just start
+                                    thinking.
                                 </p>
                                 {/* <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     With real-time updates across all devices,

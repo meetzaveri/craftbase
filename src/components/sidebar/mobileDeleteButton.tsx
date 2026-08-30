@@ -50,6 +50,7 @@ const MobileDeleteButton = ({
         isTextDrawMode,
         deleteComponentFromLocalStore,
         stateRefForComponentStore,
+        twoJSInstance,
     } = useBaseContext()
     const { isMobile } = useMediaQueryUtils()
 
@@ -77,6 +78,33 @@ const MobileDeleteButton = ({
         ? undefined
         : single?.group?.data?.elementData?.id
 
+    /**
+     * Take the element's group out of the scene.
+     *
+     * Guarded on it still being there: the keyboard owners remove it themselves
+     * when they do fire, and a second subtraction of an already-detached node is
+     * the `scene.subtractions` hazard in CLAUDE.md. The try/catch + subtraction
+     * reset is the documented recovery — without it one bad render leaves the
+     * array populated and every later `two.update()` throws again.
+     */
+    const removeFromScene = (id: string): void => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const two = twoJSInstance as any
+        if (!two?.scene) return
+        const group = Array.from(two.scene.children).find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (c: any) => c?.elementData?.id === id
+        )
+        if (!group) return
+        try {
+            two.remove([group])
+            two.update()
+        } catch {
+            two.scene.subtractions.length = 0
+            two.scene._flagSubtractions = false
+        }
+    }
+
     const handleDelete = (): void => {
         // Commit any open text editor FIRST.
         //
@@ -99,14 +127,19 @@ const MobileDeleteButton = ({
         // with nobody listening and fail silently. Rather than trust that, check
         // afterwards: if the record is still in the store, remove it here.
         //
-        // Deliberately a store delete and nothing more. Dropping the record
-        // unmounts the element component, whose cleanup owns `two.remove` — so
-        // this stays the single teardown owner CLAUDE.md's subtractions note
-        // calls for, instead of competing with it.
+        // The scene node has to come out too. Dropping the record does NOT
+        // unmount the element component — `handleSetComponentsToRender` only
+        // ever ADDS wrappers, and `ElementRenderWrapper` snapshots its record at
+        // mount — so a store-only delete left the element painted on the canvas
+        // until a reload. That is what made this button look dead on a map
+        // base's text: the row went, the glyphs stayed. Every delete owner on
+        // the canvas pairs the store write with its own `two.remove`; this is
+        // ours.
         if (!singleId) return
         requestAnimationFrame(() => {
             if (!stateRefForComponentStore?.current?.[singleId]) return
             deleteComponentFromLocalStore?.(singleId)
+            removeFromScene(singleId)
             window.dispatchEvent(new CustomEvent('clearSelector', {}))
         })
     }

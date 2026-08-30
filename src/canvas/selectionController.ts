@@ -158,7 +158,10 @@ interface ToolbarState {
     icon: { data: Record<string, unknown> }
 }
 
-function buildToolbarState(group: GroupLike, shape: ShapeLike): ToolbarState {
+export function buildToolbarState(
+    group: GroupLike,
+    shape: ShapeLike
+): ToolbarState {
     const componentType = group?.elementData?.componentType
     // First line node of the (possibly multiline) text layer.
     const textChild = getShapeTextNodes(group)[0]
@@ -664,16 +667,28 @@ export default class SelectionController {
     // element (via a CSS transform) without a full-scene re-render. Returns null
     // when nothing is selected or the chrome isn't mounted yet. `group` guards
     // that the chrome actually belongs to the element being dragged.
-    getChromeDragHandle(
-        group: GroupLike
-    ): { node: SVGGraphicsElement; baseX: number; baseY: number } | null {
+    getChromeDragHandle(group: GroupLike): {
+        node: SVGGraphicsElement
+        baseX: number
+        baseY: number
+        // The overlay's Two.js shape. The caller writes the `transform`
+        // ATTRIBUTE directly during a drag, so it needs a handle to flag the
+        // matrix dirty afterwards — otherwise Two.js sees a clean node and
+        // leaves the drag's last frame in place.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shape: any
+    } | null {
         if (!this.currentGroup || this.currentGroup !== group) return null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = (this.ui as any)?._renderer?.elem as
-            | SVGGraphicsElement
-            | undefined
+            SVGGraphicsElement | undefined
         if (!node) return null
-        return { node, baseX: this.ui.position.x, baseY: this.ui.position.y }
+        return {
+            node,
+            baseX: this.ui.position.x,
+            baseY: this.ui.position.y,
+            shape: this.ui,
+        }
     }
 
     syncToTarget(): void {

@@ -285,7 +285,7 @@ Global stylesheets.
 
 ### Root Level (`/src`)
 
-- **`App.tsx`**: Root application component with routing (`/` → Base, `/base/:id` → Base, `/board/:id` → `LegacyBaseRedirect` for links shared before the rename, `/home` → Marketing)
+- **`App.tsx`**: Root application component with routing (`/` → Base, `/base/:id` → Base, `/map/:id` → Base pinned to the map type, `/board/:id` → `LegacyBaseRedirect` for links shared before the rename, `/home` → Marketing). `/embeddable-whiteboard` is **retired** — craftbase is a service you come and use, not a component you embed — and the indexed URL 301s to `/home` from `public/_redirects` (above the SPA catch-all, which matches everything).
 - **`newCanvas.tsx`**: Main canvas rendering logic using Two.js
 - **`routes.ts`**: Application routes configuration
 - **`index.tsx`**: Application entry point
@@ -635,3 +635,98 @@ explicitly or paste drops it, and the `prevProps` snapshot in
 `updateComponentBulkPropertiesInLocalStore` needs the `undefined → true`
 fallback or the first undo is a no-op. Covered by
 `tests/e2e/geo-text-zoom-resist.spec.js`.
+
+## Canvas interaction invariants
+
+Rules that live in more than one file, each of which had drifted at least once.
+
+- **The absolute-vertex-metadata family owns its geometry in `metadata`, not
+  in `x`/`y`.** pencil, area, route and curvedLine store ABSOLUTE vertex coords
+  and their factories rebuild the path as `metadata - (x, y)`, so `x`/`y` is
+  only the origin those vertices were made relative to. Two consequences, both
+  of which shipped as bugs: **moving one must shift the vertex array too** (in
+  the same store write, so one undo reverts both) — persisting the new origin
+  alone is worse than persisting nothing, because the factory then subtracts the
+  new origin from the old vertices and the shape lands back where the drag
+  started; and **anything asking "where is it?" must ask the vertices**, which
+  is why paste positions these types off `vertexMetadataCenter` rather than
+  `x`/`y` (that is wherever the first click happened to fall). `hasAbsoluteVertexMetadata`
+  / `shiftVertexMetadata` / `vertexMetadataCenter` (`utils/vertexMetadata.ts`)
+  are the shared readers — reach for the type list there, never a fresh
+  `componentType === 'area' || ...` chain, which is how curvedLine ended up with
+  a move fix its three siblings never got.
+- **Bare-canvas clicks clear the selection from the hit test, not from the DOM.**
+  "Selected" is drawn by three owners — the controller's box, the element-owned
+  chrome that answers `clearSelector` (geoText, point) and the React
+  `selectedComponent` behind the properties toolbar and area/route's vertex
+  handles — and the `shape === null` branch of mousedown clears all three. It
+  used to clear only the first, leaving the rest to a
+  `lastChild?.id === 'two-0'` test that matched only when the press landed on
+  the wrapper div rather than the SVG or the map canvas: hence deselecting an
+  area took two clicks and a route three.
+- **Deleting a record does NOT unmount its element component.** This is the one
+  most likely to bite. `handleSetComponentsToRender` only ever *adds* wrappers,
+  and `ElementRenderWrapper` snapshots its record at mount — so dropping the row
+  from `componentStore` leaves the element painted on the canvas until a reload.
+  **Every delete path must pair the store write with its own `two.remove`**, and
+  the mobile trash button does (`removeFromScene` in `mobileDeleteButton.tsx`).
+  Element cleanups still remove their own group for real unmounts; that path is
+  guarded on the group still being in the scene, per the `scene.subtractions`
+  note above.
+- **Pan mode navigates; it never authors.** `newCanvas`'s `dblclick` returns
+  early under `isPanMode()`, and `point.tsx` / `geoText.tsx` repeat the guard
+  inside their editors — their dblclick listeners are bound to their own SVG
+  nodes and never reach the canvas handler. A tool whose whole job is moving the
+  view must not drop the user into a text field.
+- **The move-drag fast path writes the SVG `transform` ATTRIBUTE**, not
+  `style.transform`, and sets no `will-change`. Both work on desktop; the CSS
+  pair (a promoted layer on an SVG `<g>`) is what made elements vanish for the
+  length of a drag on mobile. Because it writes the same attribute Two.js
+  renders, `clearCssMove` must flag `_flagMatrix` on the element (and the
+  selection chrome) or Two.js sees a clean node and leaves the last drag frame
+  standing. The win being protected is skipping the full-scene `two.update()`
+  per frame — never the compositing.
+- **Paste moves the selection to the clone.** The clipboard clears the source's
+  chrome and dispatches `SELECT_COMPONENT_EVENT` once the clone has mounted;
+  `newCanvas` answers it — `selectionController.attach` for the shapes it owns,
+  a synthetic `click` plus `buildToolbarState` for everything that draws its own
+  chrome (arrows, lines, the geo family).
+- **A live `linewidth` edit on a geo stroke must be counter-scaled.** route /
+  area / geo-pencil paint `linewidth * computeCounterScale(scale, resist)`;
+  writing the raw value onto the path made the widest step hairline-thin below
+  the anchor until the next `zoomChanged` re-applied the factor. `applyProperty`
+  scales what it paints and persists the logical width (`isStrokeScaled`).
+- **Mobile text editing is driven by events, not refs.** The editors are DOM
+  overlays built inside element components; the ✓/✗ and ✏️ are React
+  (`mobileTextControls.tsx`). They talk through `TEXT_EDIT_START/END` (editor →
+  chrome) and `TEXT_EDIT_COMMIT/CANCEL` (chrome → editor), and the buttons act
+  on **click** while cancelling the **press**: the press must not blur the
+  editor (blur is what commits, so ✗ would become ✓), and acting on the press
+  ended the edit mid-gesture, letting the tap's own click land on the delete
+  button that had just re-mounted in that slot.
+- **Menu entries are base-type aware.** "Search a place" appears only on a map
+  base (and only on mobile, where the top bar has no room for the field);
+  **Settings** appears only off it, because both of its switches are board-only
+  — connector ports live on rectangle/circle/diamond, which `BOARD_ONLY_TYPES`
+  hides on a map, and the dot grid is the parchment backdrop the map replaces.
+- **Tooltips are mouse-and-keyboard only.** `Tooltip` opens on `pointerenter`
+  with `pointerType === 'mouse'` and on `:focus-visible`, never on touch: a tap
+  fires the compatibility mouse sequence and then leaves the element hovered
+  with no `mouseleave` to follow, so a tapped button's bubble stayed up for the
+  session. Gating on the pointer rather than on a device check keeps a
+  touchscreen laptop right — cursor gets hints, finger does not. A global
+  `pointerdown`/`scroll`/`blur` sweep closes any bubble that does get open, so a
+  stuck tooltip is not a state this component can reach. Covered by
+  `tests/e2e/tooltip-touch.spec.js`.
+- **An open modal owns the screen.** `Modal`'s backdrop carries `z-index: 1000`
+  — it has to out-stack the canvas chrome (10–20) and the toast (50), or the
+  dimmed page still takes clicks.
+- **Place search has two faces, one brain.** `usePlaceSearch` owns the debounce
+  and abort; `placeSearch.tsx` is the desktop top-bar field and
+  `placeSearchModal.tsx` (opened from the menu) is the mobile one. Landing
+  somewhere new — a search pick, or either answer to the first-run prompt —
+  ends in `enterPanMode()`.
+
+Covered by `tests/e2e/map-mobile-controls.spec.js`,
+`tests/e2e/canvas-interaction-fixes.spec.js` and
+`tests/e2e/geo-move-paste-select.spec.js`.

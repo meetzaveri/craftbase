@@ -39,6 +39,7 @@ import PermissionErrorModal from '../../components/modals/PermissionErrorModal'
 import StorageLimitModal from '../../components/modals/StorageLimitModal'
 import MapStartLocationModal from '../../components/modals/MapStartLocationModal'
 import MobileDeleteButton from '../../components/sidebar/mobileDeleteButton'
+import MobileTextControls from '../../components/sidebar/mobileTextControls'
 import {
     resolveTimezoneCity,
     DEFAULT_ANCHOR_ZOOM,
@@ -68,10 +69,7 @@ import {
 } from '../../utils/viewportStorage'
 import type { BaseType, MapAnchor } from '../../baseTypes/types'
 import ImportBaseModal from '../../components/modals/ImportBaseModal'
-import {
-    openBaseFilePicker,
-    parseImportedBase,
-} from '../../utils/importBase'
+import { openBaseFilePicker, parseImportedBase } from '../../utils/importBase'
 import type { ParsedImport, BaseViewport } from '../../utils/importBase'
 import { draftFitsForStore } from '../../utils/baseSizeGuard'
 import { generateUUID, generateRandomUsernames } from '../../utils/misc'
@@ -115,6 +113,8 @@ import {
     GEO_DRAW_TYPE_KEY,
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
+    TEXT_EDIT_END_EVENT,
+    TEXT_EDIT_START_EVENT,
     WELCOME_DISMISSED_KEY,
     LOCAL_BASE_ID_KEY,
 } from '../../constants/misc'
@@ -274,10 +274,8 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
 
     const navigate = useNavigate()
 
-    const [
-        createBase,
-        { loading: createBaseLoading, data: createBaseData },
-    ] = useMutation(CREATE_BASE)
+    const [createBase, { loading: createBaseLoading, data: createBaseData }] =
+        useMutation(CREATE_BASE)
 
     const [updateBaseVisibility] = useMutation(UPDATE_BASE_VISIBILITY)
     const [sharePersistedBase] = useMutation(SHARE_PERSISTED_BASE)
@@ -476,7 +474,10 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         const apply = (): void => {
             if (cancelled) return
             const two = twoJSInstanceRef.current
-            if (two) applyBaseTypeVisibility(two, activeBaseType, { forceGeoVisible })
+            if (two)
+                applyBaseTypeVisibility(two, activeBaseType, {
+                    forceGeoVisible,
+                })
 
             // Keep re-applying until the scene stops growing, then for a short
             // quiet window after that. A fixed budget from the store change was
@@ -530,6 +531,21 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         return (): void => {
             window.removeEventListener('multiClickDrawStart', onStart)
             window.removeEventListener('multiClickDrawEnd', onEnd)
+        }
+    }, [])
+
+    // A text editor being open owns the same corner (its ✓/✗ live there), so
+    // the delete button stands down for its duration — deleting the element you
+    // are mid-sentence in is not what that tap means.
+    const [isEditingText, setIsEditingText] = useState(false)
+    useEffect(() => {
+        const onStart = (): void => setIsEditingText(true)
+        const onEnd = (): void => setIsEditingText(false)
+        window.addEventListener(TEXT_EDIT_START_EVENT, onStart)
+        window.addEventListener(TEXT_EDIT_END_EVENT, onEnd)
+        return (): void => {
+            window.removeEventListener(TEXT_EDIT_START_EVENT, onStart)
+            window.removeEventListener(TEXT_EDIT_END_EVENT, onEnd)
         }
     }, [])
 
@@ -1224,6 +1240,23 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
      * is, instead of stranding them at the edge of a window centred half a
      * world away.
      */
+    /**
+     * Put the map base in pan mode.
+     *
+     * Called wherever we hand the user a NEW VIEW they did not navigate to
+     * themselves — a search pick, the first-run location prompt. Landing
+     * somewhere unfamiliar, the first thing anyone does is look around, and on a
+     * map "look around" is the pan tool; leaving them in a draw or select tool
+     * meant the first drag either drew something or dragged an element. `pan`
+     * has to be set as the current element too, or the toolbar highlights one
+     * tool while the canvas is in another.
+     */
+    const enterPanMode = useCallback((): void => {
+        togglePanMode(true)
+        setCurrentElement('pan')
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
     const goToPlace = useCallback(
         (place: MapAnchor): void => {
             const anchor = readBaseTypeConfigForExport().mapAnchor
@@ -1245,6 +1278,7 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                 // This also fires onCameraChange, which is what writes the
                 // viewport — the camera and the anchor land in storage together.
                 zuiInBaseRef.current?.centerOnSurface?.(0, 0, 1)
+                enterPanMode()
                 return
             }
 
@@ -1254,8 +1288,9 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                 y,
                 scaleForMapZoom(place.zoom, anchor)
             )
+            enterPanMode()
         },
-        [readBaseTypeConfigForExport, setMapAnchor]
+        [readBaseTypeConfigForExport, setMapAnchor, enterPanMode]
     )
 
     /**
@@ -1332,12 +1367,14 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
         // Ahmedabad" should show Ahmedabad, and centring is also what fires
         // onCameraChange and gets the viewport written alongside the anchor.
         zuiInBaseRef.current?.centerOnSurface?.(0, 0, 1)
+        enterPanMode()
         rememberLocalBaseId()
     }, [
         setMapAnchor,
         timezoneCity,
         readBaseTypeConfigForExport,
         rememberLocalBaseId,
+        enterPanMode,
     ])
 
     const handleMapStartPick = useCallback(
@@ -1970,7 +2007,9 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
 
         const scene = two.scene
         const scale =
-            typeof scene?.scale === 'number' && scene.scale > 0 ? scene.scale : 1
+            typeof scene?.scale === 'number' && scene.scale > 0
+                ? scene.scale
+                : 1
         // two.width/height, never the container's clientWidth/clientHeight —
         // #main-two-root is 0-height (the SVG is absolutely positioned), which
         // would put the landing half a screen off.
@@ -2750,6 +2789,11 @@ const BaseViewPage: React.FC<BaseProps> = (props) => {
                         </div>
                     )}
                     <MobileDeleteButton
+                        drawInProgress={
+                            showMultiClickDrawControls || isEditingText
+                        }
+                    />
+                    <MobileTextControls
                         drawInProgress={showMultiClickDrawControls}
                     />
                     {!isRubberMode && isMobile && (

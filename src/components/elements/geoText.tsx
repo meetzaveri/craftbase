@@ -17,8 +17,13 @@ import { useMediaQueryUtils } from '../../constants/exportHooks'
 import {
     DEFAULT_TEXT_FONT_FAMILY,
     GEO_TEXT_RESIST_CHANGED_EVENT,
+    TEXT_EDIT_CANCEL_EVENT,
+    TEXT_EDIT_COMMIT_EVENT,
+    TEXT_EDIT_END_EVENT,
+    TEXT_EDIT_START_EVENT,
 } from '../../constants/misc'
 import { computeCounterScale, resolveResist } from '../../utils/counterScale'
+import { isPanMode } from '../../utils/drawModeUtils'
 
 // GeoText renders exactly like NewText — same NewTextFactory, same multiline
 // editing, resize handles and floating-toolbar contract. What separates the two
@@ -372,6 +377,11 @@ function GeoText(props: ElementProps): ReactElement {
         getGroupElementFromDOM?.addEventListener('blur', onBlurHandler)
 
         const showTextInput = (): void => {
+            // Pan mode navigates, it does not author. Our dblclick listeners sit
+            // on our own SVG nodes, so newCanvas's canvas-level guard never sees
+            // them — and pan is the tool a map user lives in, where a stray
+            // double-tap must not open a text field.
+            if (isPanMode()) return
             const groupDomElem = document.getElementById(`${group.id}`)
             if (!groupDomElem) return
 
@@ -474,6 +484,29 @@ function GeoText(props: ElementProps): ReactElement {
 
             input.focus()
 
+            // What the text was when the editor opened — the value ✗ puts back.
+            const valueAtOpen = textValueRef.current
+
+            // On-screen ✓/✗ (mobile has no Enter or Escape). The buttons are
+            // React chrome in base.tsx; this is their other end.
+            const onEditRequest = (e: Event): void => {
+                const detail = (e as CustomEvent<{ id?: string }>).detail
+                if (detail?.id && detail.id !== props.id) return
+                if (e.type === TEXT_EDIT_CANCEL_EVENT) {
+                    input.value = valueAtOpen
+                }
+                // The blur handler is the single commit path — cancel just
+                // restores the old text before letting it run.
+                input.blur()
+            }
+            window.addEventListener(TEXT_EDIT_COMMIT_EVENT, onEditRequest)
+            window.addEventListener(TEXT_EDIT_CANCEL_EVENT, onEditRequest)
+            window.dispatchEvent(
+                new CustomEvent(TEXT_EDIT_START_EVENT, {
+                    detail: { id: props.id },
+                })
+            )
+
             input.addEventListener('keydown', (event: KeyboardEvent) => {
                 if (event.key === 'Enter') {
                     if (event.shiftKey) {
@@ -493,6 +526,19 @@ function GeoText(props: ElementProps): ReactElement {
 
             input.addEventListener('blur', () => {
                 input.removeEventListener('input', autoSizeAndCenter)
+                window.removeEventListener(
+                    TEXT_EDIT_COMMIT_EVENT,
+                    onEditRequest
+                )
+                window.removeEventListener(
+                    TEXT_EDIT_CANCEL_EVENT,
+                    onEditRequest
+                )
+                window.dispatchEvent(
+                    new CustomEvent(TEXT_EDIT_END_EVENT, {
+                        detail: { id: props.id },
+                    })
+                )
                 if (measureSpan.parentNode) {
                     measureSpan.parentNode.removeChild(measureSpan)
                 }
@@ -577,9 +623,7 @@ function GeoText(props: ElementProps): ReactElement {
         })
 
         handleGlobalMousedown = (e: MouseEvent): void => {
-            const path: EventTarget[] = e.composedPath
-                ? e.composedPath()
-                : []
+            const path: EventTarget[] = e.composedPath ? e.composedPath() : []
             const isOnGroup = path.some(
                 (el: EventTarget) => (el as HTMLElement)?.id === group.id
             )
@@ -608,6 +652,28 @@ function GeoText(props: ElementProps): ReactElement {
             }
             window.removeEventListener('mousemove', onResizeMouseMove)
             window.removeEventListener('mouseup', onResizeMouseUp)
+
+            // Remove our group from the scene.
+            //
+            // Every other element component does this; text was the exception,
+            // and it is what made the mobile delete button look broken: the
+            // trash button's safety net drops the RECORD (the store is the
+            // single teardown owner per CLAUDE.md), React unmounts us — and the
+            // glyphs stayed on the canvas until a reload, because nobody ever
+            // took the group out of the scene.
+            //
+            // Guarded because the keyboard path removes it first (see
+            // handleKeyDown): removing an id the scene no longer owns is a
+            // no-op in Two.js, but a second subtraction of a node whose SVG is
+            // already detached is exactly the `scene.subtractions` hazard
+            // CLAUDE.md documents, so we only remove what is still there.
+            const scene = two?.scene
+            const stillMounted =
+                !!groupObject &&
+                !!scene?.children?.find(
+                    (c: ShapeLike) => c?.id === groupObject.id
+                )
+            if (stillMounted) two.remove(groupObject)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])

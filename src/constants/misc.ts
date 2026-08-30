@@ -160,6 +160,33 @@ export const GEO_TEXT_RESIST = 0.9
 // write never reaches the component through React — this is the same escape
 // hatch `standaloneTextReverted` uses.
 export const GEO_TEXT_RESIST_CHANGED_EVENT = 'geoTextResistChanged'
+
+/**
+ * "Select this element" — `{ id }`. Answered by newCanvas, which owns selection.
+ *
+ * Paste is the caller: the clone has to take the selection off the element it
+ * was copied from, and the clipboard hook has no route into the canvas's
+ * pointer handling. Dispatch only after the element has actually mounted (the
+ * scene group must exist).
+ */
+export const SELECT_COMPONENT_EVENT = 'selectComponent'
+
+/**
+ * The text-editing handshake between an element's imperative editor (the
+ * `<input>`/`<textarea>` overlays in point.tsx and geoText.tsx) and the mobile
+ * chrome that has to drive it.
+ *
+ * A phone has no Enter or Escape, so an open editor needs on-screen ✓/✗ — and
+ * those buttons are React, while the editor is a DOM node created inside a
+ * Two.js element component. `START`/`END` announce the editor's lifetime,
+ * `COMMIT`/`CANCEL` are the two answers back. Cancel means "put back what was
+ * there when the editor opened", which only the editor knows — hence a request
+ * rather than a value.
+ */
+export const TEXT_EDIT_START_EVENT = 'textEditStart'
+export const TEXT_EDIT_END_EVENT = 'textEditEnd'
+export const TEXT_EDIT_COMMIT_EVENT = 'commitTextEdit'
+export const TEXT_EDIT_CANCEL_EVENT = 'cancelTextEdit'
 // The generic point: a small filled circle with an editable label beside it.
 // One design, no categories. POINT_RADIUS is the circle radius in surface units
 // at scale 1 — the group counter-scales (DEFAULT_GEO_RESIST above), so the pin

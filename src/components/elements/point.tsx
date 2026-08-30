@@ -12,11 +12,16 @@ import PointFactory, {
 } from '../../factory/point'
 import getEditComponents from '../utils/editWrapper'
 import { computeCounterScale } from '../../utils/counterScale'
+import { isPanMode } from '../../utils/drawModeUtils'
 import {
     DEFAULT_GEO_RESIST,
     POINT_LABEL_COLOR,
     POINT_LABEL_GAP,
     POINT_RADIUS,
+    TEXT_EDIT_CANCEL_EVENT,
+    TEXT_EDIT_COMMIT_EVENT,
+    TEXT_EDIT_END_EVENT,
+    TEXT_EDIT_START_EVENT,
 } from '../../constants/misc'
 
 // Clear space between the point's ink and its selection box, in surface units.
@@ -199,6 +204,12 @@ function Point(props: ElementProps): ReactElement {
          * bounding box, which is exactly the state this opens in most often.
          */
         const showLabelInput = (): void => {
+            // Pan mode navigates, it does not author. This editor is reached by
+            // a dblclick bound to our own SVG node, so the canvas-level guard in
+            // newCanvas never sees it — and on a map base pan is a tool the user
+            // sits in, so without this a stray double-tap while panning put them
+            // in a text field.
+            if (isPanMode()) return
             const labelNode = getPointLabelNode(group)
             const circleNode = group.children?.[0]
             const circleElem = circleNode?._renderer?.elem as
@@ -276,8 +287,44 @@ function Point(props: ElementProps): ReactElement {
             autoSize()
             input.addEventListener('input', autoSize)
 
+            // What the label was when the editor opened — the value ✗ puts back.
+            const valueAtOpen = labelRef.current
+
+            // On-screen ✓/✗ (mobile has no Enter or Escape). The buttons are
+            // React chrome in base.tsx; this is their other end.
+            const onEditRequest = (e: Event): void => {
+                const detail = (e as CustomEvent<{ id?: string }>).detail
+                if (detail?.id && detail.id !== props.id) return
+                if (e.type === TEXT_EDIT_CANCEL_EVENT) {
+                    input.value = valueAtOpen
+                }
+                // Commit runs on blur either way — cancel just restores first,
+                // so "cancel" and "confirm" share one write path.
+                input.blur()
+            }
+            window.addEventListener(TEXT_EDIT_COMMIT_EVENT, onEditRequest)
+            window.addEventListener(TEXT_EDIT_CANCEL_EVENT, onEditRequest)
+            window.dispatchEvent(
+                new CustomEvent(TEXT_EDIT_START_EVENT, {
+                    detail: { id: props.id },
+                })
+            )
+
             const commit = (): void => {
                 input.removeEventListener('input', autoSize)
+                window.removeEventListener(
+                    TEXT_EDIT_COMMIT_EVENT,
+                    onEditRequest
+                )
+                window.removeEventListener(
+                    TEXT_EDIT_CANCEL_EVENT,
+                    onEditRequest
+                )
+                window.dispatchEvent(
+                    new CustomEvent(TEXT_EDIT_END_EVENT, {
+                        detail: { id: props.id },
+                    })
+                )
                 measure.remove()
 
                 const value = input.value.trim()
