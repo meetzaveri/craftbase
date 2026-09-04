@@ -2,9 +2,9 @@
 
 ## Overview
 
-Base mutations are tracked in two parallel stacks: `historyLog` (powers Ctrl/Cmd+Z undo) and `bucketLog` (powers Ctrl/Cmd+Shift+Z redo). Every function that modifies component state **must** call `recordToHistoryLog` before touching the store or DB.
+Board mutations are tracked in two parallel stacks: `historyLog` (powers Ctrl/Cmd+Z undo) and `bucketLog` (powers Ctrl/Cmd+Shift+Z redo). Every function that modifies component state **must** call `recordToHistoryLog` before touching the store or DB.
 
-All history state lives in `src/hooks/useComponentHistory.js`. The hook is called in `src/views/Base/base.tsx` and its returned values (`recordToHistoryLog`, `undoLastAction`, `redoLastAction`, `clearHistory`, `bucketLog`, etc.) are spread into `BaseContext`.
+All history state lives in `src/hooks/useComponentHistory.js`. The hook is called in `src/views/Board/board.js` and its returned values (`recordToHistoryLog`, `undoLastAction`, `redoLastAction`, `clearHistory`, `bucketLog`, etc.) are spread into `BoardContext`.
 
 `applyPropertyToTwoJSGroup` is a module-level helper in `useComponentHistory.js` (not exported — used internally by both undo and redo to mutate Two.js shape properties when reversing/replaying an `UPDATE_BULK` action).
 

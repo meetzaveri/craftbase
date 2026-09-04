@@ -10,13 +10,6 @@ const Backdrop = styled.div`
     right: 0;
     bottom: 0;
     left: 0;
-    /* Above every piece of canvas chrome, so an open modal actually OWNS the
-       screen. Without a stacking order of its own the backdrop painted below
-       the toolbars (z-index 10–20) and the toast (50): the dimmed page still
-       took clicks, so the base switcher, menu, share, primary toolbar and the
-       element-properties button all stayed live behind a modal that had the
-       user's full attention. Kept under the dev perf overlay (10000). */
-    z-index: 1000;
     background-color: rgba(51, 51, 51, 0.3);
     backdrop-filter: blur(1px);
     opacity: 0;
@@ -52,19 +45,9 @@ const Content = styled.div`
     box-sizing: border-box;
     min-height: 50px;
     min-width: 50px;
-    /* Phones, not just desktop. A max-width of 80% left a 390px screen a 312px
-       box, and once the 20px padding came off, 272px of usable width — less
-       than the 400-440px minWidths the modal bodies ask for, so their content
-       spilled out of the rounded box. Bound to the viewport instead and let
-       each body cap its own width (they all do). The overflow rule is the
-       other half: max-height used to clip tall content with no way to reach
-       it. NB: no backticks in here — this is a template literal. */
-    max-height: 85vh;
-    max-width: calc(100vw - 32px);
-    overflow: auto;
-    box-shadow:
-        0 3px 6px rgba(0, 0, 0, 0.16),
-        0 3px 6px rgba(0, 0, 0, 0.23);
+    max-height: 80%;
+    max-width: 80%;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
     background-color: white;
     border-radius: 2px;
 `
@@ -114,21 +97,7 @@ export default function Modal(props: ModalProps): ReactElement {
             }
             window.removeEventListener('keyup', keyHandler)
         }
-        // `active` MUST be a dependency even though the body only reads `open`.
-        //
-        // The backdrop is rendered while `open || active`, so closing goes
-        // open:false (still rendered, listeners re-attached) → transitionend →
-        // active:false (unmounted). That last step changes no dependency, so
-        // without `active` here the effect never re-runs, its cleanup never
-        // runs, and the window-level Escape handler survives the modal it
-        // belonged to — for the whole session, holding the old `onClose`.
-        //
-        // Harmless while every onClose merely set some state to false. It
-        // stopped being harmless once one of them had a side effect: the map's
-        // first-run location prompt writes an anchor on dismiss, so a stray
-        // Escape long after it closed (finishing an area/route draw, say)
-        // silently moved the user's map.
-    }, [open, active, locked, onClose])
+    }, [open, locked, onClose])
 
     return (
         <React.Fragment>

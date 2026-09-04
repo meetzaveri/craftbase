@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     placeText,
     triggerUndoKeyboard,
     getCanvasBox,
@@ -160,7 +160,7 @@ async function undoUntil(page, read, expected, tries = 4) {
 
 test.describe('Multiline standalone text', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('text size: change + undo apply to EVERY line node', async ({
@@ -281,7 +281,7 @@ test.describe('Multiline standalone text', () => {
 
 test.describe('Shape-with-text undo', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     // Same regression as standalone, for rectangle-with-text. The history hook

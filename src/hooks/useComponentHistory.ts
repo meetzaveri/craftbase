@@ -12,24 +12,8 @@ import {
     pollUntilElement,
 } from '../utils/canvasUtils'
 import { lineHeightFor } from '../utils/textLayout'
-import {
-    buildPointVisual,
-    pointColorOf,
-    pointFontFamilyOf,
-    pointFontSizeOf,
-    pointLabelOf,
-} from '../factory/point'
-import {
-    DRAFT_STORAGE_KEY,
-    isStandaloneTextType,
-    GEO_TEXT_RESIST,
-    GEO_TEXT_RESIST_CHANGED_EVENT,
-} from '../constants/misc'
-import type { ComponentRecord, ComponentStore } from '../types/base'
-import {
-    VERTEX_PATH_TYPES,
-    VERTEX_PATH_REVERTED_EVENT,
-} from '../components/utils/vertexHandles'
+import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
+import type { ComponentRecord, ComponentStore } from '../types/board'
 
 // Two.js scene-group shapes are typed loosely until the canvas internals
 // converge (Stages 7–9). Bulk-prop bags are also row-shaped; we accept
@@ -125,12 +109,16 @@ interface BatchEntry {
 }
 
 export type HistoryEntry =
-    AddEntry | DeleteEntry | UpdateVerticesEntry | UpdateBulkEntry | BatchEntry
+    | AddEntry
+    | DeleteEntry
+    | UpdateVerticesEntry
+    | UpdateBulkEntry
+    | BatchEntry
 
 // ---- hook options ----
 
 // Apollo mutate signatures vary by typing source; keep them loose at the
-// boundary. base.tsx (Stage 10) will wire in real Apollo types.
+// boundary. board.tsx (Stage 10) will wire in real Apollo types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ApolloMutate = (options?: any) => any
 
@@ -138,7 +126,7 @@ export interface ComponentHistoryOptions {
     twoJSInstanceRef: MutableRefObject<TwoLike | null>
     stateRefForComponentStore: MutableRefObject<ComponentStore>
     isPersistedRef: MutableRefObject<boolean>
-    baseId: string
+    boardId: string
     isPersisted: boolean
     insertComponent: ApolloMutate
     deleteComponent: ApolloMutate
@@ -207,25 +195,6 @@ function applyPropertyToTwoJSGroup(
                 clearDashesOnTwoJSShape(shape)
             }
             break
-        case 'zoomResistant': {
-            // Map text's counter-scale switch. It has no Two.js field of its
-            // own — the geoText component owns group.scale and the selection
-            // outline — so mirror it onto elementData (what resolveResist and
-            // the group-overlay copies read) and let the component re-scale
-            // itself against the live camera. Covers undo and redo alike:
-            // applyBulkProps routes every reverted key through here.
-            if (group.elementData?.componentType !== 'geoText') break
-            group.elementData.zoomResistant = value
-            window.dispatchEvent(
-                new CustomEvent(GEO_TEXT_RESIST_CHANGED_EVENT, {
-                    detail: {
-                        id: group.elementData.id,
-                        resist: value === false ? 0 : GEO_TEXT_RESIST,
-                    },
-                })
-            )
-            break
-        }
         case 'opacity':
             // Opacity persists in the top-level `opacity` field. Apply at the
             // GROUP level (shape + text dim uniformly and repaint reliably) and
@@ -238,7 +207,11 @@ function applyPropertyToTwoJSGroup(
             }
             break
         case 'metadata':
-            if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (
+                value &&
+                typeof value === 'object' &&
+                !Array.isArray(value)
+            ) {
                 // Fallback single node for legacy/non-multiline shapes where
                 // getShapeTextNodes finds no text layer.
                 const fallbackTextNode: ShapeLike =
@@ -266,7 +239,10 @@ function applyPropertyToTwoJSGroup(
                                     (n: ShapeLike) => (n.opacity = 1)
                                 )
                             }
-                        } else if (k === 'textFontSize' || k === 'fontSize') {
+                        } else if (
+                            k === 'textFontSize' ||
+                            k === 'fontSize'
+                        ) {
                             // Standalone text stores size as `fontSize`,
                             // shape-with-text as `textFontSize` — honor both.
                             applyToText((n) => {
@@ -278,11 +254,12 @@ function applyPropertyToTwoJSGroup(
                             if (isStandaloneText && textNodes.length > 1) {
                                 const lh = lineHeightFor(Number(v))
                                 const cnt = textNodes.length
-                                textNodes.forEach((n: ShapeLike, i: number) =>
-                                    n.translation.set(
-                                        0,
-                                        (i - (cnt - 1) / 2) * lh
-                                    )
+                                textNodes.forEach(
+                                    (n: ShapeLike, i: number) =>
+                                        n.translation.set(
+                                            0,
+                                            (i - (cnt - 1) / 2) * lh
+                                        )
                                 )
                             }
                         } else if (k === 'textFontFamily') {
@@ -310,7 +287,7 @@ export function useComponentHistory({
     twoJSInstanceRef,
     stateRefForComponentStore,
     isPersistedRef,
-    baseId,
+    boardId,
     insertComponent,
     deleteComponent,
     updateComponentInfo,
@@ -397,10 +374,10 @@ export function useComponentHistory({
         // A DELETE entry snapshots prevState as { ...store[id] }; if the
         // component wasn't in the store at delete time (transient/group ids,
         // double-delete, already-removed), that snapshot is {}. Restoring it
-        // would write a { baseId }-only entry that later breaks Share's bulk
+        // would write a { boardId }-only entry that later breaks Share's bulk
         // insert (componentType NOT NULL). Same guard as applyBatch.
         if (!componentInfo || !componentInfo.componentType) return
-        const restoredState = { ...componentInfo, baseId }
+        const restoredState = { ...componentInfo, boardId }
         const updatedStore = {
             ...stateRefForComponentStore.current,
             [id]: restoredState,
@@ -546,47 +523,6 @@ export function useComponentHistory({
             return
         }
 
-        // A point's label is a Two.Text node the factory owns, so rebuild the
-        // whole pin from the restored record — cheap (two nodes) and it can't
-        // drift from what a fresh mount would draw.
-        //
-        // The rebuild re-reads the colour, so `elementData` has to be caught up
-        // FIRST: applyPropertyToTwoJSGroup writes reverted colours onto the
-        // Two.js node only, leaving elementData holding the pre-undo value.
-        // Rebuilding off that would repaint the circle in the colour we just
-        // undid. The store row is the authority here — applyBulkProps commits
-        // the revert to it before touching the scene.
-        if (ct === 'point') {
-            const elementData = group.elementData
-            if (elementData) {
-                const record = stateRefForComponentStore.current[elementData.id]
-                if (record) {
-                    elementData.fill = record.fill
-                    elementData.stroke = record.stroke
-                }
-                // REPLACE, don't merge. A revert is as often the removal of a
-                // key as a change to one: styling a point that had never been
-                // styled writes `textFontFamily` onto a metadata object that
-                // did not have it, and merging the reverted object over the
-                // current one would leave that key standing. The store row is
-                // the reverted authority (applyBulkProps commits it first);
-                // `m` covers a revert that never reached the store.
-                const revertedMeta =
-                    record?.metadata && !Array.isArray(record.metadata)
-                        ? record.metadata
-                        : m
-                elementData.metadata = { ...(revertedMeta || {}) }
-            }
-            buildPointVisual(two, group, {
-                color: pointColorOf(elementData),
-                label: pointLabelOf(elementData),
-                fontFamily: pointFontFamilyOf(elementData),
-                fontSize: pointFontSizeOf(elementData),
-            })
-            two.update()
-            return
-        }
-
         if (ct === 'rectangle' || ct === 'diamond' || ct === 'circle') {
             const shapeChild = group.children?.[0]
             const width = shapeChild?.width
@@ -653,22 +589,8 @@ export function useComponentHistory({
                     const y1 = props.y1 ?? line.vertices[0].y
                     const x2 = props.x2 ?? line.vertices[1].x
                     const y2 = props.y2 ?? line.vertices[1].y
-                    updateX1Y1Vertices(
-                        Two,
-                        line,
-                        x1,
-                        y1,
-                        pointCircle1Group,
-                        two
-                    )
-                    updateX2Y2Vertices(
-                        Two,
-                        line,
-                        x2,
-                        y2,
-                        pointCircle2Group,
-                        two
-                    )
+                    updateX1Y1Vertices(Two, line, x1, y1, pointCircle1Group, two)
+                    updateX2Y2Vertices(Two, line, x2, y2, pointCircle2Group, two)
                 }
             }
 
@@ -680,18 +602,17 @@ export function useComponentHistory({
                 reapplyTextFromMeta(group, props.metadata)
             }
 
-            // The multi-point path family (curved line + geo route/area) stores
-            // an absolute vertex array in metadata and owns its path + vertex
-            // handles (frozen props, so no re-render). Sync elementData for
-            // later drags/reload, then let the component re-flow through its own
-            // refs via this event (works for undo AND redo).
+            // curvedLine stores an absolute vertex array in metadata and owns
+            // its path + vertex handles (frozen props, so no re-render). Sync
+            // elementData for later drags/reload, then let the component re-flow
+            // through its own refs via this event (works for undo AND redo).
             if (
                 Array.isArray(props.metadata) &&
-                VERTEX_PATH_TYPES.has(group.elementData?.componentType)
+                group.elementData?.componentType === 'curvedLine'
             ) {
                 group.elementData.metadata = props.metadata
                 window.dispatchEvent(
-                    new CustomEvent(VERTEX_PATH_REVERTED_EVENT, {
+                    new CustomEvent('curvedLineVertsReverted', {
                         detail: { id, metadata: props.metadata },
                     })
                 )
@@ -799,7 +720,7 @@ export function useComponentHistory({
                           ? e.componentInfo
                           : undefined
                 if (!source) return
-                const restoredState = { ...source, baseId }
+                const restoredState = { ...source, boardId }
                 updatedStore[e.action === 'DELETE' ? e.id : e.id] =
                     restoredState
                 if (isPersistedRef.current) {
@@ -951,7 +872,10 @@ export function useComponentHistory({
                         typeof propsToApply.metadata === 'object' &&
                         !Array.isArray(propsToApply.metadata)
                     ) {
-                        reapplyTextFromMeta(sceneGroup, propsToApply.metadata)
+                        reapplyTextFromMeta(
+                            sceneGroup,
+                            propsToApply.metadata
+                        )
                     }
                     if (
                         propsToApply.width !== undefined ||
@@ -1049,7 +973,9 @@ export function useComponentHistory({
             // Re-read the live store here (still present, since undo's
             // applyRemove runs after this) so redo re-inserts the final geometry.
             const current = stateRefForComponentStore.current[entry.id]
-            return current ? { ...entry, componentInfo: { ...current } } : entry
+            return current
+                ? { ...entry, componentInfo: { ...current } }
+                : entry
         }
         if (entry.action === 'UPDATE_VERTICES') {
             const current = stateRefForComponentStore.current[entry.id]
@@ -1146,10 +1072,7 @@ export function useComponentHistory({
         delete cleanEntry.nextX
         delete cleanEntry.nextY
         delete cleanEntry.nextProps
-        const updatedLog = [
-            ...historyLogRef.current,
-            cleanEntry as HistoryEntry,
-        ]
+        const updatedLog = [...historyLogRef.current, cleanEntry as HistoryEntry]
         writeHistory(updatedLog)
 
         // See undoLastAction: dismiss any active group overlay so it can't show

@@ -13,10 +13,10 @@ export default function PermissionErrorModal({
 }: PermissionErrorModalProps): ReactElement {
     return (
         <Modal open={open} onClose={onClose} locked={false}>
-            <div className="p-4" style={{ minWidth: 'min(400px, calc(100vw - 96px))' }}>
+            <div className="p-4" style={{ minWidth: '400px' }}>
                 <h2 className="text-lg font-semibold mb-2">Permission Denied</h2>
                 <p className="text-sm text-neutrals-n700 mb-4">
-                    You don't have permission to add components to this canvas.
+                    You don't have permission to add components to this board.
                     If you already have access, please refresh the page and try
                     again.
                 </p>

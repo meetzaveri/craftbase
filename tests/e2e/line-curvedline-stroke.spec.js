@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     drawLine,
     drawCurvedLine,
     setDefaultStrokeWidth,
@@ -59,7 +59,7 @@ async function blur(page) {
 
 test.describe('Line & CurvedLine — stroke edits persist after blur', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     for (const { name, draw, select } of SHAPES) {

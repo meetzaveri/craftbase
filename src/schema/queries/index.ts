@@ -1,13 +1,31 @@
 import { gql } from '@apollo/client'
 import type { TypedDocumentNode } from '@apollo/client'
 import type {
+    MyQueryQuery,
+    MyQueryQueryVariables,
     GetComponentTypesQuery,
     GetComponentTypesQueryVariables,
-    GetComponentsForBaseQuery,
-    GetComponentsForBaseQueryVariables,
-    GetBaseComponentCountQuery,
-    GetBaseComponentCountQueryVariables,
+    GetComponentsForBoardQuery,
+    GetComponentsForBoardQueryVariables,
+    GetComponentInfoQueryQuery,
+    GetComponentInfoQueryQueryVariables,
+    GetBoardComponentsQuery,
+    GetBoardComponentsQueryVariables,
+    GetBoardComponentCountQuery,
+    GetBoardComponentCountQueryVariables,
 } from '../generated'
+
+export const GET_USER_DETAILS: TypedDocumentNode<
+    MyQueryQuery,
+    MyQueryQueryVariables
+> = gql`
+    query MyQuery($id: String = "") {
+        users: users_user(where: { id: { _eq: $id } }) {
+            firstName
+            id
+        }
+    }
+`
 
 export const GET_COMPONENT_TYPES: TypedDocumentNode<
     GetComponentTypesQuery,
@@ -26,36 +44,18 @@ export const GET_COMPONENT_TYPES: TypedDocumentNode<
     }
 `
 
-export const GET_COMPONENTS_FOR_BASE_QUERY: TypedDocumentNode<
-    GetComponentsForBaseQuery,
-    GetComponentsForBaseQueryVariables
+export const GET_COMPONENTS_FOR_BOARD_QUERY: TypedDocumentNode<
+    GetComponentsForBoardQuery,
+    GetComponentsForBoardQueryVariables
 > = gql`
-    query getComponentsForBase($baseId: uuid = "") {
-        # The base ROW, not just its elements. Rides this query rather than
-        # getting one of its own because views/Base/index.tsx already gates
-        # rendering on this query's loading flag — and the base type has to be
-        # known BEFORE the canvas mounts, or the camera restores under the
-        # wrong viewport key and the wrong zoom limits. A second query would
-        # need a second gate; this needs none.
-        base: bases_base_by_pk(id: $baseId) {
-            id
-            type
-            isPublic
-            mapAnchorLng
-            mapAnchorLat
-            mapAnchorZoom
-            landingLng
-            landingLat
-            landingZoom
-        }
+    query getComponentsForBoard($boardId: uuid = "") {
         components: components_component(
-            where: { baseId: { _eq: $baseId } }
+            where: { boardId: { _eq: $boardId } }
             order_by: { position: asc }
         ) {
             id
             componentType
             objectClass
-            zoomResistant
             children
             metadata
             x
@@ -84,13 +84,57 @@ export const GET_COMPONENTS_FOR_BASE_QUERY: TypedDocumentNode<
     }
 `
 
-export const GET_BASE_COMPONENT_COUNT_QUERY: TypedDocumentNode<
-    GetBaseComponentCountQuery,
-    GetBaseComponentCountQueryVariables
+export const GET_COMPONENT_INFO_QUERY: TypedDocumentNode<
+    GetComponentInfoQueryQuery,
+    GetComponentInfoQueryQueryVariables
 > = gql`
-    query getBaseComponentCount($baseId: uuid! = "") {
+    query getComponentInfoQuery($id: uuid = "") {
+        component: components_component_by_pk(id: $id) {
+            metadata
+            width
+            height
+            fill
+            id
+            stroke
+            linewidth
+            strokeType
+            x
+            y
+            x1
+            y1
+            x2
+            y2
+            componentType
+            children
+            updatedBy
+            iconStroke
+            textColor
+            opacity
+        }
+    }
+`
+
+export const GET_BOARD_DATA_QUERY: TypedDocumentNode<
+    GetBoardComponentsQuery,
+    GetBoardComponentsQueryVariables
+> = gql`
+    query getBoardComponents($boardId: uuid! = "") {
+        components: components_component(
+            where: { boardId: { _eq: $boardId } }
+        ) {
+            id
+            componentType
+        }
+    }
+`
+
+export const GET_BOARD_COMPONENT_COUNT_QUERY: TypedDocumentNode<
+    GetBoardComponentCountQuery,
+    GetBoardComponentCountQueryVariables
+> = gql`
+    query getBoardComponentCount($boardId: uuid! = "") {
         components: components_component_aggregate(
-            where: { baseId: { _eq: $baseId } }
+            where: { boardId: { _eq: $boardId } }
         ) {
             aggregate {
                 count

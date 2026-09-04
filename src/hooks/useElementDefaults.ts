@@ -22,7 +22,7 @@ export interface ElementDefaultsState {
 const INITIAL_DEFAULTS: ElementDefaultsState = {
     defaultFill: '#FFFFFF',
     // Pure-black ink baselines so they flip cleanly to #fff in dark mode (the
-    // defaults flip on theme toggle — see base.tsx).
+    // defaults flip on theme toggle — see board.tsx).
     defaultStrokeColor: '#000',
     defaultLinewidth: 2,
     defaultStrokeType: null,
@@ -53,15 +53,15 @@ export interface ElementDefaultsApi extends ElementDefaultsState {
     setDefaultTextColor: Dispatch<SetStateAction<string>>
     setDefaultTextSize: Dispatch<SetStateAction<TextSizeLabel>>
     setDefaultTextFontFamily: Dispatch<SetStateAction<string>>
-    // base-facing setters (currently identical to raw; kept for API symmetry)
-    setDefaultFillInBase: (val: string) => void
-    setDefaultStrokeColorInBase: (val: string) => void
-    setDefaultLinewidthInBase: (val: number) => void
-    setDefaultStrokeTypeInBase: (val: string | null) => void
-    setDefaultOpacityInBase: (val: number) => void
-    setDefaultTextColorInBase: (val: string) => void
-    setDefaultTextSizeInBase: (val: TextSizeLabel) => void
-    setDefaultTextFontFamilyInBase: (val: string) => void
+    // board-facing setters (currently identical to raw; kept for API symmetry)
+    setDefaultFillInBoard: (val: string) => void
+    setDefaultStrokeColorInBoard: (val: string) => void
+    setDefaultLinewidthInBoard: (val: number) => void
+    setDefaultStrokeTypeInBoard: (val: string | null) => void
+    setDefaultOpacityInBoard: (val: number) => void
+    setDefaultTextColorInBoard: (val: string) => void
+    setDefaultTextSizeInBoard: (val: TextSizeLabel) => void
+    setDefaultTextFontFamilyInBoard: (val: string) => void
     // Restore every default to its factory value (used by "clear canvas" so a
     // leaked default like linewidth:0 doesn't carry over to the next drawing).
     resetDefaults: () => void
@@ -127,20 +127,20 @@ export function useElementDefaults(): ElementDefaultsApi {
     ])
 
     // Pure setters — these never deselect or close anything.
-    const setDefaultLinewidthInBase = (val: number): void =>
+    const setDefaultLinewidthInBoard = (val: number): void =>
         setDefaultLinewidth(val)
-    const setDefaultStrokeTypeInBase = (val: string | null): void =>
+    const setDefaultStrokeTypeInBoard = (val: string | null): void =>
         setDefaultStrokeType(val)
-    const setDefaultFillInBase = (val: string): void => setDefaultFill(val)
-    const setDefaultStrokeColorInBase = (val: string): void =>
+    const setDefaultFillInBoard = (val: string): void => setDefaultFill(val)
+    const setDefaultStrokeColorInBoard = (val: string): void =>
         setDefaultStrokeColor(val)
-    const setDefaultOpacityInBase = (val: number): void =>
+    const setDefaultOpacityInBoard = (val: number): void =>
         setDefaultOpacity(val)
-    const setDefaultTextColorInBase = (val: string): void =>
+    const setDefaultTextColorInBoard = (val: string): void =>
         setDefaultTextColor(val)
-    const setDefaultTextSizeInBase = (val: TextSizeLabel): void =>
+    const setDefaultTextSizeInBoard = (val: TextSizeLabel): void =>
         setDefaultTextSize(val)
-    const setDefaultTextFontFamilyInBase = (val: string): void =>
+    const setDefaultTextFontFamilyInBoard = (val: string): void =>
         setDefaultTextFontFamily(val)
 
     // Reset all defaults to INITIAL_DEFAULTS. The persistence effect above then
@@ -173,14 +173,14 @@ export function useElementDefaults(): ElementDefaultsApi {
         setDefaultTextColor,
         setDefaultTextSize,
         setDefaultTextFontFamily,
-        setDefaultFillInBase,
-        setDefaultStrokeColorInBase,
-        setDefaultLinewidthInBase,
-        setDefaultStrokeTypeInBase,
-        setDefaultOpacityInBase,
-        setDefaultTextColorInBase,
-        setDefaultTextSizeInBase,
-        setDefaultTextFontFamilyInBase,
+        setDefaultFillInBoard,
+        setDefaultStrokeColorInBoard,
+        setDefaultLinewidthInBoard,
+        setDefaultStrokeTypeInBoard,
+        setDefaultOpacityInBoard,
+        setDefaultTextColorInBoard,
+        setDefaultTextSizeInBoard,
+        setDefaultTextFontFamilyInBoard,
         resetDefaults,
     }
 }

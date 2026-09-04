@@ -1,4 +1,4 @@
-import type { RandomUsername } from '../types/base'
+import type { RandomUsername } from '../types/board'
 
 // True on macOS/iOS, where ⌘ (metaKey) is the primary shortcut modifier; Ctrl
 // elsewhere. Prefer the modern userAgentData.platform, fall back to the legacy
@@ -13,9 +13,7 @@ export const isMac: boolean =
 /** Display label for the primary shortcut modifier: '⌘' on mac, 'Ctrl' else. */
 export const PRIMARY_MOD_LABEL: string = isMac ? '⌘' : 'Ctrl'
 
-export function strokeTypeToDashes(
-    strokeType: string | null | undefined
-): number[] {
+export function strokeTypeToDashes(strokeType: string | null | undefined): number[] {
     if (strokeType === 'dashed') return [8]
     if (strokeType === 'dotted') return [4]
     return []
@@ -25,7 +23,7 @@ export function strokeTypeToDashes(
 // stroke color at 0.7 opacity. Never stored — re-derived on every render and on
 // every stroke edit. Handles #rgb / #rrggbb / rgb() / rgba(); falls back to the
 // input (so 'transparent' / named colors pass through unchanged).
-const AREA_FILL_ALPHA = 0.5
+const AREA_FILL_ALPHA = 0.7
 
 export function strokeToAreaFill(
     stroke: string | null | undefined,
@@ -66,14 +64,9 @@ export function strokeToAreaFill(
 // Typed loosely: the renderer-internal `_renderer.elem` lives on every Two.js
 // Shape but isn't part of the published types we depend on here. Sharpen when
 // Stages 7–9 converge on a canonical Two.js shape type.
-export function clearDashesOnTwoJSShape(
-    shape:
-        | {
-              _renderer?: { elem?: SVGElement }
-          }
-        | null
-        | undefined
-): void {
+export function clearDashesOnTwoJSShape(shape: {
+    _renderer?: { elem?: SVGElement }
+} | null | undefined): void {
     if (shape?._renderer?.elem) {
         shape._renderer.elem.removeAttribute('stroke-dasharray')
         shape._renderer.elem.removeAttribute('stroke-dashoffset')

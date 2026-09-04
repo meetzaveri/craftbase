@@ -139,7 +139,7 @@ function Line(props: ElementProps): ReactElement {
             // Every DOM read below needs the rendered SVG nodes, which only
             // exist after a render. Batch that render with every other element
             // mounting this frame — a synchronous two.update() per element made
-            // mounting a base O(N²). `mountCancelled` guards an unmount before
+            // mounting a board O(N²). `mountCancelled` guards an unmount before
             // the frame fires, so we never observe/bind a node already gone.
             scheduleRender(two, () => {
                 if (mountCancelled) return

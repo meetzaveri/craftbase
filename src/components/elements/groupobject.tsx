@@ -6,22 +6,11 @@ import Two from 'two.js'
 const factoryModules: Record<string, () => Promise<any>> = import.meta.glob(
     '../../factory/*.ts'
 )
-import { useBaseContext } from '../../views/Base/baseContext'
+import { useBoardContext } from '../../views/Board/boardContext'
 import getEditComponents from '../utils/editWrapper'
-import {
-    VERTEX_PATH_TYPES,
-    VERTEX_PATH_REVERTED_EVENT,
-} from '../utils/vertexHandles'
 import { elementOnBlurHandler } from '../../utils/misc'
-import {
-    updateX1Y1Vertices,
-    updateX2Y2Vertices,
-} from '../../utils/updateVertices'
+import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertices'
 import { isStandaloneTextType } from '../../constants/misc'
-import {
-    applyCounterScaleToCopies,
-    applyCounterScaleToCopy,
-} from '../../utils/counterScale'
 
 // PROTOTYPE FLAG — group resize. Flip to false to fully disable the corner
 // resize handles + baking and fall back to the old move-only group overlay.
@@ -89,8 +78,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         isPencilMode,
         isArrowDrawMode,
         isArrowSelected,
-        zuiInBase,
-    } = useBaseContext()
+    } = useBoardContext()
 
     const two = props.twoJSInstance
     const [deleteGroupElements, setDeleteGroupElements] =
@@ -420,15 +408,9 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             // them. See CLAUDE.md "Two.js scene.subtractions Pitfall" — the
             // try/catch + subtractions reset here is the canonical recovery
             // pattern.
-            // Array.from FIRST: two.scene.children is a Two.js Collection
-            // (Array subclass), so `.filter()` goes through ArraySpeciesCreate
-            // → `new Collection(0)`, and that constructor treats a numeric
-            // argument as an element to push. A filter matching nothing
-            // therefore returns `[0]` with length 1 — which slipped past the
-            // `length > 0` guard below and handed a bogus `0` to two.remove().
-            const toRemove = Array.from(two.scene.children).filter(
+            const toRemove = two.scene.children.filter(
                 (el: ShapeLike) =>
-                    el?.elementData && idsArr.includes(el.elementData.id)
+                    el.elementData && idsArr.includes(el.elementData.id)
             )
             if (toRemove.length > 0) {
                 two.remove(toRemove)
@@ -465,9 +447,6 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             // our larger constant-screen-size handles on top so they stay easy
             // to grab at the new zoom.
             sizeHandlesRef.current?.(detail.scale)
-            // Member copies have no element component to counter-scale them on
-            // zoom, so the overlay keeps the geo ones zoom-resistant itself.
-            applyCounterScaleToCopies(groupInstance, detail.scale)
             two.update()
         }
         window.addEventListener('zoomChanged', onZoomChanged)
@@ -505,7 +484,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         // members as each resolved (a per-child two.update each), while newCanvas
         // hid the originals up-front, left a blank frame (the flicker) between
         // "originals hidden" and "members painted". Factories are prefetched
-        // (base.tsx warm list), so Promise.all resolves on the next microtask
+        // (board.tsx warm list), so Promise.all resolves on the next microtask
         // on a warm cache.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const loaders = props.children.map((item: any) => {
@@ -542,7 +521,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 // content, but SVG collapses `\n` to a single line. Re-lay it out
                 // as the stacked multiline block (same as the newText component)
                 // so a grouped/duplicated text keeps its line breaks.
-                if (isStandaloneTextType(item.componentType)) {
+                if (item.componentType === 'newText') {
                     layoutStandaloneText(
                         two,
                         coreObject,
@@ -571,15 +550,6 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 }
 
                 coreObject.elementData = item
-                // Seed zoom-resistance on the copy from the current camera. The
-                // originals get this from their own component; a copy is raw
-                // factory output, so without it a grouped pin/geoText collapses
-                // to world size for the life of the selection.
-                applyCounterScaleToCopy(
-                    coreObject,
-                    item,
-                    (zuiInBase as ShapeLike)?.zui?.scale ?? two?.scene?.scale
-                )
                 group.add(coreObject)
             })
             orderGroupChildrenByZ(group)
@@ -697,10 +667,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         // every real member: update the store, mutate the live Two.js object,
         // and record one BATCH of UPDATE_BULK entries so a single undo reverts
         // the whole resize.
-        const bakeGroupResize = (
-            s: number,
-            O: { x: number; y: number }
-        ): void => {
+        const bakeGroupResize = (s: number, O: { x: number; y: number }): void => {
             const userId = localStorage.getItem('userId')
             const childrenIds = props.children.map((i: ShapeLike) => i.id)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -874,10 +841,10 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                         )
                     }
                 }
-                if (VERTEX_PATH_TYPES.has(ct) && Array.isArray(newMetadata)) {
+                if (ct === 'curvedLine' && Array.isArray(newMetadata)) {
                     element.elementData.metadata = newMetadata
                     window.dispatchEvent(
-                        new CustomEvent(VERTEX_PATH_REVERTED_EVENT, {
+                        new CustomEvent('curvedLineVertsReverted', {
                             detail: { id, metadata: newMetadata },
                         })
                     )
@@ -997,7 +964,8 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 sw: selector.circle2,
             }
             const oppElem = opposite[corner]?._renderer?.elem as
-                SVGElement | undefined
+                | SVGElement
+                | undefined
             const oppRect = oppElem?.getBoundingClientRect()
             const anchorScreen = oppRect
                 ? {

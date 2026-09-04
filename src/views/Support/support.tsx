@@ -60,7 +60,7 @@ const SupportPage: React.FC = () => {
                             px-2 py-1 rounded-md hover:bg-accent/30 transition-all ease-in duration-150"
                     >
                         <ChevronLeft />
-                        <span>{isMobile ? 'Back' : 'Back to canvas'}</span>
+                        <span>{isMobile ? 'Back' : 'Back to board'}</span>
                     </Link>
                 </div>
             </nav>

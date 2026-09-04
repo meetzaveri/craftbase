@@ -13,11 +13,11 @@ import { setContext } from '@apollo/client/link/context'
 import { getMainDefinition } from '@apollo/client/utilities'
 import { WebSocketLink } from '@apollo/client/link/ws'
 
-import BaseViewContainer from './views/Base'
-import LegacyBaseRedirect from './components/LegacyBaseRedirect'
+import BoardViewContainer from './views/Board'
 import HomePageViewContainer from './views/Home'
 import SupportViewContainer from './views/Support'
 import PrivacyViewContainer from './views/Privacy'
+import EmbeddableViewContainer from './views/Embeddable'
 import CraftbaseLoader from './components/common/craftbaseLoader'
 
 import routes from './routes'
@@ -153,23 +153,12 @@ class App extends Component {
                                 <Route
                                     path={routes.index}
                                     element={
-                                        <BaseViewContainer welcomeSketch />
+                                        <BoardViewContainer welcomeSketch />
                                     }
                                 />
                                 <Route
-                                    path={routes.base}
-                                    element={<BaseViewContainer />}
-                                />
-                                <Route
-                                    path={routes.map}
-                                    element={
-                                        <BaseViewContainer pinnedBaseType="map" />
-                                    }
-                                />
-
-                                <Route
-                                    path={routes.legacyBoard}
-                                    element={<LegacyBaseRedirect />}
+                                    path={routes.board}
+                                    element={<BoardViewContainer />}
                                 />
                                 <Route
                                     path={routes.marketing}
@@ -182,6 +171,10 @@ class App extends Component {
                                 <Route
                                     path={routes.privacy}
                                     element={<PrivacyViewContainer />}
+                                />
+                                <Route
+                                    path={routes.embeddable}
+                                    element={<EmbeddableViewContainer />}
                                 />
                             </Routes>
                         </div>

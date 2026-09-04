@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     getCanvasBox,
     drawShape,
     addTextToRectangle,
@@ -169,7 +169,7 @@ async function snapshotRects(page, elements) {
 
 test.describe('Group text-size change keeps shapes anchored (grows downward only)', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('rectangle / diamond / circle with multiline text keep their top-left x,y after a group text-size bump', async ({

@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     drawShape,
     clickPointerTool,
     dragSelectArea,
@@ -80,7 +80,7 @@ test.describe('Connectors (flag on)', () => {
         await page.addInitScript(() => {
             localStorage.setItem('craftbase_connectors_enabled', 'true')
         })
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     for (const source of ['circle', 'diamond']) {
@@ -452,7 +452,7 @@ test.describe('Connectors (flag off)', () => {
     test('port pull-out gesture creates nothing when the flag is disabled', async ({
         page,
     }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
         await drawShape(page, 'circle', shapeCoords(LEFT))
         await selectShapeAt(page, LEFT.cx, LEFT.cy)
 
