@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react'
 import Modal from '../common/modal'
 import { isMac } from '../../utils/misc'
-import { useBaseContext } from '../../views/Base/baseContext'
 
 interface ShortcutsModalProps {
     open: boolean
@@ -118,31 +117,18 @@ const GROUPS: ShortcutGroup[] = [
             },
         ],
     },
+    {
+        title: 'Canvas navigation',
+        items: [
+            { label: 'Pan', combos: [[key('scroll')]] },
+            { label: 'Zoom', combos: [[mod(), key('scroll')]] },
+            {
+                label: 'Open context menu',
+                combos: [[key('right-click')]],
+            },
+        ],
+    },
 ]
-
-// Navigation is the one group that differs per base type, because the camera
-// input model does. The map base speaks the map idiom (wheel zooms, drag moves
-// the geography); the board base keeps the whiteboard idiom (wheel pans, a
-// modifier zooms). See the wheel handler and the empty-canvas mousedown branch
-// in newCanvas.tsx — this table has to be read alongside them.
-const MAP_NAVIGATION: ShortcutGroup = {
-    title: 'Canvas navigation',
-    items: [
-        { label: 'Zoom', combos: [[key('scroll')]] },
-        { label: 'Pan', combos: [[key('drag')]] },
-        { label: 'Box select', combos: [[shift(), key('drag')]] },
-        { label: 'Open context menu', combos: [[key('right-click')]] },
-    ],
-}
-
-const BOARD_NAVIGATION: ShortcutGroup = {
-    title: 'Canvas navigation',
-    items: [
-        { label: 'Pan', combos: [[key('scroll')]] },
-        { label: 'Zoom', combos: [[mod(), key('scroll')]] },
-        { label: 'Open context menu', combos: [[key('right-click')]] },
-    ],
-}
 
 const Kbd = ({ children }: { children: string }): ReactElement => (
     <kbd
@@ -166,12 +152,6 @@ const ShortcutsModal = ({
     open,
     onClose,
 }: ShortcutsModalProps): ReactElement => {
-    const { activeBaseType } = useBaseContext()
-    const groups = [
-        ...GROUPS,
-        activeBaseType === 'map' ? MAP_NAVIGATION : BOARD_NAVIGATION,
-    ]
-
     return (
         <Modal open={open} onClose={onClose}>
             <div className="w-[520px] max-w-[calc(80vw_-_2.5rem)] max-h-[70vh] overflow-y-auto overflow-x-hidden">
@@ -183,7 +163,7 @@ const ShortcutsModal = ({
                 </p>
 
                 <div className="flex flex-col gap-5">
-                    {groups.map((group) => (
+                    {GROUPS.map((group) => (
                         <div key={group.title}>
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted mb-2">
                                 {group.title}

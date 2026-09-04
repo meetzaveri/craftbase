@@ -25,7 +25,3 @@ yarn-debug.log*
 yarn-error.log*
 
 .env
-# playwright artifacts
-/test-results/
-/playwright-report/
-/blob-report/

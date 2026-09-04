@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useImmer } from 'use-immer'
 
@@ -7,8 +7,6 @@ import getEditComponents from '../utils/editWrapper'
 import PencilFactory from '../../factory/pencil'
 import { readOpacity } from '../../utils/canvasUtils'
 import { scheduleRender } from '../../utils/renderScheduler'
-import { computeCounterScale, isStrokeScaled } from '../../utils/counterScale'
-import { DEFAULT_GEO_RESIST } from '../../constants/misc'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -20,20 +18,6 @@ function Pencil(props: ElementProps): ReactElement {
     const [internalState, setInternalState] = useImmer<InternalState>({})
 
     const two = props.twoJSInstance
-
-    // A pencil drawn on a geographic base resists zoom the way a route does:
-    // only the stroke width counter-scales, so the strokes stay glued to the
-    // geography while remaining visible when the world zooms out. A board-base
-    // scribble is untouched — see isStrokeScaled.
-    const geoResist = isStrokeScaled(props)
-    // pencil's `metadata` is the vertex array, so `.resist` is undefined and
-    // falls through to the default (same expression route.tsx uses).
-    const resist = props.metadata?.resist ?? DEFAULT_GEO_RESIST
-    const baseLinewidth = props.linewidth ?? 1
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pathRef = useRef<any>(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groupRef = useRef<any>(null)
 
     useEffect(() => {
         const prevX = props.x
@@ -59,18 +43,6 @@ function Pencil(props: ElementProps): ReactElement {
             scheduleRender(two)
         } else {
             group.opacity = pencilOpacity
-            groupRef.current = group
-            pathRef.current = shapeRef
-            // Seed the stroke counter-scale from the current camera so a geo
-            // stroke is legible before the first zoom event fires.
-            if (geoResist) {
-                const initialScale = two?.scene?.scale
-                if (initialScale) {
-                    shapeRef.linewidth =
-                        baseLinewidth *
-                        computeCounterScale(initialScale, resist)
-                }
-            }
             getEditComponents(two, group, 4)
 
             if (path) {
@@ -146,28 +118,6 @@ function Pencil(props: ElementProps): ReactElement {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.strokeType])
-
-    // Counter-scale only the stroke width on every camera change (geo strokes
-    // only). Reads the scale off each event — no stale closure, see CLAUDE.md.
-    useEffect(() => {
-        if (!geoResist) return
-        const onZoom = (e: Event): void => {
-            const group = groupRef.current
-            const path = pathRef.current
-            if (!group || !path) return
-            const scale = (e as CustomEvent<{ scale: number }>).detail?.scale
-            if (!scale) return
-            // Logical width lives on elementData (kept in sync by the property
-            // panel); fall back to the mount-time base.
-            const base = group.elementData?.linewidth ?? baseLinewidth
-            path.linewidth = base * computeCounterScale(scale, resist)
-            two.update()
-        }
-        window.addEventListener('zoomChanged', onZoom as EventListener)
-        return (): void => {
-            window.removeEventListener('zoomChanged', onZoom as EventListener)
-        }
-    }, [two, geoResist, resist, baseLinewidth])
 
     // Reserved for future toolbar wiring.
     void toggleToolbar

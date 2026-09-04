@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     getCanvasBox,
     drawRectangle,
     drawShape,
@@ -47,7 +47,7 @@ function pickComparedFields(component) {
 
 test.describe('Group selection — marquee drag rolls up 5 elements', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('drag-selecting all 5 element types creates a group with 5 children, originals preserved', async ({

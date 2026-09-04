@@ -3,7 +3,7 @@
 // Why this exists: while you drag out a new rectangle/circle/diamond, the old
 // path added the preview as a child of the Two.js scene and called
 // `two.update()` every mousemove. That repaints the SVG region under the
-// growing preview — and at low zoom the preview covers most of a dense base,
+// growing preview — and at low zoom the preview covers most of a dense board,
 // so the browser re-rasterises thousands of nested SVG nodes per frame (3-5fps
 // at 10% zoom). The scene itself isn't changing during the drag, only the
 // preview is, so there's no reason to touch the scene SVG at all.

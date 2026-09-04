@@ -3,28 +3,24 @@ import type { ReactElement } from 'react'
 import { useQuery } from '@apollo/client'
 
 import ShapesToolbar from './shapesToolbar'
-import BaseTypeSwitcher from './baseTypeSwitcher'
-import PlaceSearch from './placeSearch'
-import GeoTextZoomHint from '../geoTextZoomHint'
 import { GET_COMPONENT_TYPES } from '../../schema/queries'
 import SpinnerWithSize from '../common/spinnerWithSize'
 import { generateUUID } from '../../utils/misc'
 import { prefetchElementModule } from '../../elementModules'
-import { useBaseContext } from '../../views/Base/baseContext'
+import { useBoardContext } from '../../views/Board/boardContext'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
-import type { ComponentRecord } from '../../types/base'
+import type { ComponentRecord } from '../../types/board'
 import {
     GEO_TYPE_DEFAULTS,
-    GEO_CIRCLE_DEFAULTS,
-    POINT_COLOR,
-    POINT_RADIUS,
+    POINT_CATEGORIES,
+    DEFAULT_POINT_CATEGORY,
     DEFAULT_GEO_RESIST,
+    DEFAULT_GEO_RING_RADIUS,
     GEO_DRAW_MODE_KEY,
     GEO_DRAW_TYPE_KEY,
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     LAST_ADDED_ELEMENT_ID_KEY,
-    pointLabelSizeFor,
 } from '../../constants/misc'
 
 import './sidebar.css'
@@ -52,25 +48,22 @@ const FALLBACK_CATALOG: Record<
 
 const PrimarySidebar = (): ReactElement => {
     const {
-        baseId,
+        boardId,
         updateLastAddedElement,
         togglePointer,
         togglePencilMode,
         togglePanMode,
         addToLocalComponentStore,
         enableTextDrawMode,
-        setArrowDrawModeInBase,
-        setRubberModeInBase,
+        setArrowDrawModeInBoard,
+        setRubberModeInBoard,
         cancelPendingElement,
         defaultLinewidth,
         defaultStrokeType,
         defaultFill,
         defaultStrokeColor,
         defaultTextFontFamily,
-        defaultTextSize,
-        activeBaseType,
-    } = useBaseContext()
-    const isMapBaseType = activeBaseType === 'map'
+    } = useBoardContext()
     const [hintText, setHintText] = useState(
         'Click anywhere to place element there.'
     )
@@ -127,8 +120,8 @@ const PrimarySidebar = (): ReactElement => {
                         x2: 0,
                         y1: 0,
                         y2: 0,
-                        baseId,
-                        baseName: null,
+                        boardId,
+                        boardName: null,
                         radius: null,
                         iconStroke: null,
                         isDummy: null,
@@ -168,8 +161,8 @@ const PrimarySidebar = (): ReactElement => {
                 x2: 0,
                 y1: 0,
                 y2: 0,
-                baseId,
-                baseName: null,
+                boardId,
+                boardName: null,
                 radius: null,
                 iconStroke: null,
                 isDummy: null,
@@ -195,7 +188,7 @@ const PrimarySidebar = (): ReactElement => {
         if (root) root.style.cursor = 'crosshair'
         localStorage.setItem('arrowDrawMode', 'true')
         localStorage.setItem('lastAddedElementId', generateId)
-        setArrowDrawModeInBase(true)
+        setArrowDrawModeInBoard(true)
         addToLocalComponentStore(
             (shapeData as ComponentRecord).id,
             (shapeData as ComponentRecord).componentType,
@@ -223,15 +216,22 @@ const PrimarySidebar = (): ReactElement => {
     }
 
     // Point: single click-to-place. Pre-create the element off-screen (like the
-    // text/arrow flow) then let the canvas position it on the next click, which
-    // also opens its label editor.
-    const handlePointElement = (): void => {
+    // text/arrow flow) then let the canvas position it on the next click.
+    const handlePointElement = (categoryArg?: string): void => {
         togglePencilMode(false)
         togglePointer(false)
 
         const userId = localStorage.getItem('userId')
         const generateId = generateUUID()
         const geoDef = GEO_TYPE_DEFAULTS.point
+        // Category is chosen up front from the point drawer (defaults to the
+        // generic pin). It drives the pin's fill/icon — stroke/fill mirror the
+        // category color for any legacy reads.
+        const category =
+            categoryArg && POINT_CATEGORIES[categoryArg]
+                ? categoryArg
+                : DEFAULT_POINT_CATEGORY
+        const cat = POINT_CATEGORIES[category]!
 
         const shapeData: ComponentRecord = {
             id: generateId,
@@ -239,9 +239,7 @@ const PrimarySidebar = (): ReactElement => {
             objectClass: 'geo',
             linewidth: geoDef.linewidth,
             strokeType: null,
-            // `fill` is the circle's colour and the one the user can change;
-            // `stroke` mirrors it so anything reading either sees one colour.
-            stroke: POINT_COLOR,
+            stroke: cat.bg,
             children: {},
             x: -9999,
             y: -9999,
@@ -249,30 +247,21 @@ const PrimarySidebar = (): ReactElement => {
             x2: 0,
             y1: 0,
             y2: 0,
-            baseId,
-            baseName: null,
+            boardId,
+            boardName: null,
             radius: null,
             iconStroke: null,
             isDummy: null,
             createdAt: null,
             metadata: {
-                // Named on placement — the canvas opens the editor as soon as
-                // the element mounts.
-                label: '',
+                category,
+                svgIcon: cat.svgIcon,
                 resist: DEFAULT_GEO_RESIST,
-                // The label picks up the current text style, exactly like a new
-                // text element does (see buildTextShapeData). The size default
-                // travels as a ladder LABEL, so 'XL' chosen on a map label
-                // becomes the POINT ladder's XL here — the same intent, sized
-                // for a pin.
-                textFontSize: pointLabelSizeFor(defaultTextSize),
-                ...(defaultTextFontFamily && {
-                    textFontFamily: defaultTextFontFamily,
-                }),
+                ringRadius: DEFAULT_GEO_RING_RADIUS,
             },
-            width: POINT_RADIUS * 2,
-            height: POINT_RADIUS * 2,
-            fill: POINT_COLOR,
+            width: DEFAULT_GEO_RING_RADIUS * 2,
+            height: DEFAULT_GEO_RING_RADIUS * 2,
+            fill: cat.bg,
             textColor: null,
             updatedBy: userId,
         }
@@ -309,8 +298,8 @@ const PrimarySidebar = (): ReactElement => {
             linewidth: geoDef ? geoDef.linewidth : (defaultLinewidth ?? 2.5),
             strokeType: isGeo ? null : defaultStrokeType,
             fill: 'transparent',
-            baseId,
-            baseName: null,
+            boardId,
+            boardName: null,
             textColor: null,
             updatedBy: localStorage.getItem('userId'),
         }
@@ -321,23 +310,21 @@ const PrimarySidebar = (): ReactElement => {
         const root = document.getElementById('main-two-root')
         if (root) root.style.cursor = 'crosshair'
 
-        // Nudge banner: only the curved line gets the "press Esc/Enter" hint.
+        // Nudge banner: only the curved line gets the "press Esc/Enter" hint
+        // (geo area/route live in the consumer's map UI with their own affordances).
         const hint = document.getElementById('multi-click-draw-hint')
         if (hint && !isGeo) {
             hint.style.opacity = '1'
             hint.style.zIndex = '20'
         }
-        // Mobile has no Esc/Enter, no double-click and no right-click, so the
-        // ✓/✗ controls (base.tsx) are the ONLY way to finish or abandon a
-        // multi-click draw there. That's true of every tool in this family, so
-        // all three raise it — area and route were left out back when they were
-        // expected to finish through a consumer's own map UI, and there is no
-        // consumer any more. The canvas already handles the `finishGeoDraw` /
-        // `cancelGeoDraw` those buttons fire for any draw type.
-        window.dispatchEvent(new CustomEvent('multiClickDrawStart'))
+        // Mobile has no Esc/Enter — signal board.tsx to show the ✓/✗ draw
+        // controls for the curved-line draw (matches the nudge lifecycle).
+        if (!isGeo) {
+            window.dispatchEvent(new CustomEvent('multiClickDrawStart'))
+        }
     }
 
-    const addElement = (label: string): void => {
+    const addElement = (label: string, category?: string): void => {
         // Warm the shape's lazy chunk NOW, while the user moves to the canvas
         // and drags (~700ms–1s). By mouseup the chunk is cached, so the
         // component mounts instantly instead of the freshly-drawn shape sitting
@@ -346,7 +333,7 @@ const PrimarySidebar = (): ReactElement => {
             prefetchElementModule(label)
         }
         cancelPendingElement()
-        if (label !== 'rubber') setRubberModeInBase(false)
+        if (label !== 'rubber') setRubberModeInBoard(false)
         if (label !== 'pan') togglePanMode(false)
         switch (label) {
             case 'pointer':
@@ -361,7 +348,7 @@ const PrimarySidebar = (): ReactElement => {
             case 'rubber':
                 togglePencilMode(false)
                 togglePointer(false)
-                setRubberModeInBase(true)
+                setRubberModeInBoard(true)
                 break
             case 'arrowLine':
                 handleArrowElement(label)
@@ -384,7 +371,7 @@ const PrimarySidebar = (): ReactElement => {
                 handleTextElement('geoText')
                 break
             case 'point':
-                handlePointElement()
+                handlePointElement(category)
                 break
             case 'area':
             case 'route':
@@ -446,8 +433,8 @@ const PrimarySidebar = (): ReactElement => {
                                 x2: label.includes('divider') ? 100 : 0,
                                 y1: 0,
                                 y2: 0,
-                                baseId,
-                                baseName: null,
+                                boardId,
+                                boardName: null,
                                 radius: null,
                                 iconStroke: null,
                                 isDummy: null,
@@ -500,8 +487,8 @@ const PrimarySidebar = (): ReactElement => {
                         x2: label.includes('divider') ? 100 : 0,
                         y1: 0,
                         y2: 0,
-                        baseId,
-                        baseName: null,
+                        boardId,
+                        boardName: null,
                         radius: null,
                         iconStroke: null,
                         isDummy: null,
@@ -517,30 +504,6 @@ const PrimarySidebar = (): ReactElement => {
                         fill: useShapeFill ? (defaultFill ?? fb.fill) : fb.fill,
                         textColor: fb.textColor,
                         updatedBy: userId,
-                    }
-                }
-
-                // A circle drawn on a map base is a geo object, not a
-                // whiteboard shape: map-only (objectClass is what
-                // isRecordVisibleOnBaseType reads), half-transparent so the
-                // basemap reads through it, and its outline starts as its fill
-                // so it lands as one mark. Everything else about it — factory,
-                // component, resize, undo, clipboard — is the whiteboard
-                // circle, unchanged. Same trick the pencil plays.
-                //
-                // opacity goes on the top-level column, not metadata.opacity:
-                // readOpacity prefers the column, and the column is what the
-                // insert input and the base-load query carry.
-                if (isMapBaseType && label === 'circle' && shapeData) {
-                    const geoFill = GEO_CIRCLE_DEFAULTS.fill
-                    shapeData = {
-                        ...(shapeData as ComponentRecord),
-                        objectClass: 'geo',
-                        fill: geoFill,
-                        stroke: geoFill,
-                        linewidth:
-                            defaultLinewidth ?? GEO_CIRCLE_DEFAULTS.linewidth,
-                        opacity: GEO_CIRCLE_DEFAULTS.opacity,
                     }
                 }
 
@@ -572,8 +535,6 @@ const PrimarySidebar = (): ReactElement => {
     return (
         <>
             <ShapesToolbar addElement={addElement} />
-            <BaseTypeSwitcher />
-            <PlaceSearch />
             <MenuDrawer />
             <div
                 id="show-click-anywhere-btn"
@@ -620,10 +581,6 @@ const PrimarySidebar = (): ReactElement => {
                     </div>
                 </div>
             )}
-            {/* One-shot tip for the "Zoom resistant" switch. Shares the
-                top: 55px slot above and stands down while a multi-click draw
-                is armed. */}
-            <GeoTextZoomHint />
             <div className="absolute top-2 right-1rem flex items-center px-2 gap-1">
                 <div
                     id="show-saving-loader"
@@ -660,16 +617,8 @@ const PrimarySidebar = (): ReactElement => {
                     </div>
                 )}
 
-                {/* Both are hidden on the map base for now. They occupy the
-                    same top-right corner as the place search, and the theme
-                    switcher has nothing to switch there anyway — the basemap
-                    ships light-only (see POINT_LABEL_COLOR's note). */}
-                {!isMobile && !isMapBaseType && <ThemeSwitcher />}
-                {/* Share is available everywhere — on the map base (which is
-                    the whole point of a shareable map) and on mobile. The theme
-                    switcher keeps both gates: it shares this corner, and the
-                    basemap ships light-only so it has nothing to switch there. */}
-                <ShareLinkPopup />
+                {!isMobile && <ThemeSwitcher />}
+                {!isMobile && <ShareLinkPopup />}
             </div>
         </>
     )

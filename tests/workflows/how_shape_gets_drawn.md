@@ -21,7 +21,7 @@ Path A: Draw-to-place (rectangle / circle)
 - Calls addToLocalComponentStore(finalId, drawShapeType, finalShapeData) to register it in React state
 - Calls pollUntilElement() to wait for the React component to appear in two.scene.children, then removes the preview shape
 
-5. addToLocalComponentStore() — src/views/Base/base.tsx:385
+5. addToLocalComponentStore() — src/views/Board/board.js:385
    Adds the component data to componentStore React state via setComponentStore(). Also:
 
 - Records to undo history via recordToHistoryLog()

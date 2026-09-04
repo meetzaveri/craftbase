@@ -7,7 +7,7 @@
 | **Geist**        | UI chrome, all app interface text                             | Google Fonts / Vercel CDN |
 | **Geist Mono**   | Numeric values, coordinates, hex codes                        | Google Fonts / Vercel CDN |
 | **Fraunces**     | Branding, headings, display text                              | Google Fonts              |
-| **Caveat Brush** | Canvas text — the **default** for anything drawn on the canvas | Google Fonts              |
+| **Caveat Brush** | Canvas text — the **default** for anything drawn on the board | Google Fonts              |
 | **Caveat**       | Canvas text — alternate, user-selectable                      | Google Fonts              |
 
 > **Canvas ≠ app chrome.** The app UI defaults to Geist; the _canvas_ defaults to
@@ -189,7 +189,7 @@ button {
 {
     /* Tailwind */
 }
-;<h2 className="font-display text-xl font-normal">Share Base</h2>
+;<h2 className="font-display text-xl font-normal">Share Board</h2>
 ```
 
 > **Avoid** using Fraunces at small sizes (below 14px). It loses its character and competes with Geist.
@@ -199,7 +199,7 @@ button {
 ### 5. Canvas — Default Text Elements
 
 **Font:** Caveat Brush  
-**When:** Anything the user draws on the canvas — standalone text elements, text
+**When:** Anything the user draws on the board — standalone text elements, text
 typed inside a shape, arrow labels. Also the welcome sketch (`welcomeSketch.ts`
 sets `SKETCH_FONT = DEFAULT_TEXT_FONT_FAMILY`).
 
@@ -230,7 +230,7 @@ Users change the font of a selected element from the properties panel
 | **Caveat**       | Lighter, more legible handwriting               |
 | **Geist**        | Neutral — for diagrams that must read as formal |
 
-Picking a font is **universal, not per-element**: `base.tsx` calls
+Picking a font is **universal, not per-element**: `board.tsx` calls
 `setDefaultTextFontFamily(fontFamily)` on change, so every element created
 afterward inherits it. Changing it also triggers
 `reflowShapeTextAfterStyleChange` — families have different metrics, so shape

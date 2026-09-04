@@ -76,8 +76,8 @@ if (isMobile) return null
 
 **3. Different text content (not just size)**
 ```jsx
-// "Back" vs "Back to canvas" — different string, not a style tweak
-{isMobile ? 'Back' : 'Back to canvas'}
+// "Back" vs "Back to board" — different string, not a style tweak
+{isMobile ? 'Back' : 'Back to board'}
 ```
 
 **4. Fundamentally different layout requiring JS-driven positioning**

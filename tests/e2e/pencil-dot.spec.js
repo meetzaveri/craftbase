@@ -1,6 +1,6 @@
-import { test, expect } from './helpers/test.js'
+import { test, expect } from '@playwright/test'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     getCanvasBox,
     getDraftComponents,
     triggerUndoKeyboard,
@@ -32,7 +32,7 @@ async function clickDot(page, x, y) {
 
 test.describe('Pencil — click without drag draws a dot', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('commits a pencil component that actually paints', async ({

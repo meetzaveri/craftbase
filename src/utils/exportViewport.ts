@@ -21,24 +21,12 @@ const WATERMARK_TEXT = 'Made with craftbase.org'
 const MAX_DPR = 2 // cap device-pixel scaling to bound output file size
 
 /**
- * Rasterizes the active base's backdrop to a data URL sized to the viewport.
- * Supplied by the base provider (see src/bases); `null` means "nothing to
- * draw", which sends the export down its original parchment path.
- */
-export type BackdropCapture = (
-    width: number,
-    height: number
-) => Promise<string | null>
-
-/**
  * Download the currently-visible viewport as a PNG. Resolves once the download
  * has been triggered; rejects if the SVG can't be found or rasterization fails.
  * Font embedding failures are non-fatal (image still produced, text may fall
  * back to a system font).
  */
-export async function downloadViewportAsImage(
-    captureBackdrop?: BackdropCapture
-): Promise<void> {
+export async function downloadViewportAsImage(): Promise<void> {
     const svg = document.querySelector<SVGSVGElement>('#main-two-root svg')
     if (!svg) throw new Error('Canvas SVG element not found')
 
@@ -58,20 +46,7 @@ export async function downloadViewportAsImage(
     // Don't bake the on-screen selection box/handles into the exported image.
     stripSelectionChrome(clone)
 
-    // A base that paints its own backdrop (the map) hands back a raster of the
-    // live view; anything else returns null and we fall through to painting the
-    // parchment exactly as before. Capture failures are non-fatal — a missing
-    // backdrop is better than a failed export.
-    let backdrop: string | null = null
-    if (captureBackdrop) {
-        try {
-            backdrop = await captureBackdrop(width, height)
-        } catch (err) {
-            console.error('Backdrop capture failed; exporting without it', err)
-        }
-    }
-
-    injectBackground(clone, svg, width, height, backdrop)
+    injectBackground(clone, svg, width, height)
     await embedFonts(clone)
     appendWatermark(clone, width, height)
 
@@ -93,24 +68,8 @@ function injectBackground(
     cloneSvg: SVGSVGElement,
     liveSvg: SVGSVGElement,
     width: number,
-    height: number,
-    backdrop: string | null
+    height: number
 ): void {
-    // A provider-supplied backdrop replaces the parchment entirely — it already
-    // *is* the background, and painting parchment under it would only show
-    // through wherever the raster has alpha.
-    if (backdrop) {
-        const image = document.createElementNS(SVG_NS, 'image')
-        image.setAttribute('x', '0')
-        image.setAttribute('y', '0')
-        image.setAttribute('width', String(width))
-        image.setAttribute('height', String(height))
-        image.setAttribute('preserveAspectRatio', 'none')
-        image.setAttribute('href', backdrop)
-        cloneSvg.insertBefore(image, cloneSvg.firstChild)
-        return
-    }
-
     const cs = getComputedStyle(liveSvg)
 
     // Solid parchment fill — resolved background-color already reflects the theme.

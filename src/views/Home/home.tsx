@@ -9,6 +9,7 @@ import NoSignupSVG from '../../assets/no_signup.svg'
 import BlueStarSVG from '../../assets/blue_star.svg'
 
 // import ImageContainer from '../../components/ProgressiveImageLoader/loader'
+// import CraftbaseBoardScreenshotPNG from '../../assets/craftbase_board_screenshot.png'
 // import CraftbaseBoardScreenshotBlurJPG from '../../assets/blur_craftbase_screenshot.jpg'
 import Brainstorming from '../../assets/brainstorming_craftbase.png'
 import Button from '../../components/common/button'
@@ -32,7 +33,7 @@ const HomePage: React.FC = () => {
 
     return (
         <>
-            {/* <Redirect to={`/base/03a3706e-fe79-4df5-80f6-2f4040ade05f`} /> */}
+            {/* <Redirect to={`/board/03a3706e-fe79-4df5-80f6-2f4040ade05f`} /> */}
             <div
                 className="home-page-container relative bg-canvas "
                 // style={{ height: `${pageHeight}px` }}
@@ -107,26 +108,25 @@ const HomePage: React.FC = () => {
                             <div className="text-left transition-opacity duration-300 ease-in-out">
                                 <h1 className="text-base lg:text-3xl 2xl:text-4xl font-bold font-display">
                                     Instant Infinite Whiteboard with Unique
-                                    Shareable Canvas Links
+                                    Shareable Board Links
                                 </h1>
                                 <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     Start brainstorming in craftbase. Create as
-                                    as many shared canvases as you like. Each
-                                    shared canvas gets a unique URL. No
-                                    accounts. No login/signup. Just start
-                                    thinking.
+                                    much as shared boards as you like. Each
+                                    shared board gets a unique URL. No accounts.
+                                    No login/signup. Just start thinking.
                                 </p>
                                 {/* <p className="pt-4 2xl:pt-8 text-sm lg:text-lg 2xl:text-xl ">
                                     With real-time updates across all devices,
                                     you can collaborate with your peers in
-                                    real-time just by sharing them the canvas
+                                    real-time just by sharing them the board
                                     link.
                                 </p> */}
                                 <div className="mt-4">
                                     <Button
                                         intent="primary"
                                         name="start_now"
-                                        // label="Let's create canvas"
+                                        // label="Let's create board"
 
                                         size="large"
                                         onClick={onCreateCanvas}
@@ -168,7 +168,7 @@ const HomePage: React.FC = () => {
                                         No sign-up(s) needed
                                     </p>
                                     <p className="mt-2">
-                                        Create as many canvases you want without
+                                        Create as many boards you want without
                                         registering or signing up on platform.
                                     </p>
                                 </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ComponentType, ReactElement } from 'react'
 import Spinner from '../common/spinner'
-import type { ComponentRecord, ComponentStore } from '../../types/base'
+import type { ComponentRecord, ComponentStore } from '../../types/board'
 
 // Element components and their wrappers accept a fluid prop bag: ComponentRecord
 // fields + canvas-side handles (twoJSInstance, itemData, etc.). Bag shape is
@@ -29,7 +29,7 @@ export const ElementRenderWrapper = (
 
         useEffect(() => {
             // Keyed lookup, not a scan: this runs once per element, so an
-            // Object.values(...).find() here made mounting a base O(n²).
+            // Object.values(...).find() here made mounting a board O(n²).
             const match = componentStore[data.id]
             if (match) setComponentData(match)
         }, [])

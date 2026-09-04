@@ -131,19 +131,6 @@ export const fillEssentialShades: string[] = [
     '#B3D4FF',
 ]
 
-// Point fills only — deliberately the saturated stroke row, not the pastel
-// `fillEssentialShades` above.
-//
-// A pastel is right for a shape fill: it sits behind text and must not compete
-// with it. A point is the opposite — a ~10px dot that has to be findable against
-// CARTO Positron's pale greys and beiges, where a pastel disappears. That makes
-// a point's fill behave like ink, so it takes ink's palette. Transparent goes
-// too: black is far more use on a light basemap than an invisible pin.
-//
-// Aliased rather than inlined so the two can diverge in one edit, and so the
-// call site says which row it means.
-export const pointFillEssentialShades: string[] = essentialShades
-
 export interface DrawerElement {
     elementName: string
     elementDisplayName: string
@@ -268,10 +255,8 @@ export const staticPrimaryElementData: PrimarySection[] = [
     },
 ]
 
-// Geo tools (point / area+circle / route / text). Appended to the toolbar by
-// the active base type's `extraTools` — see mapType.ts — after `hiddenTools`
-// has stripped the board tools, which is why the circle entry below survives
-// even though 'circle' is in GEO_HIDDEN_TOOLS.
+// Geo tools (point / area / route). Surfaced in the toolbar only when the
+// consumer passes `geoObjectsEnabled` — appended alongside the shape tools.
 export const geoElementData: PrimaryElement[] = [
     {
         elementName: 'point',
@@ -282,32 +267,12 @@ export const geoElementData: PrimaryElement[] = [
         drawerData: [],
     },
     {
-        // Area + Circle share one slot. On desktop this is flattened into two
-        // flat buttons (see DESKTOP_FLATTENED_DRAWERS in shapesToolbar); on
-        // mobile it stays a drawer, whose trigger shows the circle icon.
-        //
-        // The circle child keeps elementName 'circle' — the same name the
-        // whiteboard tool uses — because that is what buys the reuse:
-        // addElement('circle') already lands on the drag-to-draw path. What
-        // makes it a map object is objectClass: 'geo', stamped at creation in
-        // primary.tsx, exactly as the pencil does.
-        elementName: 'geoShapes',
-        elementDisplayName: 'Shapes',
-        elementIcon: CircleIcon,
-        hasDrawer: true,
-        noAction: true,
-        drawerData: [
-            {
-                elementName: 'area',
-                elementDisplayName: 'Area',
-                elementIcon: PolygonIcon,
-            },
-            {
-                elementName: 'circle',
-                elementDisplayName: 'Circle',
-                elementIcon: CircleIcon,
-            },
-        ],
+        elementName: 'area',
+        elementDisplayName: 'Area',
+        elementIcon: PolygonIcon,
+        hasDrawer: false,
+        noAction: false,
+        drawerData: [],
     },
     {
         elementName: 'route',
@@ -318,8 +283,8 @@ export const geoElementData: PrimaryElement[] = [
         drawerData: [],
     },
     {
-        // Map text (see geoText.tsx): renders like the standard Text element
-        // but belongs to the map base. Replaces the Text tool in geo mode.
+        // Zoom-resistant text for maps — counter-scales on zoom like a point
+        // pin (see geoText.tsx). Replaces the standard Text tool in geo mode.
         elementName: 'geoText',
         elementDisplayName: 'Text',
         elementIcon: TextIcon,

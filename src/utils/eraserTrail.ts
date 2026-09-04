@@ -9,7 +9,7 @@
  *
  * Segment WIDTH is constant over the whole decay and comes from ERASER_DOT_PX
  * — the exact diameter of the dot shown in the toolbar's size selector, so the
- * circle drawn on the canvas is the circle that was picked. Tapering it would
+ * circle drawn on the board is the circle that was picked. Tapering it would
  * break that correspondence for most of the segment's life.
  *
  * Two craftbase-specific twists over a plain fullscreen canvas:
