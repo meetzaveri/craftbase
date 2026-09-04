@@ -7,7 +7,7 @@ import {
 
 // Live, user-toggleable feature flags backed by localStorage.
 //
-// Unlike build-time `BaseProps` flags (e.g. `geoObjectsEnabled`), these are
+// Unlike build-time `BoardProps` flags (e.g. `geoObjectsEnabled`), these are
 // edited at runtime from the Settings modal and must take effect on the
 // already-running app. The value is cached in a module-level variable so the
 // hot Two.js paths (selection-box render, hover hit-test, arrow radar — all
@@ -97,7 +97,7 @@ export function subscribeDotGridEnabled(fn: Listener): () => void {
 // with dragging: `reanchorArrowsForShape` (per-frame, legacy move path),
 // `shapeHasBoundArrows` (once per drag, CSS fast-path eligibility) and the
 // hover-detect endpoint scan (per rAF). Turn OFF to measure drag/paint cost
-// with the scans removed on dense bases. Connector gluing and endpoint hover
+// with the scans removed on dense boards. Connector gluing and endpoint hover
 // stop working while off — this is a measurement lever, not a user feature.
 
 // Default ON: normal behavior. Disable only for perf isolation runs.
@@ -139,7 +139,7 @@ export function subscribeDragScansEnabled(fn: Listener): () => void {
 // off-screen scene elements during pan/zoom (see `src/utils/viewportCulling.ts`).
 // The hot camera handlers read `getViewportCullingEnabled()` cheaply per frame.
 
-// Opt-in feature: default OFF while it's validated on real bases.
+// Opt-in feature: default OFF while it's validated on real boards.
 const DEFAULT_VIEWPORT_CULLING_ENABLED = true
 
 let cullingCached: boolean | null = null

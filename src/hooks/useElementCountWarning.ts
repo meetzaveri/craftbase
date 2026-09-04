@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@apollo/client'
-import { GET_BASE_COMPONENT_COUNT_QUERY } from '../schema/queries'
+import { GET_BOARD_COMPONENT_COUNT_QUERY } from '../schema/queries'
 import {
     PERFORMANCE_WARNING_THRESHOLD,
-    countBaseElements,
-} from '../utils/countBaseElements'
-import type { ComponentStore } from '../types/base'
+    countBoardElements,
+} from '../utils/countBoardElements'
+import type { ComponentStore } from '../types/board'
 
 interface UseElementCountWarningArgs {
     componentStore: ComponentStore
     isPersisted: boolean
-    baseId: string
+    boardId: string
 }
 
 interface UseElementCountWarningResult {
@@ -19,23 +19,23 @@ interface UseElementCountWarningResult {
 }
 
 /**
- * Warns once when a base grows past the point where the canvas starts to feel
+ * Warns once when a board grows past the point where the canvas starts to feel
  * slow — either by crossing the threshold live, or by opening/refreshing a
- * base that is already over it.
+ * board that is already over it.
  *
  * Two sources feed the same one-shot latch:
- *   - saved bases: a server-side aggregate count, which lands well before the
+ *   - saved boards: a server-side aggregate count, which lands well before the
  *     full component store has loaded and mounted, so the user is warned
  *     *before* the slow render rather than after it.
  *   - both modes: the live component store, for crossings during a session.
  *
- * The latch re-arms if the base drops back under the threshold, so a user who
+ * The latch re-arms if the board drops back under the threshold, so a user who
  * deletes their way down and builds back up is warned again.
  */
 export const useElementCountWarning = ({
     componentStore,
     isPersisted,
-    baseId,
+    boardId,
 }: UseElementCountWarningArgs): UseElementCountWarningResult => {
     const [showPerfWarning, setShowPerfWarning] = useState(false)
     const hasWarnedRef = useRef(false)
@@ -50,11 +50,11 @@ export const useElementCountWarning = ({
         setShowPerfWarning(false)
     }, [])
 
-    // Saved bases: authoritative count straight from the server.
-    const { data: countData } = useQuery(GET_BASE_COMPONENT_COUNT_QUERY, {
-        variables: { baseId },
+    // Saved boards: authoritative count straight from the server.
+    const { data: countData } = useQuery(GET_BOARD_COMPONENT_COUNT_QUERY, {
+        variables: { boardId },
         fetchPolicy: 'network-only',
-        skip: !isPersisted || !baseId,
+        skip: !isPersisted || !boardId,
     })
 
     useEffect(() => {
@@ -64,12 +64,12 @@ export const useElementCountWarning = ({
 
     // Live crossings during a session.
     useEffect(() => {
-        const count = countBaseElements(componentStore)
+        const count = countBoardElements(componentStore)
         if (count > PERFORMANCE_WARNING_THRESHOLD) {
             warnOnce()
         } else if (count > 0) {
             // Re-arm only on a real drop below the threshold. An empty store
-            // means the base hasn't loaded yet, and disarming against it would
+            // means the board hasn't loaded yet, and disarming against it would
             // let the aggregate's warning fire a second time once rows arrive.
             hasWarnedRef.current = false
         }

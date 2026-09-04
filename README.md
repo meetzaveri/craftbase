@@ -5,7 +5,7 @@ A minimal online whiteboard you can open and start drawing on. No signup, no set
 **Try it: [craftbase.org](https://craftbase.org)**
 
 <!--
-    Demo GIF goes here. Record a short loop (10–15s) of opening the canvas and
+    Demo GIF goes here. Record a short loop (10–15s) of opening the board and
     sketching a few shapes + some pencil strokes, then drop it at the path below.
     A moving picture sells this far better than any paragraph can.
 -->
@@ -16,28 +16,24 @@ A minimal online whiteboard you can open and start drawing on. No signup, no set
 
 I wanted a whiteboard that gets out of the way. Most tools make you sign in, pick a template, or learn their toolbar before you can think. Craftbase opens straight onto a blank canvas — you draw shapes, scribble with the pencil, drop some text, connect things with arrows, and that's the whole pitch. You're brainstorming within a couple of seconds of the page loading.
 
-Things you can do on a base:
+Things you can do on a board:
 
 - Sketch with shapes (rectangle, circle, diamond), the freehand pencil, arrows or erase with rubber
 - Drop text anywhere, including text that lives inside a shape
 - Pan and zoom around an infinite canvas
 - Style what you draw — stroke, fill, width, dashes, color, opacity
 - Undo your way back out of mistakes
-- Share a base with a link
+- Share a board with a link
 
-Live collaboration is built but currently turned off behind a flag while I finish hardening it. Once it's on, you'll be able to share a base and draw on it together in real time.
+Live collaboration is built but currently turned off behind a flag while I finish hardening it. Once it's on, you'll be able to share a board and draw on it together in real time.
 
 A fair warning: I work on this mostly on weekends, so expect the occasional bug or rough edge. If you hit one — or have an idea, or just want a feature — please [open an issue](https://github.com/craftbase-org/craftbase/issues). I read all of them.
 
-## Bases: whiteboard, map, and (soon) image
+## Craftbase as an embeddable whiteboard
 
-The thing you open and draw on is a **base**. Every base has a **type**, which decides what sits underneath your ink:
+Craftbase isn't only the app at craftbase.org. The `Board` is a self-contained, embeddable whiteboard component, and other apps consume it as a library.
 
-- **Whiteboard** — the default. Warm parchment, nothing in the way.
-- **Map** — an OpenStreetMap view (CARTO Positron vector tiles). Draw routes, mark places, circle a neighbourhood.
-- **Image** — coming: drop in a floorplan or a screenshot and annotate it.
-
-Switching type never moves your work. Element coordinates live in the canvas's own space, so the backdrop changes underneath and the ink stays exactly where you put it. Each type also remembers its own camera — panning around a map doesn't drag your whiteboard view with it — and shows only the content that belongs on it, without ever deleting the rest.
+If you want to embed a canvas in your own app, the public surface lives in `src/lib.ts` (`Board`, `BoardContext`, the hooks, bootstrap helpers). `Board` takes optional extension props like `renderBackground`, `onCameraChange`, and `scaleToDisplay` so you can layer your own content underneath and react to the camera without forking anything.
 
 ## How it's built
 
@@ -45,17 +41,15 @@ Switching type never moves your work. Element coordinates live in the canvas's o
 
 Craftbase renders its canvas with [two.js](https://github.com/jonobr1/two.js), a lovely 2D scene-graph library by [Jono Brandel](https://github.com/jonobr1). Two.js draws the scene; React drives the UI and state around it.
 
-The central concept is the **Base** — the workspace itself. It owns the canvas, the sidebar, and the floating toolbar. Rendering flows down a small chain:
+The central concept is the **Board**. It owns the canvas, the sidebar, and the floating toolbar. Rendering flows down a small chain:
 
 ```
-Base → Canvas → ElementRenderer → Component Element → Component Factory
+Board → Canvas → ElementRenderer → Component Element → Component Factory
 ```
 
-Canvas holds the 2D rendering logic and all the interaction handling — mouse, drag, zoom, pan — which is what makes a canvas feel alive to draw on. Each kind of element (a shape, an arrow, a pencil stroke) has a **factory** that produces its template definition, and a matching React **component** that mounts it into the scene and wires up its event listeners.
+Canvas holds the 2D rendering logic and all the interaction handling — mouse, drag, zoom, pan — which is what makes a board feel alive to draw on. Each kind of element (a shape, an arrow, a pencil stroke) has a **factory** that produces its template definition, and a matching React **component** that mounts it into the scene and wires up its event listeners.
 
-A base's **type** is a separate axis, and it plugs in behind one interface. Each type lives in `src/baseTypes/` as a provider that knows how to mount its backdrop and follow the camera; heavier ones (the map pulls in MapLibre) load on demand, so you only download what you actually open.
-
-State is shared through React Context (`BaseContext`) rather than a global store. The stack is React + TypeScript, Vite for the build, Two.js for rendering, and Apollo + Hasura (GraphQL) for the backend.
+State is shared through React Context (`BoardContext`) rather than a global store. The stack is React + TypeScript, Vite for the build, Two.js for rendering, and Apollo + Hasura (GraphQL) for the backend.
 
 ## Running it locally
 

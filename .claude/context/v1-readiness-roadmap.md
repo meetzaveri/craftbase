@@ -10,7 +10,7 @@ number is now *understating* the product.
 
 The question this doc answers: **what concretely must be true before we call it
 v1.0 "stable"?** It defines the factors to evaluate, scores where we stand on
-each, and lays out a prioritized, gap-closing roadmap. **Base export/download +
+each, and lays out a prioritized, gap-closing roadmap. **Board export/download +
 faithful re-import** is the named must-have and is treated here as a flagship
 v1.0 deliverable with its design decisions already settled.
 
@@ -26,13 +26,8 @@ Three promises a 1.0 makes that a 0.x does not:
 
 1. **Data durability** — a user's work can be saved, moved, and restored without
    loss. (Export/import + persisted-mode parity.)
-2. ~~**API stability** — the library surface (`src/lib.ts`) is committed to under
-   semver; consumers like craftmaps can upgrade without surprise breakage.~~
-   **Retired.** craftmaps is torn down and craftbase has no consumers; `src/lib.ts`
-   is an internal barrel. See "Craftbase is a standalone product, not a library"
-   in CLAUDE.md. What replaces it: **vocabulary stability** — `base` is the
-   workspace, `baseType` the substrate, and storage renames go through
-   `storageMigration.ts` rather than resetting anyone's local work.
+2. **API stability** — the library surface (`src/lib.ts`) is committed to under
+   semver; consumers like craftmaps can upgrade without surprise breakage.
 3. **Operational confidence** — regressions are caught before release (CI gates +
    tests), failures are observed (telemetry), and crashes don't silently eat work.
 
@@ -70,7 +65,7 @@ Legend: ✅ ready · ⚠️ partial · ❌ missing
    mutation-heavy hooks (`useComponentHistory`, `useCanvasClipboard`,
    `applyProperty`, `useLocalDraftPersistence`) and pure utils
    (`canvasUtils`, `shapePorts`, `updateVertices`) have no unit coverage.
-4. **Will a canvas crash eat the base?** Two.js DOM event handlers in
+4. **Will a canvas crash eat the board?** Two.js DOM event handlers in
    `src/newCanvas.tsx` aren't wrapped; the documented `scene.subtractions` crash
    class is only guarded in `groupobject.tsx`. A throw there is silent data loss.
 5. **Is the contract documented?** No CHANGELOG, no embedding guide for new
@@ -83,36 +78,26 @@ A11y, offline/PWA, and a Two.js replacement are **explicitly out of scope for
 
 ## Roadmap (prioritized)
 
-### P0 — Flagship: Base export / import (the named requirement)
+### P0 — Flagship: Board export / import (the named requirement)
 
-**Goal:** Download a base to a file and re-import it with identical structure,
+**Goal:** Download a board to a file and re-import it with identical structure,
 properties, and resilience.
 
 **Format — versioned, branded JSON (`.craftbase`):**
 
-> **Status: shipped, and the format has moved on.** It is now `1.1` and carries
-> `baseType` / `baseTypeConfig`. `formatVersion` is written but **deliberately
-> never validated on import**, which is what keeps files interchangeable in both
-> directions — the importer reads only `components` and `viewport`. A pre-rename
-> file whose records carry `boardId` still opens: the field is ignored and both
-> apply paths stamp their own. Don't add a version check; it would be the
-> compatibility break, not the fix.
-
 ```jsonc
 {
-  "formatVersion": "1.1",       // written, never validated on import
+  "formatVersion": "1.0",       // for forward-compatible migrations
   "app": "craftbase",
-  "appVersion": "0.9.1",        // read from VERSION/package.json at export time
+  "appVersion": "0.7.10",       // read from VERSION/package.json at export time
   "exportedAt": 1718000000000,
   "viewport": { "scale": 1, "tx": 0, "ty": 0 },  // restored on import
-  "baseType": "board",          // 'board' | 'map'
-  "baseTypeConfig": null,       // { mapAnchor } on the map type
   "components": { "<id>": { /* ComponentRecord */ } }
 }
 ```
 
 The `components` payload is the **same canonical `ComponentStore`**
-(`Record<string, ComponentRecord>`, `src/types/base.ts:69`) the localStorage
+(`Record<string, ComponentRecord>`, `src/types/board.ts:69`) the localStorage
 draft already serializes in `useLocalDraftPersistence.ts:143`. We are reusing the
 proven serialization, not inventing a parallel one — this is why round-trip
 fidelity is already high for shapes, arrows, dividers, pencil (vertex `metadata`),
@@ -120,28 +105,28 @@ and text (multiline `content` with `\n`).
 
 **Export — new util, mirrors existing download utils:**
 
-- Add `src/utils/exportBase.ts` next to the existing
+- Add `src/utils/exportBoard.ts` next to the existing
   `exportSelectionAsSvg.ts` / `exportViewport.ts` (reuse their Blob +
   anchor-download pattern; don't reinvent the download mechanics).
-- Source the store from `stateRefForComponentStore` (BaseContext) so it's
+- Source the store from `stateRefForComponentStore` (BoardContext) so it's
   current; filter out transient `groupobject` and welcome-sketch seeds exactly as
   the draft save does (`useLocalDraftPersistence.ts:135`).
 - Pull `viewport` from the same camera state `onCameraChange` reports.
 
 **Import — new util + UI entry:**
 
-- Add `src/utils/importBase.ts`: file-picker → `JSON.parse` → **validate**
+- Add `src/utils/importBoard.ts`: file-picker → `JSON.parse` → **validate**
   (`formatVersion`, each record has a known `componentType` + required geometry).
   Reject/skip malformed records, mirroring the defensive skip already in
-  `persistBase()`. Surface a count of skipped items.
+  `persistBoard()`. Surface a count of skipped items.
 - **Import behavior: ask each time** — on import, prompt the user to choose
-  *Open as new canvas* (replace store, fresh `localBaseId`) vs *Merge into
+  *Open as new canvas* (replace store, fresh `localBoardId`) vs *Merge into
   current* (re-key every imported id to a fresh UUID to avoid collisions, append
   with `position = max+1`). Reuse the existing modal system
   (`components/common/modal.tsx`).
 - Restore `viewport` after the store loads.
 
-**UI:** add "Export canvas" / "Import canvas" entries to the hamburger menu
+**UI:** add "Export board" / "Import board" entries to the hamburger menu
 (`src/components/sidebar/menuDrawer.tsx`) — same place the existing share/raster
 actions live. Available in **both local and persisted mode**.
 
@@ -150,7 +135,7 @@ actions live. Available in **both local and persisted mode**.
 - **Port-connector bindings** (`tailShapeId/tailEdge/headShapeId/headEdge`) live
   on `ComponentRecord` and serialize fine for **local mode**, so a JSON export
   *does* round-trip them — but they are **not Hasura columns**, so a
-  persisted-base (`/base/:id`) reload still drops them. Decision point: the
+  persisted-board (`/board/:id`) reload still drops them. Decision point: the
   export feature gives bindings durability *through the file* even before the DB
   catches up. Full persisted-mode parity is P1 below.
 - **Groups are flattened** — `groupobject` is transient and excluded from the
@@ -162,18 +147,13 @@ a docked port, divider, pencil, multiline text, and — with `geoObjectsEnabled`
 point/area/route/geoText), export, reload to a clean canvas, import, and confirm
 geometry/style/text/vertices/viewport match. Add a Playwright spec under
 `tests/e2e/` (e.g. `export-import.spec.js`) that round-trips a representative
-base and asserts the store is equivalent.
+board and asserts the store is equivalent.
 
-### P1 — Persisted-mode binding parity (closes the durability gap) — ✅ DONE
+### P1 — Persisted-mode binding parity (closes the durability gap)
 
-> **Status: shipped.** All 6 binding columns (`tail`/`head` × `ShapeId`/`Edge`/
-> `PortIndex`) are live Hasura columns, present in `generated.ts` and in
-> `GET_COMPONENTS_FOR_BASE_QUERY`. See "Port connectors" in CLAUDE.md. The
-> original plan text is kept below for context.
-
-Make port connectors survive a saved-base reload: `ALTER TABLE
+Make port connectors survive a saved-board reload: `ALTER TABLE
 components.component` to add the 4 nullable binding columns, track them in Hasura,
-`yarn codegen`, and add them to `GET_COMPONENTS_FOR_BASE_QUERY` +
+`yarn codegen`, and add them to `GET_COMPONENTS_FOR_BOARD_QUERY` +
 `INSERT_BULK_COMPONENTS` / `UPDATE_COMPONENT_INFO`. (Pre-documented in CLAUDE.md
 "Persisted-mode caveat".) After this, both file-export and DB-persist agree.
 
@@ -198,7 +178,7 @@ factory templates.
 Wrap the Two.js DOM event-listener callbacks in `src/newCanvas.tsx` in
 try/catch + Sentry capture, applying the canonical `scene.subtractions` reset from
 `groupobject.tsx` `handleOnDeleteGroupElements` so a single bad handler can't
-corrupt the scene or silently lose the base.
+corrupt the scene or silently lose the board.
 
 ### P5 — Release hygiene & API freeze (the 1.0 ceremony)
 
@@ -228,10 +208,10 @@ harden, P5 is the final ceremony before flipping the version. Realistic window t
 
 ## Critical files
 
-- `src/types/base.ts` — `ComponentRecord` / `ComponentStore` (export payload shape)
+- `src/types/board.ts` — `ComponentRecord` / `ComponentStore` (export payload shape)
 - `src/hooks/useLocalDraftPersistence.ts` — serialization pattern to reuse + transient-filter rules
 - `src/utils/exportSelectionAsSvg.ts`, `src/utils/exportViewport.ts` — download/Blob pattern to mirror
-- `src/views/Base/base.tsx` — `persistBase()` defensive-skip pattern; store ref + camera state
+- `src/views/Board/board.tsx` — `persistBoard()` defensive-skip pattern; store ref + camera state
 - `src/components/sidebar/menuDrawer.tsx` — menu entry points for Export/Import
 - `src/components/common/modal.tsx` — import "open vs merge" prompt
 - `src/schema/{queries,mutations}/index.ts` + `src/schema/generated.ts` — P1 binding-column work

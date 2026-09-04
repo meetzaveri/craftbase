@@ -1,5 +1,5 @@
 import { test, expect } from './helpers/test.js'
-import { setupLocalBase, placeText, getCanvasBox } from './helpers/index.js'
+import { setupLocalBoard, placeText, getCanvasBox } from './helpers/index.js'
 
 // Regression: pasting a bulleted list from a rich-text source (Docs/Notion/
 // Notes) into the canvas text editor must keep the bullet markers. The editor
@@ -15,7 +15,7 @@ const lineCountOf = (handle) => handle.$$eval('text', (ns) => ns.length)
 
 test.describe('Rich-text paste into canvas text', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('pasting an HTML list keeps bullet markers', async ({ page }) => {

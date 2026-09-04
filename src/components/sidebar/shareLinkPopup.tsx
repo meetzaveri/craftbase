@@ -1,13 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
+import { useMutation } from '@apollo/client'
+
 import Button from '../common/button'
 import Modal from '../common/modal'
 import ShareIcon from '../../assets/share-android.svg?react'
 import CopyIcon from '../../assets/copy.svg'
-import { useBaseContext } from '../../views/Base/baseContext'
-import { useMediaQueryUtils } from '../../constants/exportHooks'
-import { baseTypeUrl } from '../../utils/baseRoutes'
-import { SHARE_BUTTON_ID } from './shapesToolbarId'
+import { useBoardContext } from '../../views/Board/boardContext'
+import { UPDATE_BOARD_VISIBILITY } from '../../schema/mutations'
 
 const ShareLinkPopup = (): ReactElement => {
     const refNode = useRef<HTMLDivElement | null>(null)
@@ -17,34 +17,23 @@ const ShareLinkPopup = (): ReactElement => {
     const [shareUrl, setShareUrl] = useState<string | null>(null)
     const {
         isPersisted,
-        shareBase,
-        baseId,
-        activeBaseType,
-        baseTypeProvider,
+        persistBoard,
+        backgroundBoardId,
         stateRefForComponentStore,
         twoJSInstance,
-    } = useBaseContext()
-    const { isMobile } = useMediaQueryUtils()
-
-    // Sharing a map before its provider has mounted would record the WRONG
-    // geography, permanently. The anchor is read from the live provider, so
-    // until the (~1MB, dynamically imported) maplibre chunk lands there is
-    // nothing to read and the base would be georeferenced to a timezone guess
-    // instead of the place the user is looking at. One boolean; the whole
-    // feature's worst failure mode.
-    const baseTypeReady =
-        activeBaseType !== 'map' || baseTypeProvider?.id === 'map'
+    } = useBoardContext()
 
     // Whether there's anything to share. Gate on the actual component store,
-    // NOT backgroundBaseId: that id is only minted by ensureBackgroundBase()
+    // NOT backgroundBoardId: that id is only minted by ensureBackgroundBoard()
     // on a user *mutation*, so a draft restored from localStorage renders
-    // components on the base while backgroundBaseId is still null — which
-    // wrongly showed "Nothing to share yet" until the user touched the canvas.
-    // Mirror persistBase's filter (entries without componentType are skipped
+    // components on the board while backgroundBoardId is still null — which
+    // wrongly showed "Nothing to share yet" until the user touched the board.
+    // Mirror persistBoard's filter (entries without componentType are skipped
     // there) so the two stay consistent.
     const hasComponents = Object.values(stateRefForComponentStore.current).some(
         (c) => c?.componentType
     )
+    const [updateBoardVisibility] = useMutation(UPDATE_BOARD_VISIBILITY)
 
     useEffect(() => {
         const handleClick = (e: MouseEvent): void => {
@@ -57,84 +46,53 @@ const ShareLinkPopup = (): ReactElement => {
         }
     }, [])
 
-    // Always route through the confirm modal, including for an already-persisted
-    // base. The old short-circuit just copied the URL and never published, so a
-    // base that reached its URL by any path other than this button (the
-    // storage-limit auto-persist, most reachably) had its link handed out while
-    // it was still private.
     const handleShareClick = (e: React.MouseEvent): void => {
         e.preventDefault()
-        if (showLink) {
-            setShowLink(false)
-            return
+        if (!isPersisted) {
+            setShowConfirmModal(true)
+        } else {
+            setShareUrl(window.location.href)
+            setShowLink(!showLink)
         }
-        setShowConfirmModal(true)
     }
 
     const handleConfirmShare = async (): Promise<void> => {
         setIsPersisting(true)
         try {
-            const wasPersisted = isPersisted
-            const serverBaseId = await shareBase()
-            const url = baseTypeUrl(serverBaseId, activeBaseType)
+            const serverBoardId = await persistBoard()
+            await updateBoardVisibility({ variables: { id: serverBoardId } })
+            const url = `${window.location.origin}/board/${serverBoardId}`
+            // The shared/copied link stays clean (no params) — params only ride
+            // on the auto-opened tab to hand off the current '/' viewport.
             setShareUrl(url)
             setShowConfirmModal(false)
             setShowLink(true)
-
-            // Already on this base — there is nothing to open.
-            if (wasPersisted) return
-
-            // A map base carries its landing view in the base row, which is
-            // device-independent and survives a copied link; the vx/vy/vs params
-            // are neither, and would only race the better mechanism and win.
-            // They stay for board bases, which have no row-level landing view.
+            // Carry the live '/' viewport (pan + zoom) to the freshly-created
+            // board via query params so the opened tab lands on the same view
+            // instead of the origin. Read the live scene rather than the
+            // debounced localStorage entry so the last pan before clicking Share
+            // is included. The land side (newCanvas) consumes these once, seeds
+            // this board's viewport localStorage key(s), then strips the params.
             const scene = twoJSInstance?.scene
-            const openUrl =
-                scene && activeBaseType !== 'map'
-                    ? `${url}?vx=${scene.translation.x}&vy=${scene.translation.y}&vs=${scene.scale}`
-                    : url
-
-            // Mobile browsers block window.open after an await (the click's task
-            // chain is long gone), so the user would get a link panel and no tab
-            // — or nothing at all. Hand them the OS share sheet instead, which
-            // is the affordance they expect on a phone anyway.
-            if (isMobile) {
-                void navigator
-                    ?.share?.({ url })
-                    // Dismissing the sheet rejects; the link panel is already
-                    // open behind it, so there is nothing to recover from.
-                    .catch(() => {})
-                return
-            }
+            const openUrl = scene
+                ? `${url}?vx=${scene.translation.x}&vy=${scene.translation.y}&vs=${scene.scale}`
+                : url
             window.open(openUrl, '_blank', 'noopener,noreferrer')
         } finally {
             setIsPersisting(false)
         }
     }
 
-    // What the user is about to get. For a persisted base that is exactly the
-    // link; for a new one the id doesn't exist yet, so show the shape of it
-    // rather than a different base's id — this used to preview
-    // `backgroundBaseId`, which persistBase never uses, so the URL previewed
-    // was never the URL produced.
-    const previewUrl = isPersisted
-        ? baseTypeUrl(baseId, activeBaseType)
-        : `${baseTypeUrl('', activeBaseType)}...`
+    const previewUrl = backgroundBoardId
+        ? `${window.location.origin}/board/${backgroundBoardId}`
+        : `${window.location.origin}/board/...`
 
     return (
         <>
             <div className="relative " ref={refNode} style={{ right: '-9px' }}>
                 <div
-                    id={SHARE_BUTTON_ID}
-                    className="px-1 py-1 border-border-panel border  flex items-center justify-center rounded-md bg-card-bg text-ink font-semibold"
-                    style={{
-                        cursor: baseTypeReady ? 'pointer' : 'progress',
-                        opacity: baseTypeReady ? 1 : 0.6,
-                    }}
-                    title={
-                        baseTypeReady ? 'Share' : 'Preparing the map\u2026'
-                    }
-                    onClick={baseTypeReady ? handleShareClick : undefined}
+                    className="px-1 py-1 border-border-panel border  flex items-center justify-center rounded-md bg-card-bg text-ink font-semibold cursor-pointer "
+                    onClick={handleShareClick}
                 >
                     {/* <div className="pr-2 text-white">Share</div>{' '} */}
                     <div className="px-2 py-2 hover:bg-accent/50 rounded-md">
@@ -159,13 +117,10 @@ const ShareLinkPopup = (): ReactElement => {
                         bg-card-bg text-ink-mid border border-border-panel
                         rounded-md px-2 py-4
                         "
-                        // Never wider than the screen: 560px overflows every
-                        // phone, and the panel is right-anchored so the overflow
-                        // lands off-screen where the link can't be read or copied.
-                        style={{ width: 'min(560px, calc(100vw - 24px))' }}
+                        style={{ width: '560px' }}
                     >
                         <div className="text-base text-left">
-                            Canvas Link (Public)
+                            Board Link (Public)
                         </div>
                         <div className="mt-2 flex items-center justify-between">
                             <div className="text-sm rounded-md bg-sidebar border border-border-card text-ink px-2 py-2 select-text cursor-text break-all">
@@ -204,23 +159,18 @@ const ShareLinkPopup = (): ReactElement => {
                 }}
                 locked={isPersisting}
             >
-                <div
-                    style={{
-                        minWidth: 'min(440px, calc(100vw - 96px))',
-                        maxWidth: '520px',
-                    }}
-                >
+                <div style={{ minWidth: '440px', maxWidth: '520px' }}>
                     {hasComponents ? (
                         <>
                             <h2 className="text-lg font-semibold mb-3 font-display">
-                                Share this canvas
+                                Share this board
                             </h2>
                             <p className="text-sm text-ink-mid mb-2">
-                                We'll generate a unique canvas link so you can
+                                We'll generate a unique board link so you can
                                 share your work with others.
                             </p>
                             <p className="text-sm text-ink-mid mb-4">
-                                This canvas will be visible to anyone you share
+                                This board will be visible to anyone you share
                                 the link with. Your shareable URL will be:
                             </p>
                             <div className="text-sm rounded-md bg-sidebar border border-border-card text-ink px-3 py-2 mb-4 break-all">
@@ -256,7 +206,7 @@ const ShareLinkPopup = (): ReactElement => {
                             </h2>
                             <p className="text-sm text-ink-mid mb-4">
                                 Before you share, please create something on the
-                                canvas to make it shareable.
+                                board to make it shareable.
                             </p>
                             <div className="flex justify-end">
                                 <Button

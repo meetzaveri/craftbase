@@ -1,22 +1,13 @@
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import {
-    GROUP_COMPONENT,
-    isStandaloneTextType,
-    SELECT_COMPONENT_EVENT,
-} from '../constants/misc'
+import { GROUP_COMPONENT, isStandaloneTextType } from '../constants/misc'
 import { generateUUID } from '../utils/misc'
-import {
-    hasAbsoluteVertexMetadata,
-    shiftVertexMetadata,
-    vertexMetadataCenter,
-} from '../utils/vertexMetadata'
 import {
     cloneElementData,
     getShapeTextNodes,
     pollUntilElement,
 } from '../utils/canvasUtils'
-import type { ComponentRecord, ComponentStore } from '../types/base'
+import type { ComponentRecord, ComponentStore } from '../types/board'
 import type { HistoryEntry } from './useComponentHistory'
 
 // Two.js scene objects are typed loosely here; canvas-side typing converges
@@ -51,7 +42,7 @@ interface MousePosition {
 export interface CanvasClipboardOptions {
     twoJSInstance: TwoLike | null
     zuiInstanceRef: MutableRefObject<ZuiInstanceLike | null>
-    baseId: string
+    boardId: string
     addToLocalComponentStore: (
         id: string,
         componentType: string,
@@ -73,7 +64,7 @@ export interface CanvasClipboardApi {
 export function useCanvasClipboard({
     twoJSInstance,
     zuiInstanceRef,
-    baseId,
+    boardId,
     addToLocalComponentStore,
     recordBatchToHistoryLog,
     renderGroupRef,
@@ -134,25 +125,6 @@ export function useCanvasClipboard({
         pollUntilElement(twoJSInstance, arrowId, () => {
             window.dispatchEvent(
                 new CustomEvent('restackPorts', { detail: { ports } })
-            )
-        })
-    }
-
-    /**
-     * Move the selection onto the pasted element once it has mounted.
-     *
-     * Paste used to leave the SOURCE selected: the box and the properties panel
-     * stayed on the element you copied FROM, so the next property edit landed on
-     * the wrong shape. The clone is what the user is now looking at, so it is
-     * what should be selected. Waits for the mount — the canvas resolves the id
-     * against `two.scene.children`, and React renders the element
-     * asynchronously.
-     */
-    const selectWhenMounted = (id: string): void => {
-        if (!twoJSInstance) return
-        pollUntilElement(twoJSInstance, id, () => {
-            window.dispatchEvent(
-                new CustomEvent(SELECT_COMPONENT_EVENT, { detail: { id } })
             )
         })
     }
@@ -240,8 +212,11 @@ export function useCanvasClipboard({
                         item.textColor = item.textColor || firstNode.fill
                         item.metadata = {
                             ...item.metadata,
-                            content: textNodes.map((n) => n.value).join('\n'),
-                            fontSize: firstNode.size || item.metadata?.fontSize,
+                            content: textNodes
+                                .map((n) => n.value)
+                                .join('\n'),
+                            fontSize:
+                                firstNode.size || item.metadata?.fontSize,
                             textFontFamily:
                                 firstNode.family ||
                                 item.metadata?.textFontFamily,
@@ -297,7 +272,7 @@ export function useCanvasClipboard({
                 const newItem: any = cloneElementData(
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     src as any,
-                    baseId,
+                    boardId,
                     px,
                     py
                 )
@@ -323,28 +298,21 @@ export function useCanvasClipboard({
                     arrowPorts = rebindClonedArrow(newItem, new Map())
                 }
                 if (
-                    hasAbsoluteVertexMetadata(src.componentType) &&
+                    (src.componentType === 'pencil' ||
+                        src.componentType === 'area' ||
+                        src.componentType === 'route' ||
+                        src.componentType === 'curvedLine') &&
                     Array.isArray(src.metadata)
                 ) {
-                    // Land the copy's MIDDLE under the cursor, and move `x`/`y`
-                    // with it.
-                    //
-                    // Both halves were wrong. The offset was measured from
-                    // `src.x`, which for these types is only the origin the
-                    // vertices were made relative to — usually the first point
-                    // the user clicked — so the paste appeared a corner's-worth
-                    // away from the pointer, and further the more the drawing
-                    // wandered from that first point. And `cloneElementData`
-                    // had already set the clone's `x`/`y` to the cursor while
-                    // the vertices were shifted by a different delta, leaving
-                    // origin and geometry disagreeing on the clone from birth —
-                    // the same disagreement that loses a drag on reload.
-                    const center = vertexMetadataCenter(src.metadata)
-                    const dx = px - (center?.x ?? src.x)
-                    const dy = py - (center?.y ?? src.y)
-                    newItem.metadata = shiftVertexMetadata(src.metadata, dx, dy)
-                    newItem.x = Math.round(src.x + dx)
-                    newItem.y = Math.round(src.y + dy)
+                    const dx = px - src.x
+                    const dy = py - src.y
+                    newItem.metadata = (
+                        src.metadata as Array<{ x: number; y: number; lw?: number }>
+                    ).map((pt) => {
+                        const lwProp =
+                            pt.lw !== undefined ? { lw: pt.lw } : {}
+                        return { x: pt.x + dx, y: pt.y + dy, ...lwProp }
+                    })
                 }
                 addToLocalComponentStore(
                     newItem.id,
@@ -352,12 +320,6 @@ export function useCanvasClipboard({
                     newItem
                 )
                 restackWhenMounted(newItem.id, arrowPorts)
-                // Drop the source's selection now, take the clone's when it
-                // mounts. Clearing first matters on the element-owned chrome
-                // (geo objects, arrows): nothing else hides a box that was
-                // drawn by a component we are not about to touch.
-                window.dispatchEvent(new CustomEvent('clearSelector', {}))
-                selectWhenMounted(newItem.id)
                 return
             }
 
@@ -371,7 +333,12 @@ export function useCanvasClipboard({
                     const rX = c.relativeX ?? 0
                     const rY = c.relativeY ?? 0
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const cloned: any = cloneElementData(c, baseId, rX, rY)
+                    const cloned: any = cloneElementData(
+                        c,
+                        boardId,
+                        rX,
+                        rY
+                    )
                     cloned.relativeX = rX
                     cloned.relativeY = rY
                     if (typeof c.id === 'string') idMap.set(c.id, cloned.id)
@@ -491,7 +458,7 @@ export function useCanvasClipboard({
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const newGroup: any = {
                     id: generateUUID(),
-                    baseId,
+                    boardId,
                     componentType: GROUP_COMPONENT,
                     x: px,
                     y: py,
@@ -527,7 +494,7 @@ export function useCanvasClipboard({
         window.addEventListener('keydown', onPasteEvent)
         return (): void => window.removeEventListener('keydown', onPasteEvent)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [baseId, addToLocalComponentStore])
+    }, [boardId, addToLocalComponentStore])
 
     return { clipboardRef, lastMouseRef }
 }

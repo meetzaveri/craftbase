@@ -158,10 +158,7 @@ interface ToolbarState {
     icon: { data: Record<string, unknown> }
 }
 
-export function buildToolbarState(
-    group: GroupLike,
-    shape: ShapeLike
-): ToolbarState {
+function buildToolbarState(group: GroupLike, shape: ShapeLike): ToolbarState {
     const componentType = group?.elementData?.componentType
     // First line node of the (possibly multiline) text layer.
     const textChild = getShapeTextNodes(group)[0]
@@ -667,28 +664,16 @@ export default class SelectionController {
     // element (via a CSS transform) without a full-scene re-render. Returns null
     // when nothing is selected or the chrome isn't mounted yet. `group` guards
     // that the chrome actually belongs to the element being dragged.
-    getChromeDragHandle(group: GroupLike): {
-        node: SVGGraphicsElement
-        baseX: number
-        baseY: number
-        // The overlay's Two.js shape. The caller writes the `transform`
-        // ATTRIBUTE directly during a drag, so it needs a handle to flag the
-        // matrix dirty afterwards — otherwise Two.js sees a clean node and
-        // leaves the drag's last frame in place.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        shape: any
-    } | null {
+    getChromeDragHandle(
+        group: GroupLike
+    ): { node: SVGGraphicsElement; baseX: number; baseY: number } | null {
         if (!this.currentGroup || this.currentGroup !== group) return null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = (this.ui as any)?._renderer?.elem as
-            SVGGraphicsElement | undefined
+            | SVGGraphicsElement
+            | undefined
         if (!node) return null
-        return {
-            node,
-            baseX: this.ui.position.x,
-            baseY: this.ui.position.y,
-            shape: this.ui,
-        }
+        return { node, baseX: this.ui.position.x, baseY: this.ui.position.y }
     }
 
     syncToTarget(): void {
@@ -724,7 +709,9 @@ export default class SelectionController {
         )
         this.ui.rotation = this.currentGroup.rotation || 0
 
-        const isPortShapeSelected = isPortShape(this.currentGroup?.elementData)
+        const isPortShapeSelected = isPortShape(
+            this.currentGroup?.elementData?.componentType
+        )
         // Ports only render when the connectors feature flag is on (live).
         const portsOn = isPortShapeSelected && getConnectorsEnabled()
         this.portHandles.visible = portsOn
@@ -1040,7 +1027,7 @@ export default class SelectionController {
         // Single chokepoint for both hover (port arrow) and `hitTestPort`
         // (pull-out). Off when connectors are disabled.
         if (!getConnectorsEnabled()) return null
-        if (!isPortShape(this.currentGroup?.elementData)) {
+        if (!isPortShape(this.currentGroup?.elementData?.componentType)) {
             return null
         }
         const scale = this.zui.scale || 1

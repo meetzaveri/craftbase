@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     drawRectangle,
     drawLine,
     drawCurvedLine,
@@ -8,7 +8,6 @@ import {
     triggerUndoKeyboard,
     triggerRedoKeyboard,
     getDraftComponents,
-    expectComponentCount,
 } from './helpers/index.js'
 
 // Keep the anchor + drawn shapes clear of the top toolbar (~y<60) and the left
@@ -66,7 +65,7 @@ async function waitForIdInDraft(page, id) {
 
 test.describe('Line & CurvedLine — draw', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     test('draws a plain line and stores it as a line component', async ({
@@ -75,7 +74,7 @@ test.describe('Line & CurvedLine — draw', () => {
         const handle = await drawLine(page, LINE_COORDS)
         const id = await handle.getAttribute('data-component-id')
         expect(id).toBeTruthy()
-        await expectComponentCount(page, 1)
+        await expect(page.locator('[data-component-id]')).toHaveCount(1)
 
         await page.waitForTimeout(DRAFT_DEBOUNCE_MS)
         const draft = await getDraftComponents(page)
@@ -86,7 +85,7 @@ test.describe('Line & CurvedLine — draw', () => {
         const handle = await drawCurvedLine(page, CURVED_POINTS)
         const id = await handle.getAttribute('data-component-id')
         expect(id).toBeTruthy()
-        await expectComponentCount(page, 1)
+        await expect(page.locator('[data-component-id]')).toHaveCount(1)
 
         await page.waitForTimeout(DRAFT_DEBOUNCE_MS)
         const draft = await getDraftComponents(page)
@@ -100,7 +99,7 @@ test.describe('Line & CurvedLine — draw', () => {
 
 test.describe('Line & CurvedLine — undo removes the drawn element', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     for (const { name, draw } of SHAPES) {
@@ -113,7 +112,7 @@ test.describe('Line & CurvedLine — undo removes the drawn element', () => {
             const handle = await draw(page)
             const id = await handle.getAttribute('data-component-id')
             expect(id).not.toBe(anchorId)
-            await expectComponentCount(page, 2)
+            await expect(page.locator('[data-component-id]')).toHaveCount(2)
 
             await page.waitForTimeout(DRAFT_DEBOUNCE_MS)
             const before = await getDraftComponents(page)
@@ -121,7 +120,7 @@ test.describe('Line & CurvedLine — undo removes the drawn element', () => {
 
             await triggerUndoKeyboard(page)
 
-            await expectComponentCount(page, 1)
+            await expect(page.locator('[data-component-id]')).toHaveCount(1)
             await waitForIdRemovedFromDraft(page, id)
             const after = await getDraftComponents(page)
             expect(after?.[anchorId]).toBeTruthy()
@@ -131,7 +130,7 @@ test.describe('Line & CurvedLine — undo removes the drawn element', () => {
 
 test.describe('Line & CurvedLine — redo restores an undone element', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     for (const { name, draw } of SHAPES) {
@@ -143,12 +142,12 @@ test.describe('Line & CurvedLine — redo restores an undone element', () => {
 
             const handle = await draw(page)
             const id = await handle.getAttribute('data-component-id')
-            await expectComponentCount(page, 2)
+            await expect(page.locator('[data-component-id]')).toHaveCount(2)
             await page.waitForTimeout(DRAFT_DEBOUNCE_MS)
 
             // "delete it" — undo removes the drawn element.
             await triggerUndoKeyboard(page)
-            await expectComponentCount(page, 1)
+            await expect(page.locator('[data-component-id]')).toHaveCount(1)
             await waitForIdRemovedFromDraft(page, id)
 
             // Redo brings it back.
@@ -156,14 +155,9 @@ test.describe('Line & CurvedLine — redo restores an undone element', () => {
 
             // Land in pointer/select mode and blur, then assert it's back.
             await clickPointerTool(page)
-            await expectComponentCount(page, 2)
-            // Exclude the vertex handles, which carry the same
-            // data-component-id (see expectComponentCount) and would make this
-            // a strict-mode violation for the curvedLine.
+            await expect(page.locator('[data-component-id]')).toHaveCount(2)
             await expect(
-                page.locator(
-                    `[data-component-id="${id}"]:not(.is-vertex-handle)`
-                )
+                page.locator(`[data-component-id="${id}"]`)
             ).toBeVisible()
             await waitForIdInDraft(page, id)
             const after = await getDraftComponents(page)

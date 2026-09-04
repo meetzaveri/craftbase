@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import routes from '../../routes'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 
-const LAST_UPDATED = 'August 30, 2026'
+const LAST_UPDATED = 'May 17, 2026'
 
 const ChevronLeft = (): ReactNode => (
     <svg
@@ -54,7 +54,7 @@ const PrivacyPage: React.FC = () => {
                             px-2 py-1 rounded-md hover:bg-accent/30 transition-all ease-in duration-150"
                     >
                         <ChevronLeft />
-                        <span>{isMobile ? 'Back' : 'Back to canvas'}</span>
+                        <span>{isMobile ? 'Back' : 'Back to board'}</span>
                     </Link>
                 </div>
             </nav>
@@ -80,155 +80,58 @@ const PrivacyPage: React.FC = () => {
                         In short
                     </div>
                     <p className="text-xs tablet-landscape:text-sm text-ink-mid leading-relaxed">
-                        Craftbase doesn't ask for your name, email or any
-                        sign-up. You get an anonymous identity with a random
-                        name, and it is stored in your own browser. Whatever you
-                        draw stays in your browser until you choose to share a
-                        canvas. Once you share it, anyone with the link can view
-                        it. For analytics we use a tool that doesn't set cookies
-                        and doesn't store your IP address.
-                    </p>
-                    <p className="text-xs tablet-landscape:text-sm text-ink-mid leading-relaxed mt-2">
-                        One thing to note about maps. A canvas can use a map as
-                        its backdrop. We ask your browser for your location only
-                        when you tap &ldquo;Use my current location&rdquo;, never
-                        automatically. And when you share a map canvas, the
-                        coordinate it is pinned to becomes public along with it.
+                        Craftbase doesn't ask for your name, email, or any
+                        sign-up. You're an anonymous, randomly-named identity
+                        stored in your own browser. Anything you draw stays in
+                        your browser until <em>you</em> explicitly choose to
+                        share a board &mdash; at which point that board becomes
+                        publicly viewable. We use a privacy-first analytics tool
+                        that doesn't set cookies or store your IP address.
                     </p>
                 </div>
 
                 <Section title="Who you are to us">
                     <p>
                         When you first open Craftbase, we create an anonymous
-                        identity for you. It is a random ID plus a randomly
-                        picked nickname, for example
-                        &ldquo;tropical&nbsp;owl&rdquo;. We store this ID in your
-                        browser's local storage. We don't collect your name,
-                        email address, phone number or anything else that
-                        identifies you personally. There is no account and no
-                        sign-up.
+                        identity for you: a random ID and a randomly-picked
+                        nickname (for example, &ldquo;tropical&nbsp;owl&rdquo;).
+                        This ID is stored in your browser's local storage. We do{' '}
+                        <strong>not</strong> collect your name, email address,
+                        phone number, or any other personally identifying
+                        information &mdash; there is no account and no sign-up.
                     </p>
                     <p>
-                        We keep this anonymous ID in our database along with a
-                        counter of how many times Craftbase has been opened from
-                        your browser. The app needs both to function. It is not
-                        linked to your real identity, and we don't share or sell
-                        it.
+                        This anonymous ID, along with a counter of how many
+                        times Craftbase has been opened from your browser, is
+                        stored in our database so the app can function. It is
+                        not linked to your real-world identity and is not shared
+                        with or sold to anyone.
                     </p>
                     <p>
-                        Since this identity lives in your browser's storage, you
-                        will get a new and separate one if you switch browsers,
-                        switch devices, use a private window, or clear your
-                        browser data.
-                    </p>
-                </Section>
-
-                <Section title="Your canvases and what you draw">
-                    <p>
-                        <strong>Local mode (the default).</strong> While you are
-                        sketching, everything you create stays in your own
-                        browser's local storage. That covers shapes, text and
-                        drawings. We don't upload any of it and we can't see it.
-                    </p>
-                    <p>
-                        <strong>Shared canvases.</strong> When you share a
-                        canvas, we ask you to confirm first. After you confirm,
-                        we upload that canvas and its contents to the cloud.
-                        Anyone with the link can then view it. So avoid putting
-                        confidential or sensitive information on a canvas you
-                        plan to share. Nothing leaves your browser until you opt
-                        in.
+                        Because this identity lives in your browser's storage,
+                        using a different browser, a different device, a private
+                        / incognito window, or clearing your browser data will
+                        create a new, separate anonymous identity.
                     </p>
                 </Section>
 
-                <Section title="Maps and location">
+                <Section title="Your boards and what you draw">
                     <p>
-                        A canvas can use a map as its backdrop instead of the
-                        blank whiteboard. A map has to open somewhere, so this is
-                        the only part of Craftbase that deals with location.
-                        Below is everything it does.
+                        <strong>Local mode (the default).</strong> While you're
+                        just sketching, everything you create &mdash; shapes,
+                        text, drawings &mdash; stays only in your own browser's
+                        local storage. It is not uploaded to our servers and we
+                        cannot see it.
                     </p>
                     <p>
-                        <strong>Your timezone, to pick an opening view.</strong>{' '}
-                        When you switch a canvas to a map for the first time, we
-                        read your browser's timezone (for example{' '}
-                        <em>Asia/Kolkata</em>) and open the map near a city in
-                        that zone. This needs no permission, and the value stays
-                        inside your browser. We never receive it. A timezone
-                        covers a country-sized region, so treat it as a rough
-                        guess and not as your location.
-                    </p>
-                    <p>
-                        <strong>
-                            Your device location, only when you ask for it.
-                        </strong>{' '}
-                        The map has a &ldquo;Use my current location&rdquo;
-                        button. We ask your browser for your position only if you
-                        tap it, and your browser will ask you to approve that
-                        separately. We use the coordinate once, to decide where
-                        the map is pinned. After that we don't read your location
-                        again. You can decline and nothing breaks. You stay on
-                        the timezone view and can search for any place instead.
-                        There is no background tracking and no location history.
-                    </p>
-                    <p>
-                        <strong>Where that pin is stored.</strong> The pin is a
-                        longitude, latitude and zoom level. We save it in your
-                        own browser's local storage next to the canvas. Like the
-                        rest of local mode, it doesn't reach our servers until
-                        you share.
-                    </p>
-                    <p>
-                        <strong>Sharing a map canvas publishes its pin.</strong>{' '}
-                        When you share a map canvas, two coordinates go up with
-                        it and become publicly viewable. One is the pin the map
-                        is anchored to. The other is the view you were looking at
-                        when you shared. Both are needed so that someone opening
-                        your link sees your drawing at the right place on Earth.
-                        Now consider the case where that pin came from &ldquo;Use
-                        my current location&rdquo;. Sharing then publishes a
-                        coordinate derived from where you were. If you don't want
-                        that, search for a nearby place first and share from
-                        there.
-                    </p>
-                    <p>
-                        <strong>Map services we don't run.</strong> Two outside
-                        services make the map work. Your browser contacts them
-                        directly, so they can see your IP address and we never
-                        see the request:
-                    </p>
-                    <ul className="list-disc pl-5 space-y-1">
-                        <li>
-                            <a
-                                href="https://carto.com/privacy/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-accent-dark font-semibold no-underline border-b border-accent-dark"
-                            >
-                                CARTO
-                            </a>{' '}
-                            serves the map imagery, built on OpenStreetMap data.
-                            It receives requests for the map area you are
-                            currently viewing.
-                        </li>
-                        <li>
-                            <a
-                                href="https://osmfoundation.org/wiki/Privacy_Policy"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-accent-dark font-semibold no-underline border-b border-accent-dark"
-                            >
-                                Nominatim
-                            </a>
-                            , run by the OpenStreetMap Foundation, answers place
-                            searches. Whatever you type in the place-search box
-                            is sent to them to look up. We don't log or store
-                            your searches.
-                        </li>
-                    </ul>
-                    <p>
-                        Neither service is contacted unless you open a map
-                        canvas.
+                        <strong>Shared boards.</strong> When you choose to share
+                        a board, we ask you to confirm first. Once you confirm,
+                        that board and its contents are uploaded to the cloud
+                        and become <strong>publicly viewable</strong> by anyone
+                        with the link. Please don't put confidential or
+                        sensitive information on a board you intend to share.
+                        Sharing is always your explicit choice &mdash; nothing
+                        leaves your browser until you opt in.
                     </p>
                 </Section>
 
@@ -243,51 +146,49 @@ const PrivacyPage: React.FC = () => {
                         >
                             Umami
                         </a>{' '}
-                        (Umami Cloud) for aggregate usage analytics. That covers
-                        which pages are viewed, the referring site, approximate
-                        location at country or region level, and broad device or
-                        browser type.
+                        (Umami Cloud) for privacy-friendly, aggregate usage
+                        analytics &mdash; things like which pages are viewed,
+                        the referring site, approximate location at the
+                        country/region level, and broad device or browser type.
                     </p>
                     <p>
-                        Umami doesn't use cookies and doesn't store your IP
-                        address. It uses your IP momentarily on the server to
-                        estimate approximate location, then discards it. There is
-                        no cross-site tracking and no advertising profiles. This
-                        data is aggregate, and we don't join it to the anonymous
-                        in-app identity described above.
+                        Umami does <strong>not</strong> use cookies and does{' '}
+                        <strong>not</strong> store your IP address. Your IP is
+                        used momentarily and server-side to estimate approximate
+                        location, then discarded. There is no cross-site
+                        tracking, no advertising profiles, and this analytics
+                        data is aggregate &mdash; it is not joined to the
+                        anonymous in-app identity described above.
                     </p>
                 </Section>
 
                 <Section title="What we never collect">
                     <ul className="list-disc pl-5 space-y-1">
-                        <li>Your name, email or phone number</li>
+                        <li>Your name, email, or phone number</li>
                         <li>
-                            Background or continuous location tracking. On a map
-                            canvas we ask for your location only when you tap
-                            &ldquo;Use my current location&rdquo;, and only at
-                            that moment. We don't follow you after that. See{' '}
-                            <em>Maps and location</em> above.
+                            Precise geolocation (we never ask your browser for
+                            location access)
                         </li>
                         <li>Device fingerprints or cross-site trackers</li>
                         <li>
-                            The contents of canvases you keep in local mode and
+                            The contents of boards you keep in local mode and
                             never share
                         </li>
                     </ul>
-                    <p>We don't sell or rent any data to anyone.</p>
+                    <p>We do not sell or rent any data to anyone.</p>
                 </Section>
 
                 <Section title="Your controls">
                     <p>
-                        You can reset your anonymous identity and wipe every
-                        locally stored canvas at any time. Clear this site's data
-                        in your browser settings and both are gone.
+                        You can reset your anonymous identity and wipe all
+                        locally-stored boards at any time by clearing this
+                        site's data in your browser settings.
                     </p>
                     <p>
-                        Keep in mind that a canvas stays public once you have
-                        shared it. Copies that other people opened can also
-                        persist on their own. If you want a shared canvas taken
-                        down, email us at the address below.
+                        Note that once a board has been shared it is public, and
+                        copies that other people have opened may persist
+                        independently. If you'd like a shared board taken down,
+                        contact us at the address below.
                     </p>
                 </Section>
 
@@ -305,9 +206,9 @@ const PrivacyPage: React.FC = () => {
                 </Section>
 
                 <p className="text-xs text-ink-muted leading-relaxed mt-8 pt-6 border-t border-border-panel">
-                    We may update this policy as Craftbase evolves. Any
-                    material change will show up in the &ldquo;last
-                    updated&rdquo; date above.
+                    We may update this policy as Craftbase evolves. Material
+                    changes will be reflected in the &ldquo;last updated&rdquo;
+                    date above.
                 </p>
             </main>
         </div>

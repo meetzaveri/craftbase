@@ -76,39 +76,12 @@ code {
 .App {
     text-align: center;
 }
-/* Backdrop slot for the active base provider (src/bases). Sits behind
-   #main-two-root (-9) so canvas ink always draws over it, and never takes
-   pointer events — every interaction belongs to the canvas above. Empty and
-   invisible on the board base, whose backdrop is the svg background below. */
-#cb-base-root {
-    position: fixed;
-    inset: 0;
-    z-index: -10;
-    pointer-events: none;
-}
-/* MapLibre's container, created by the map base inside the slot above. It fills
-   the slot; the slot's fixed/inset positioning does the rest. */
-#cb-map-bg {
-    width: 100%;
-    height: 100%;
-}
-/* The attribution link must stay clickable (OSM's terms require the credit be
-   reachable), so it opts back in to pointer events the slot turned off. */
-#cb-map-bg .maplibregl-ctrl-attrib {
-    pointer-events: auto;
-}
 #main-two-root {
     z-index: -9;
 }
 #main-two-root svg {
     background-color: rgb(var(--color-canvas));
     z-index: -1;
-}
-/* A base that paints its own backdrop (e.g. the map) needs the parchment out of
-   the way, otherwise it renders over the backdrop. The active provider toggles
-   this class on <body>. */
-body.cb-base-opaque-backdrop #main-two-root svg {
-    background-color: transparent;
 }
 /* Dot grid is opt-in (default off) behind the `dotGrid` feature flag. The
    `cb-dot-grid` class is toggled on #main-two-root by newCanvas.tsx based on

@@ -1,6 +1,6 @@
 import { test, expect } from './helpers/test.js'
 import {
-    setupLocalBase,
+    setupLocalBoard,
     drawLine,
     getDraftComponents,
     getCanvasBox,
@@ -20,7 +20,7 @@ function safeArea(box) {
 
 test.describe('Copy-paste — line', () => {
     test.beforeEach(async ({ page }) => {
-        await setupLocalBase(page)
+        await setupLocalBoard(page)
     })
 
     /**

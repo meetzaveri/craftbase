@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { useImmer } from 'use-immer'
-import { useBaseContext } from '../../views/Base/baseContext'
+import { useBoardContext } from '../../views/Board/boardContext'
 
 import NewTextFactory from '../../factory/newText'
 import { syncTextHitRect, readOpacity } from '../../utils/canvasUtils'
@@ -27,7 +27,7 @@ function NewText(props: ElementProps): ReactElement {
         isArrowDrawMode,
         isTextDrawMode,
         isArrowSelected,
-    } = useBaseContext()
+    } = useBoardContext()
 
     const [internalState, setInternalState] = useImmer<InternalState>({})
     const [textValue, setTextValue] = useState<string>(
@@ -142,7 +142,7 @@ function NewText(props: ElementProps): ReactElement {
         // Everything below that touches the DOM (node tagging, the dblclick
         // listeners) needs the rendered SVG nodes, which only exist after a
         // render. Batch that render with every other element mounting this
-        // frame — a synchronous two.update() per element made mounting a base
+        // frame — a synchronous two.update() per element made mounting a board
         // O(N²). `mountCancelled` guards an unmount before the frame fires, so
         // we never bind listeners to a node that is already gone.
         scheduleRender(two, () => {
@@ -257,9 +257,8 @@ function NewText(props: ElementProps): ReactElement {
             // editor's top edge is pinned to THIS block's top, so typing extends
             // the box downward instead of growing it symmetrically about the
             // block's center (which would walk line 1 upward on every newline).
-            const startLineCount = (textValueRef.current || '').split(
-                '\n'
-            ).length
+            const startLineCount = (textValueRef.current || '').split('\n')
+                .length
 
             // The scene keeps the line stack centered on the group origin, so a
             // new line moves line 1 up by half a line height. Shift the origin
@@ -269,9 +268,7 @@ function NewText(props: ElementProps): ReactElement {
             // rely on it) while making growth read as downward-only.
             let laidOutLineCount = startLineCount
             const keepBlockTopFixed = (): void => {
-                const nextCount = (textValueRef.current || '').split(
-                    '\n'
-                ).length
+                const nextCount = (textValueRef.current || '').split('\n').length
                 if (nextCount === laidOutLineCount) return
                 const lineH = lineHeightFor(twoText.size || 36)
                 group.translation.y +=
@@ -454,17 +451,7 @@ function NewText(props: ElementProps): ReactElement {
                     measureSpan.parentNode.removeChild(measureSpan)
                 }
 
-                // Restore to '' — NOT 'block'. This inline style only exists
-                // to hide the text while the textarea overlays it, and an
-                // inline `display` OVERRIDES the `display` attribute Two.js
-                // writes from its own `.visible` flag. Hard-coding 'block' here
-                // pinned the element visible: create text on the board base,
-                // then switch to the map (the switcher click is what blurs the
-                // editor) and `applyBaseTypeVisibility` correctly set
-                // visible=false + display="none" on the <g>, but the inline
-                // block won and the text lingered over the map until reload.
-                // Clearing the property hands display back to Two.js.
-                groupDomElem.style.display = ''
+                groupDomElem.style.display = 'block'
 
                 // Raw text — may contain hard newlines from Shift+Enter.
                 const newContent = input.value
@@ -530,26 +517,6 @@ function NewText(props: ElementProps): ReactElement {
                 'triggerTextInput',
                 handleTriggerTextInput
             )
-
-            // Remove our group from the scene.
-            //
-            // Every other element component does this; text was the exception,
-            // and it is what made the mobile delete button look broken: the
-            // trash button's safety net drops the RECORD (the store is the
-            // single teardown owner per CLAUDE.md), React unmounts us — and the
-            // glyphs stayed on the canvas until a reload, because nobody ever
-            // took the group out of the scene.
-            //
-            // Guarded because a delete path may have removed it already:
-            // removing an id the scene no longer owns is a
-            // no-op in Two.js, but a second subtraction of a node whose SVG is
-            // already detached is exactly the `scene.subtractions` hazard
-            // CLAUDE.md documents, so we only remove what is still there.
-            const scene = two?.scene
-            const stillMounted =
-                !!group &&
-                !!scene?.children?.find((c: ShapeLike) => c?.id === group.id)
-            if (stillMounted) two.remove(group)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
