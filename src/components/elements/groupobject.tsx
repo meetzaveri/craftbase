@@ -11,6 +11,7 @@ import getEditComponents from '../utils/editWrapper'
 import { elementOnBlurHandler } from '../../utils/misc'
 import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertices'
 import { isStandaloneTextType } from '../../constants/misc'
+import { layoutMemberOutlines } from './groupMemberOutlines'
 
 // PROTOTYPE FLAG — group resize. Flip to false to fully disable the corner
 // resize handles + baking and fall back to the old move-only group overlay.
@@ -98,6 +99,12 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
     // the live translation against this so a move is recorded exactly once,
     // whether the commit is triggered by drag-end (mouseup) or blur.
     const lastCommitPosRef = useRef<{ x: number; y: number } | null>(null)
+    // Shift-click selection: one outline per member inside the group frame,
+    // and no shaded backing. The drag-select and paste groups keep the
+    // shaded frame without member outlines.
+    const showMemberOutlines = props.selectionStyle === 'members'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const memberOutlinesRef = useRef<Map<string, any>>(new Map())
     let groupInstance: ShapeLike = null
     let selectorInstance: ShapeLike = null
 
@@ -442,6 +449,14 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         const onZoomChanged = (e: Event): void => {
             const detail = (e as CustomEvent<{ scale: number }>).detail
             if (!selectorInstance || !detail) return
+            if (showMemberOutlines && groupInstance) {
+                // Outline stroke is screen-constant: re-fit at the new zoom.
+                layoutMemberOutlines(
+                    two,
+                    groupInstance,
+                    memberOutlinesRef.current
+                )
+            }
             selectorInstance.setScale(detail.scale)
             // setScale re-sizes ALL selector circles to a small radius; re-apply
             // our larger constant-screen-size handles on top so they stay easy
@@ -449,9 +464,20 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             sizeHandlesRef.current?.(detail.scale)
             two.update()
         }
+        // A group style edit can resize members (text size reflows height).
+        const onMembersRestyled = (): void => {
+            if (!showMemberOutlines || !groupInstance) return
+            layoutMemberOutlines(two, groupInstance, memberOutlinesRef.current)
+        }
         window.addEventListener('zoomChanged', onZoomChanged)
-        return (): void =>
+        window.addEventListener('groupMembersRestyled', onMembersRestyled)
+        return (): void => {
             window.removeEventListener('zoomChanged', onZoomChanged)
+            window.removeEventListener(
+                'groupMembersRestyled',
+                onMembersRestyled
+            )
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -465,7 +491,9 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             props?.width || 0,
             props?.height || 0
         )
-        rectangle.fill = getGroupFill()
+        // No shaded backing for a Shift-selection: the member outlines carry it.
+        if (showMemberOutlines) rectangle.noFill()
+        else rectangle.fill = getGroupFill()
         rectangle.noStroke()
 
         const group = two.makeGroup(rectangle)
@@ -569,6 +597,9 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             }
 
             two.update()
+            if (showMemberOutlines) {
+                layoutMemberOutlines(two, group, memberOutlinesRef.current)
+            }
         })
 
         groupInstance = group

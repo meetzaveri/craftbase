@@ -7,28 +7,12 @@
 // The toolbar uses this to show a real value (or a "Mixed" indicator) when a
 // group is focused, instead of always falling back to defaults.
 
+import { GROUP_PROPERTY_ACCEPTS as ACCEPTS } from './groupAccepts'
+import type { GroupPropertyKey } from './groupAccepts'
+
 export const MIXED = '__MIXED__'
 
-type ComponentType =
-    | 'rectangle'
-    | 'circle'
-    | 'diamond'
-    | 'frame'
-    | 'newText'
-    | 'geoText'
-    | 'arrowLine'
-    | 'pencil'
-    | 'divider'
-
-type InspectableProperty =
-    | 'fill'
-    | 'stroke'
-    | 'linewidth'
-    | 'strokeType'
-    | 'opacity'
-    | 'textColor'
-    | 'textSize'
-    | 'textFontFamily'
+type InspectableProperty = GroupPropertyKey
 
 interface ChildMetadata {
     opacity?: number
@@ -42,7 +26,7 @@ interface ChildMetadata {
 // being tightened across Stages 3–10. Index access via `[key]` covers the
 // fields read in readChildValue without locking the row shape down here.
 interface ChildEntry {
-    componentType?: ComponentType | string
+    componentType?: string
     fill?: string
     stroke?: string
     linewidth?: number
@@ -67,70 +51,6 @@ interface DefaultsForInspect {
     defaultTextColor: string
     defaultTextSize: string | number
     defaultTextFontFamily: string
-}
-
-// Mirrors the acceptance map in applyGroupProperty.ts. Kept in sync manually
-// — this is small and changes rarely.
-const ACCEPTS: Record<InspectableProperty, Set<string>> = {
-    // Standalone text has no fill concept (its color is `textColor`); kept in
-    // sync with applyGroupProperty.ts ACCEPTS.fill.
-    fill: new Set(['rectangle', 'circle', 'diamond', 'frame']),
-    stroke: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'pencil',
-    ]),
-    linewidth: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'pencil',
-    ]),
-    strokeType: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'divider',
-        'pencil',
-    ]),
-    opacity: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'newText',
-        'geoText',
-        'pencil',
-    ]),
-    textColor: new Set([
-        'newText',
-        'geoText',
-        'rectangle',
-        'diamond',
-        'circle',
-    ]),
-    textSize: new Set([
-        'newText',
-        'geoText',
-        'rectangle',
-        'diamond',
-        'circle',
-    ]),
-    textFontFamily: new Set([
-        'newText',
-        'geoText',
-        'rectangle',
-        'diamond',
-        'circle',
-    ]),
 }
 
 function readChildValue(child: ChildEntry, key: InspectableProperty): unknown {

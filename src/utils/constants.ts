@@ -196,6 +196,14 @@ export const staticPrimaryElementData: PrimarySection[] = [
                 ],
             },
             {
+                elementName: 'text',
+                elementDisplayName: 'Text',
+                elementIcon: TextIcon,
+                hasDrawer: false,
+                noAction: false,
+                drawerData: [],
+            },
+            {
                 // Lines live behind their own drawer (main icon = straight line);
                 // clicking it opens a secondary drawer to pick line vs. curved
                 // line. Unlike 'shapes', this drawer is NOT flattened on desktop
@@ -231,14 +239,6 @@ export const staticPrimaryElementData: PrimarySection[] = [
                 elementName: 'pencil',
                 elementDisplayName: 'Pencil',
                 elementIcon: PencilIcon,
-                hasDrawer: false,
-                noAction: false,
-                drawerData: [],
-            },
-            {
-                elementName: 'text',
-                elementDisplayName: 'Text',
-                elementIcon: TextIcon,
                 hasDrawer: false,
                 noAction: false,
                 drawerData: [],

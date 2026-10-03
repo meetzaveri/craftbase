@@ -66,6 +66,7 @@ import { elementModules } from './elementModules'
 
 import Loader from './components/utils/loader'
 import SelectionController, {
+    buildToolbarState,
     PORT_GAP,
     PORT_RADAR_RADIUS,
     SELECTION_PADDING,
@@ -113,7 +114,14 @@ import {
     applyShapeText,
     shapeTextStyleFromMeta,
     getGroupFill,
+    focusSvgElement,
 } from './utils/canvasUtils'
+import {
+    groupMemberIds,
+    memberSurfaceBounds,
+    resolveShiftClickId,
+    toggleSelection,
+} from './canvas/shiftSelect'
 import { growShapeToFitText, usableTextWidth } from './utils/shapeTextFit'
 import {
     flipThemeColor,
@@ -326,7 +334,8 @@ function addZUI(
     >,
     onCameraChangeRef: MutableRefObject<
         ((event: CameraChangeEvent) => void) | undefined
-    >
+    >,
+    selectedComponentRef: MutableRefObject<SelectedComponent | null>
 ): ZuiHandle {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let shape: any = null
@@ -928,6 +937,18 @@ function addZUI(
 
     window.addEventListener('groupFocused', ((e: CustomEvent) => {
         activeGroupRef.current = e.detail?.group ?? null
+        // A Shift-click group just mounted. If more Shift-clicks landed while
+        // it was mounting, rebuild it to match. Deferred so the rebuild doesn't
+        // tear the group down from inside its own focus handler.
+        if (pendingShiftIds && activeGroupRef.current) {
+            const intended = pendingShiftIds
+            clearPendingShift()
+            const actual = groupMemberIds(activeGroupRef.current)
+            const same =
+                intended.length === actual.length &&
+                intended.every((id) => actual.includes(id))
+            if (!same) window.setTimeout(() => applyShiftSelection(intended), 0)
+        }
     }) as EventListener)
     window.addEventListener('groupBlurred', () => {
         activeGroupRef.current = null
@@ -2277,6 +2298,114 @@ function addZUI(
         })
     }
 
+    // Shift-click selection whose group overlay is still mounting (null when
+    // none). Shift-clicks in that gap toggle this instead of the live
+    // selection; the groupFocused listener reconciles the overlay to it.
+    let pendingShiftIds: string[] | null = null
+    let pendingShiftTimer: number | null = null
+    function clearPendingShift() {
+        pendingShiftIds = null
+        if (pendingShiftTimer !== null) window.clearTimeout(pendingShiftTimer)
+        pendingShiftTimer = null
+    }
+
+    // Shift-click multi-select: toggle the clicked element in the current
+    // selection (canvas/shiftSelect.ts). Returns true when the click was
+    // consumed as a selection change.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function handleShiftSelect(e: MouseEvent, clicked: any): boolean {
+        const group = activeGroupRef.current
+        const clickedId = resolveShiftClickId(
+            clicked,
+            group,
+            two,
+            e.clientX,
+            e.clientY
+        )
+        if (!clickedId) return false
+        // The controller knows its shape synchronously; the ref (arrows,
+        // lines, text, pencil) lags a render behind the click that set it.
+        const singleId =
+            selectionController.currentGroup?.elementData?.id ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (selectedComponentRef.current as any)?.group?.data?.elementData?.id
+        const current =
+            pendingShiftIds ??
+            (group
+                ? groupMemberIds(group)
+                : typeof singleId === 'string'
+                  ? [singleId]
+                  : [])
+        // Nothing selected yet: Shift-click selects like a plain click.
+        if (current.length === 0) return false
+        // Keep the browser from moving focus; applyShiftSelection manages it.
+        e.preventDefault()
+        const next = toggleSelection(current, clickedId)
+        if (pendingShiftIds) {
+            pendingShiftIds = next
+            return true
+        }
+        applyShiftSelection(next)
+        return true
+    }
+
+    function applyShiftSelection(ids: string[]) {
+        clearPendingShift()
+        // Tear the old group overlay down first. Its blur commits any pending
+        // move and reveals its members; the new overlay hides those same
+        // members on mount, so the reveal must not run after it.
+        const group = activeGroupRef.current
+        ;(group?._renderer?.elem as SVGElement | undefined)?.blur()
+        selectionController.detach()
+        lastSelectedShape = null
+
+        if (ids.length === 0) {
+            const focused = document.activeElement
+            if (focused instanceof SVGElement && domElement.contains(focused)) {
+                focused.blur()
+            }
+            setSelectedComponentInBoard(null)
+            two.update()
+            return
+        }
+
+        if (ids.length === 1) {
+            const el = two.scene.children.find(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (c: any) => c?.elementData?.id === ids[0]
+            )
+            if (!el) return
+            lastSelectedShape = el
+            focusSvgElement(el._renderer?.elem)
+            if (selectionController.canHandle(el)) {
+                selectionController.attach(el, el.children[0])
+            } else {
+                if (isLineLikeType(el.elementData.componentType)) {
+                    setArrowEndpointsVisible(el, true)
+                }
+                setSelectedComponentInBoard(
+                    buildToolbarState(el, el.children[0])
+                )
+            }
+            two.update()
+            return
+        }
+
+        const bounds = memberSurfaceBounds(ids, two, toSurface)
+        if (!bounds) return
+        // Until the overlay mounts and focuses, this is the selection. The
+        // timer is a fallback so a mount that never lands can't wedge it.
+        pendingShiftIds = ids
+        pendingShiftTimer = window.setTimeout(clearPendingShift, 2000)
+        setSelectedComponentInBoard(null)
+        setOnGroupHandler({
+            ...bounds,
+            x: bounds.left,
+            y: bounds.top,
+            memberIds: ids,
+        })
+    }
+
     function mousedown(e: MouseEvent) {
         // Pan-mode (desktop): grab-and-drag translates the surface instead of
         // selecting/drawing. Runs before everything else so a click on a shape
@@ -2732,6 +2861,17 @@ function addZUI(
                     }
                 }
 
+                if (e.shiftKey && handleShiftSelect(e, shape)) {
+                    // resolveShapeFromPath re-shows a clicked arrow's endpoint
+                    // handles; a Shift-click adds it to a set, not edits it.
+                    if (isLineLikeType(shape?.elementData?.componentType)) {
+                        setArrowEndpointsVisible(shape, false)
+                    }
+                    shape = null
+                    two.update()
+                    return
+                }
+
                 // Track for copy BEFORE drag-prevention clears shape (pencil uses
                 // avoid-dragging so shape would become {} immediately after).
                 if (shape?.elementData?.id) {
@@ -2887,33 +3027,9 @@ function addZUI(
                         setArrowEndpointsVisible(groupForToolbar, true)
                     }
 
-                    // First line node of the text layer (or a legacy direct
-                    // text child) — gives the toolbar a representative text
-                    // node for shape-with-text enablement.
-                    const textChild = getShapeTextNodes(groupForToolbar)[0]
-
-                    let componentInternalState = {
-                        element: {
-                            [shapeForToolbar.id]: shapeForToolbar,
-                            [groupForToolbar.id]: groupForToolbar,
-                        },
-                        group: {
-                            id: groupForToolbar.id,
-                            data: groupForToolbar,
-                        },
-                        shape: {
-                            type: groupForToolbar.elementData.componentType,
-                            id: shapeForToolbar.id,
-                            data: shapeForToolbar,
-                        },
-                        text: {
-                            data: textChild || {},
-                        },
-                        icon: {
-                            data: {},
-                        },
-                    }
-                    setSelectedComponentInBoard(componentInternalState)
+                    setSelectedComponentInBoard(
+                        buildToolbarState(groupForToolbar, shapeForToolbar)
+                    )
                 }
 
                 two.update()
@@ -4698,6 +4814,13 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     useEffect(() => {
         onCameraChangeRef.current = props.onCameraChange
     }, [props.onCameraChange])
+    // Live single selection for addZUI's handlers (Shift-click multi-select).
+    const selectedComponentRef = useRef<SelectedComponent | null>(
+        props.selectedComponent
+    )
+    useEffect(() => {
+        selectedComponentRef.current = props.selectedComponent
+    }, [props.selectedComponent])
 
     const { clipboardRef, lastMouseRef } = useCanvasClipboard({
         twoJSInstance,
@@ -4731,7 +4854,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             deleteComponentFromLocalStore,
             isPencilModeRef,
             createTextAtSurfaceRef,
-            onCameraChangeRef
+            onCameraChangeRef,
+            selectedComponentRef
         )
 
         // Dev-only handles for profiling the camera from the console or a
@@ -5248,8 +5372,14 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                     )
                     .map((it) => it.id)
             )
+            // Shift-click passes the exact members; the drag-select box
+            // decides membership geometrically.
+            const explicitIds: Set<string> | null = Array.isArray(e.memberIds)
+                ? new Set(e.memberIds)
+                : null
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const isMember = (item: any): boolean => {
+                if (explicitIds) return explicitIds.has(item.id)
                 if (isInsideMarquee(item)) return true
                 // Bound connector: member iff docked to a member shape.
                 if (item.componentType === 'arrowLine') {
@@ -5356,6 +5486,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             newGroup.y = yMid
 
             newGroup.children = newChildren
+            // Shift-click groups also outline each member inside the frame.
+            if (explicitIds) newGroup.selectionStyle = 'members'
 
             // Defer hiding the originals to the group's own assembly so the
             // swap is atomic — the group hides exactly these ids in the SAME

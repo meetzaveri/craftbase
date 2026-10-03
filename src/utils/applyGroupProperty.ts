@@ -7,6 +7,11 @@ import {
     readOpacity,
 } from './canvasUtils'
 import { resolveHeightForTextStyleChange } from './shapeTextFit'
+import {
+    GROUP_PROPERTY_ACCEPTS as ACCEPTS,
+    LINE_LIKE_GROUP_TYPES,
+} from './groupAccepts'
+import type { GroupPropertyKey } from './groupAccepts'
 
 // Bulk-apply a property to every child of the currently-focused group whose
 // element type accepts that property. Element types that don't accept the
@@ -14,11 +19,12 @@ import { resolveHeightForTextStyleChange } from './shapeTextFit'
 // shows the union of all properties; this layer enforces what each child can
 // actually receive).
 //
-// Per Phase 1 decisions:
+// Notes:
 //   - Defaults are NOT touched on group edits (caller doesn't bump them).
-//   - No "mixed value" inspection — toolbar reads from defaults.
-//   - textSize/textFontFamily on rectangles-with-text use a simple direct
-//     write — no resize-on-grow logic from the single-element path.
+//   - The toolbar's current values come from groupInspect.ts, which reads the
+//     same acceptance map (groupAccepts.ts) and reports MIXED on disagreement.
+//   - textSize/textFontFamily on shapes-with-text reflow the text to the
+//     shape's fixed width and re-fit only its height (see below).
 //
 // Mutates three places per child:
 //   1. The hidden Two.js shape in two.scene.children (opacity=0 while group
@@ -39,16 +45,6 @@ type ChildEntry = Record<string, any>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ComponentRow = Record<string, any>
 
-type GroupPropertyKey =
-    | 'fill'
-    | 'stroke'
-    | 'linewidth'
-    | 'strokeType'
-    | 'opacity'
-    | 'textColor'
-    | 'textSize'
-    | 'textFontFamily'
-
 interface HistoryBatchEntry {
     action: 'UPDATE_BULK'
     id: string
@@ -66,70 +62,6 @@ export interface ApplyGroupPropertyDeps {
     ) => void
     stateRefForComponentStore?: MutableRefObject<Record<string, ComponentRow>>
     recordBatchToHistoryLog?: (entries: HistoryBatchEntry[]) => void
-}
-
-const ACCEPTS: Record<GroupPropertyKey, Set<string>> = {
-    // Standalone text (newText/geoText) has no background-fill concept — its
-    // color is `textColor`. Excluded so a group fill leaves text untouched and
-    // never stamps a spurious `fill` onto a text row.
-    fill: new Set(['rectangle', 'circle', 'diamond', 'frame']),
-    stroke: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'pencil',
-    ]),
-    linewidth: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'pencil',
-    ]),
-    strokeType: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'divider',
-        'pencil',
-    ]),
-    // Pencil's metadata IS its vertex array, so opacity can't live in
-    // `metadata.opacity` like every other type (it would clobber the points).
-    // Pencil therefore persists opacity in a top-level `opacity` field instead
-    // — see the pencil branch in the opacity handler below.
-    opacity: new Set([
-        'rectangle',
-        'circle',
-        'diamond',
-        'frame',
-        'arrowLine',
-        'newText',
-        'geoText',
-        'pencil',
-    ]),
-    // rectangle, diamond AND circle all carry text the same way (see
-    // applyShapeText / the *-with-text components), so a group text edit
-    // must reach every one of them.
-    textColor: new Set([
-        'newText',
-        'geoText',
-        'rectangle',
-        'diamond',
-        'circle',
-    ]),
-    textSize: new Set(['newText', 'geoText', 'rectangle', 'diamond', 'circle']),
-    textFontFamily: new Set([
-        'newText',
-        'geoText',
-        'rectangle',
-        'diamond',
-        'circle',
-    ]),
 }
 
 function findSceneElement(two: TwoLike, id: string): ShapeLike | undefined {
@@ -186,6 +118,14 @@ function applyDashesToLeaves(
     if (typeof node.value === 'string') return
     node.dashes = dashes
     if (clearSolid) clearDashesOnTwoJSShape(node)
+}
+
+// The node a style write should hit. Line-like groups hold the line path plus
+// endpoint-circle groups; a group-level write would restyle (and dash) the
+// circles too, so target the line path. Everything else styles the group.
+function styleTarget(node: ShapeLike, type: string): ShapeLike {
+    if (!node) return node
+    return LINE_LIKE_GROUP_TYPES.has(type) ? node.children?.[0] : node
 }
 
 function applyToTwoShape(
@@ -289,8 +229,8 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
                 const sceneTextValues = sceneTexts.map((t) => t?.[propertyKey])
                 const coreTextValues = coreTexts.map((t) => t?.[propertyKey])
 
-                applyToTwoShape(sceneEl, propertyKey, value)
-                applyToTwoShape(coreObj, propertyKey, value)
+                applyToTwoShape(styleTarget(sceneEl, type), propertyKey, value)
+                applyToTwoShape(styleTarget(coreObj, type), propertyKey, value)
 
                 // Restore every line node's own value the group write clobbered.
                 sceneTexts.forEach((t, i) => {
@@ -313,8 +253,16 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
                 const dbValue = value === 'solid' ? 'solid' : value
                 const dashes = strokeTypeToDashes(value)
                 const clearSolid = value === 'solid'
-                applyDashesToLeaves(sceneEl, dashes, clearSolid)
-                applyDashesToLeaves(coreObj, dashes, clearSolid)
+                applyDashesToLeaves(
+                    styleTarget(sceneEl, type),
+                    dashes,
+                    clearSolid
+                )
+                applyDashesToLeaves(
+                    styleTarget(coreObj, type),
+                    dashes,
+                    clearSolid
+                )
                 if (sceneEl?.elementData)
                     sceneEl.elementData.strokeType = dbValue
                 child.strokeType = dbValue
@@ -580,5 +528,8 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
         }
 
         twoJSInstance?.update()
+        // Members may have changed size (text reflow, stroke width): let a
+        // Shift-selection group re-fit its per-member outlines.
+        window.dispatchEvent(new CustomEvent('groupMembersRestyled'))
     }
 }
