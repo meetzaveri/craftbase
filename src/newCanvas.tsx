@@ -393,6 +393,11 @@ function addZUI(
     let mousePanLastY = 0
     let dragging = false
     let isResizeEvent = false
+    // Unconstrained position of the line/arrow endpoint being dragged, in the
+    // arrow group's local space. Shift-snapping overwrites the vertex, so
+    // accumulating deltas on the vertex itself would lose off-axis motion.
+    let endpointDragFree: { circle: unknown; x: number; y: number } | null =
+        null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let currentPath: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -902,12 +907,19 @@ function addZUI(
     domElement.addEventListener('mousedown', mousedown, false)
     domElement.addEventListener('mousemove', hoverDetectMove, false)
     domElement.addEventListener('dblclick', dblclick, false)
-    domElement.addEventListener(
-        'mousewheel',
-        mousewheel as EventListener,
-        false
-    )
-    domElement.addEventListener('wheel', mousewheel, false)
+    // Wheel listens on window, not the SVG. Safari only delivers wheel events
+    // to the page inside regions it knows have a wheel listener, and for SVG
+    // that region is built from painted content. Blank canvas has none, so a
+    // listener on the SVG never fired there and panning stalled. A window
+    // listener makes the whole page a wheel region; the target filter keeps
+    // wheel over toolbars and panels out of the camera.
+    const canvasWheel = (e: Event) => {
+        if (e.target instanceof Node && domElement.contains(e.target)) {
+            mousewheel(e as WheelEvent)
+        }
+    }
+    window.addEventListener('mousewheel', canvasWheel, { passive: false })
+    window.addEventListener('wheel', canvasWheel, { passive: false })
 
     domElement.addEventListener('touchstart', touchstart, { passive: false })
     domElement.addEventListener('touchmove', touchmove, { passive: false })
@@ -3177,82 +3189,54 @@ function addZUI(
                         if (shape?.lineData) {
                             let line = shape?.lineData
 
-                            if (shape.direction === 'left') {
-                                if (e.shiftKey == true) {
-                                    let x1 = (line.vertices[0].x +=
-                                        dx / zui.scale)
-                                    let y1 = (line.vertices[0].y +=
-                                        dy / zui.scale)
-                                    updateX1Y1Vertices(
-                                        Two,
-                                        line,
-                                        x1,
-                                        y1,
-                                        shape,
-                                        two
-                                    )
-
-                                    /* update x2,y2 vertices acc. to shift key press event */
-                                    let x2 = line.vertices[1].x
-                                    let y2 = y1
-                                    updateX2Y2Vertices(
-                                        Two,
-                                        line,
-                                        x2,
-                                        y2,
-                                        shape.siblingCircle,
-                                        two
-                                    )
-                                } else {
-                                    let x1 = (line.vertices[0].x +=
-                                        dx / zui.scale)
-                                    let y1 = (line.vertices[0].y +=
-                                        dy / zui.scale)
-                                    updateX1Y1Vertices(
-                                        Two,
-                                        line,
-                                        x1,
-                                        y1,
-                                        shape,
-                                        two
-                                    )
+                            if (
+                                shape.direction === 'left' ||
+                                shape.direction === 'right'
+                            ) {
+                                const isTail = shape.direction === 'left'
+                                const moving = line.vertices[isTail ? 0 : 1]
+                                const fixed = line.vertices[isTail ? 1 : 0]
+                                if (
+                                    !endpointDragFree ||
+                                    endpointDragFree.circle !== shape
+                                ) {
+                                    endpointDragFree = {
+                                        circle: shape,
+                                        x: moving.x,
+                                        y: moving.y,
+                                    }
                                 }
-                            } else if (shape.direction === 'right') {
-                                if (e.shiftKey === true) {
-                                    let x2 = (line.vertices[1].x +=
-                                        dx / zui.scale)
-                                    let y2 = (line.vertices[1].y +=
-                                        dy / zui.scale)
-                                    updateX2Y2Vertices(
-                                        Two,
-                                        line,
-                                        x2,
-                                        y2,
-                                        shape,
-                                        two
-                                    )
-
-                                    /* update x1,y1 vertices acc. to shift key press event */
-                                    let x1 = line.vertices[0].x
-                                    let y1 = y2
+                                endpointDragFree.x += dx / zui.scale
+                                endpointDragFree.y += dy / zui.scale
+                                let { x, y } = endpointDragFree
+                                // Shift locks the dragged end to the dominant
+                                // axis through the other end (same rule as at
+                                // creation). The other end never moves.
+                                if (e.shiftKey) {
+                                    if (
+                                        Math.abs(y - fixed.y) <
+                                        Math.abs(x - fixed.x)
+                                    ) {
+                                        y = fixed.y
+                                    } else {
+                                        x = fixed.x
+                                    }
+                                }
+                                if (isTail) {
                                     updateX1Y1Vertices(
                                         Two,
                                         line,
-                                        x1,
-                                        y1,
-                                        shape.siblingCircle,
+                                        x,
+                                        y,
+                                        shape,
                                         two
                                     )
                                 } else {
-                                    let x2 = (line.vertices[1].x +=
-                                        dx / zui.scale)
-                                    let y2 = (line.vertices[1].y +=
-                                        dy / zui.scale)
                                     updateX2Y2Vertices(
                                         Two,
                                         line,
-                                        x2,
-                                        y2,
+                                        x,
+                                        y,
                                         shape,
                                         two
                                     )
@@ -3380,6 +3364,7 @@ function addZUI(
     }
 
     function mouseup(e: MouseEvent) {
+        endpointDragFree = null
         // Commit a CSS-transform move-drag: write the accumulated delta into the
         // element's real Two.js position, clear the live CSS transforms, then let
         // the normal move/persist/history path below run (it reads the committed

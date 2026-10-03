@@ -134,6 +134,18 @@ g {
     z-index: 1;
 }
 
+/* Canvas text is drawn, not selectable. Without this, Safari paints a native
+   text selection over every SVG <text> on a blank-canvas click. Scoped to the
+   SVG so the inline text editor textareas keep normal selection.
+   The ignore comment stops autoprefixer from stripping the -webkit- line as
+   outdated: its data says current Safari takes the unprefixed property, but
+   Safari as shipped still needs the prefix. */
+#main-two-root svg {
+    /* autoprefixer: ignore next */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 button:focus {
     outline: none !important;
 }

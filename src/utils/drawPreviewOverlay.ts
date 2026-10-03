@@ -48,6 +48,8 @@ export function createDrawPreview(
     s.boxSizing = 'border-box'
     s.opacity = String(style.opacity ?? 0.6)
     s.willChange = 'left, top, width, height'
+    // Hidden until the drag gives it area (see updateDrawPreview).
+    s.visibility = 'hidden'
 
     const stroke = style.stroke || '#000'
     const fill = style.fill || '#fff'
@@ -97,10 +99,16 @@ export function updateDrawPreview(
 ): void {
     if (!overlayEl) return
     const s = overlayEl.style
+    const w = Math.abs(x1 - x0)
+    const h = Math.abs(y1 - y0)
     s.left = `${Math.min(x0, x1)}px`
     s.top = `${Math.min(y0, y1)}px`
-    s.width = `${Math.abs(x1 - x0)}px`
-    s.height = `${Math.abs(y1 - y0)}px`
+    s.width = `${w}px`
+    s.height = `${h}px`
+    // A zero-size box gives the diamond's inline SVG a degenerate viewBox.
+    // Chrome skips rendering it; Safari paints the polygon unscaled, a 98px
+    // stroked diamond at the cursor until the first mousemove sizes the box.
+    s.visibility = w > 0 && h > 0 ? 'visible' : 'hidden'
 }
 
 export function removeDrawPreview(): void {
