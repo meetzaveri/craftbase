@@ -292,7 +292,7 @@ When testing on a real mobile device (laptop and phone on same WiFi):
     VITE_WS_GRAPHQL_ENDPOINT=ws://<LAN_IP>:8080/v1/graphql
     ```
 2. Ensure `vite.config.mjs` has `host: true` and `allowedHosts: ['<LAN_IP>']` (no `http://` prefix).
-3. Restart the dev server, then open `http://<LAN_IP>:5173` on mobile.
+3. Restart the dev server, then open `http://<LAN_IP>:5180` on mobile.
 4. **Revert `.env` before committing** — or use `.env.local` for the override so it stays out of git.
 
 # Feature Context

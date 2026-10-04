@@ -89,7 +89,7 @@ export const flipThemeColor = <T extends string | null | undefined>(
 
 // ── element-kind predicates ──────────────────────────────────────────────
 const FILLABLE_TYPES = new Set(['rectangle', 'circle', 'diamond'])
-// Strokes that flip on toggle: arrow + line + curvedLine + pencil + shape
+// Strokes that flip on toggle: arrow + line + curved paths + pencil + shape
 // outlines (rectangle/circle/diamond), so every stroke stays visible across
 // both themes. line/curvedLine share arrowLine's structure (a stroked line/path
 // plus fixed-color handles), so paintElementStroke flips only the themed stroke
@@ -98,6 +98,8 @@ const STROKE_FLIP_TYPES = new Set([
     'arrowLine',
     'line',
     'curvedLine',
+    // The head mirrors the curve's stroke (curvedPathElement's update hook).
+    'curvedArrow',
     'pencil',
     'rectangle',
     'circle',

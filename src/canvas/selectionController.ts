@@ -158,7 +158,10 @@ interface ToolbarState {
     icon: { data: Record<string, unknown> }
 }
 
-function buildToolbarState(group: GroupLike, shape: ShapeLike): ToolbarState {
+export function buildToolbarState(
+    group: GroupLike,
+    shape: ShapeLike
+): ToolbarState {
     const componentType = group?.elementData?.componentType
     // First line node of the (possibly multiline) text layer.
     const textChild = getShapeTextNodes(group)[0]

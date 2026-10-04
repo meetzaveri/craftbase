@@ -56,6 +56,8 @@ import {
     ERASER_DOT_PX,
     DEFAULT_ERASER_SIZE,
     type EraserSize,
+    isCurvedPathType,
+    type CurvedPathType,
 } from './constants/misc'
 import { createEraserTrail } from './utils/eraserTrail'
 import Spinner from './components/common/spinner'
@@ -66,11 +68,13 @@ import { elementModules } from './elementModules'
 
 import Loader from './components/utils/loader'
 import SelectionController, {
+    buildToolbarState,
     PORT_GAP,
     PORT_RADAR_RADIUS,
     SELECTION_PADDING,
 } from './canvas/selectionController'
 import { updateX1Y1Vertices, updateX2Y2Vertices } from './utils/updateVertices'
+import { fitCurvedArrowHead } from './factory/curvedArrow'
 import {
     getShapePortPoint,
     findNearestPort,
@@ -113,7 +117,14 @@ import {
     applyShapeText,
     shapeTextStyleFromMeta,
     getGroupFill,
+    focusSvgElement,
 } from './utils/canvasUtils'
+import {
+    groupMemberIds,
+    memberSurfaceBounds,
+    resolveShiftClickId,
+    toggleSelection,
+} from './canvas/shiftSelect'
 import { growShapeToFitText, usableTextWidth } from './utils/shapeTextFit'
 import {
     flipThemeColor,
@@ -326,7 +337,8 @@ function addZUI(
     >,
     onCameraChangeRef: MutableRefObject<
         ((event: CameraChangeEvent) => void) | undefined
-    >
+    >,
+    selectedComponentRef: MutableRefObject<SelectedComponent | null>
 ): ZuiHandle {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let shape: any = null
@@ -393,6 +405,11 @@ function addZUI(
     let mousePanLastY = 0
     let dragging = false
     let isResizeEvent = false
+    // Unconstrained position of the line/arrow endpoint being dragged, in the
+    // arrow group's local space. Shift-snapping overwrites the vertex, so
+    // accumulating deltas on the vertex itself would lose off-axis motion.
+    let endpointDragFree: { circle: unknown; x: number; y: number } | null =
+        null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let currentPath: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -522,7 +539,7 @@ function addZUI(
     // ── Geo multi-click draw state (area / route) ────────────────────────────
     // Vertices are surface coords; preview dots/lines live in two.scene so ZUI
     // transforms them like everything else. Built into a component on finish.
-    let geoDrawType: 'area' | 'route' | 'curvedLine' | null = null
+    let geoDrawType: 'area' | 'route' | CurvedPathType | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let geoDrawProps: any = null
     let geoVertices: { x: number; y: number }[] = []
@@ -625,6 +642,23 @@ function addZUI(
         path.cap = 'round'
         path.join = 'round'
         path.opacity = 0.6
+        if (geoDrawType === 'curvedArrow') {
+            // Same head the committed arrow gets, so the preview matches it.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const T = Two as any
+            const head = new T.Path(
+                [new T.Anchor(0, 0), new T.Anchor(0, 0), new T.Anchor(0, 0)],
+                false,
+                false
+            )
+            head.noFill()
+            head.cap = 'round'
+            head.join = 'round'
+            head.opacity = 0.6
+            fitCurvedArrowHead(path, head)
+            geoCurvedPreview = two.makeGroup(path, head)
+            return
+        }
         two.add(path)
         geoCurvedPreview = path
     }
@@ -640,7 +674,7 @@ function addZUI(
         dot.fill = stroke
         dot.noStroke()
         geoDots.push(dot)
-        if (geoDrawType === 'curvedLine') {
+        if (isCurvedPathType(geoDrawType)) {
             // Curved preview through the placed vertices (no straight segments).
             rebuildCurvedPreview()
         } else if (geoVertices.length >= 2) {
@@ -657,7 +691,7 @@ function addZUI(
     const updateGeoPreview = (sx: number, sy: number) => {
         if (!geoDrawType || geoVertices.length === 0) return
         const { stroke, lw } = geoPreviewStyle()
-        if (geoDrawType === 'curvedLine') {
+        if (isCurvedPathType(geoDrawType)) {
             // Smooth rubber-band: the curve flows through all points + cursor.
             rebuildCurvedPreview({ x: sx, y: sy })
             two.update()
@@ -736,7 +770,7 @@ function addZUI(
         const type = geoDrawType
         // curvedLine is a generic whiteboard shape, not a geo object — it reuses
         // this multi-click machinery but carries no geo object-class.
-        const isGeo = type !== 'curvedLine'
+        const isGeo = !isCurvedPathType(type)
         const originX = Math.floor(verts[0]!.x)
         const originY = Math.floor(verts[0]!.y)
         const finalId = generateUUID()
@@ -867,7 +901,7 @@ function addZUI(
         // selection (its own handler fires for those).
         if (geoDrawType || selectionController.currentGroup) return
         const grp = lastSelectedShape
-        if (grp?.elementData?.componentType !== 'curvedLine') return
+        if (!isCurvedPathType(grp?.elementData?.componentType)) return
         const id = grp.elementData.id
         if (!id) return
         deleteComponentFromLocalStore(id)
@@ -902,12 +936,19 @@ function addZUI(
     domElement.addEventListener('mousedown', mousedown, false)
     domElement.addEventListener('mousemove', hoverDetectMove, false)
     domElement.addEventListener('dblclick', dblclick, false)
-    domElement.addEventListener(
-        'mousewheel',
-        mousewheel as EventListener,
-        false
-    )
-    domElement.addEventListener('wheel', mousewheel, false)
+    // Wheel listens on window, not the SVG. Safari only delivers wheel events
+    // to the page inside regions it knows have a wheel listener, and for SVG
+    // that region is built from painted content. Blank canvas has none, so a
+    // listener on the SVG never fired there and panning stalled. A window
+    // listener makes the whole page a wheel region; the target filter keeps
+    // wheel over toolbars and panels out of the camera.
+    const canvasWheel = (e: Event) => {
+        if (e.target instanceof Node && domElement.contains(e.target)) {
+            mousewheel(e as WheelEvent)
+        }
+    }
+    window.addEventListener('mousewheel', canvasWheel, { passive: false })
+    window.addEventListener('wheel', canvasWheel, { passive: false })
 
     domElement.addEventListener('touchstart', touchstart, { passive: false })
     domElement.addEventListener('touchmove', touchmove, { passive: false })
@@ -916,6 +957,18 @@ function addZUI(
 
     window.addEventListener('groupFocused', ((e: CustomEvent) => {
         activeGroupRef.current = e.detail?.group ?? null
+        // A Shift-click group just mounted. If more Shift-clicks landed while
+        // it was mounting, rebuild it to match. Deferred so the rebuild doesn't
+        // tear the group down from inside its own focus handler.
+        if (pendingShiftIds && activeGroupRef.current) {
+            const intended = pendingShiftIds
+            clearPendingShift()
+            const actual = groupMemberIds(activeGroupRef.current)
+            const same =
+                intended.length === actual.length &&
+                intended.every((id) => actual.includes(id))
+            if (!same) window.setTimeout(() => applyShiftSelection(intended), 0)
+        }
     }) as EventListener)
     window.addEventListener('groupBlurred', () => {
         activeGroupRef.current = null
@@ -2265,6 +2318,114 @@ function addZUI(
         })
     }
 
+    // Shift-click selection whose group overlay is still mounting (null when
+    // none). Shift-clicks in that gap toggle this instead of the live
+    // selection; the groupFocused listener reconciles the overlay to it.
+    let pendingShiftIds: string[] | null = null
+    let pendingShiftTimer: number | null = null
+    function clearPendingShift() {
+        pendingShiftIds = null
+        if (pendingShiftTimer !== null) window.clearTimeout(pendingShiftTimer)
+        pendingShiftTimer = null
+    }
+
+    // Shift-click multi-select: toggle the clicked element in the current
+    // selection (canvas/shiftSelect.ts). Returns true when the click was
+    // consumed as a selection change.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function handleShiftSelect(e: MouseEvent, clicked: any): boolean {
+        const group = activeGroupRef.current
+        const clickedId = resolveShiftClickId(
+            clicked,
+            group,
+            two,
+            e.clientX,
+            e.clientY
+        )
+        if (!clickedId) return false
+        // The controller knows its shape synchronously; the ref (arrows,
+        // lines, text, pencil) lags a render behind the click that set it.
+        const singleId =
+            selectionController.currentGroup?.elementData?.id ??
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (selectedComponentRef.current as any)?.group?.data?.elementData?.id
+        const current =
+            pendingShiftIds ??
+            (group
+                ? groupMemberIds(group)
+                : typeof singleId === 'string'
+                  ? [singleId]
+                  : [])
+        // Nothing selected yet: Shift-click selects like a plain click.
+        if (current.length === 0) return false
+        // Keep the browser from moving focus; applyShiftSelection manages it.
+        e.preventDefault()
+        const next = toggleSelection(current, clickedId)
+        if (pendingShiftIds) {
+            pendingShiftIds = next
+            return true
+        }
+        applyShiftSelection(next)
+        return true
+    }
+
+    function applyShiftSelection(ids: string[]) {
+        clearPendingShift()
+        // Tear the old group overlay down first. Its blur commits any pending
+        // move and reveals its members; the new overlay hides those same
+        // members on mount, so the reveal must not run after it.
+        const group = activeGroupRef.current
+        ;(group?._renderer?.elem as SVGElement | undefined)?.blur()
+        selectionController.detach()
+        lastSelectedShape = null
+
+        if (ids.length === 0) {
+            const focused = document.activeElement
+            if (focused instanceof SVGElement && domElement.contains(focused)) {
+                focused.blur()
+            }
+            setSelectedComponentInBoard(null)
+            two.update()
+            return
+        }
+
+        if (ids.length === 1) {
+            const el = two.scene.children.find(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (c: any) => c?.elementData?.id === ids[0]
+            )
+            if (!el) return
+            lastSelectedShape = el
+            focusSvgElement(el._renderer?.elem)
+            if (selectionController.canHandle(el)) {
+                selectionController.attach(el, el.children[0])
+            } else {
+                if (isLineLikeType(el.elementData.componentType)) {
+                    setArrowEndpointsVisible(el, true)
+                }
+                setSelectedComponentInBoard(
+                    buildToolbarState(el, el.children[0])
+                )
+            }
+            two.update()
+            return
+        }
+
+        const bounds = memberSurfaceBounds(ids, two, toSurface)
+        if (!bounds) return
+        // Until the overlay mounts and focuses, this is the selection. The
+        // timer is a fallback so a mount that never lands can't wedge it.
+        pendingShiftIds = ids
+        pendingShiftTimer = window.setTimeout(clearPendingShift, 2000)
+        setSelectedComponentInBoard(null)
+        setOnGroupHandler({
+            ...bounds,
+            x: bounds.left,
+            y: bounds.top,
+            memberIds: ids,
+        })
+    }
+
     function mousedown(e: MouseEvent) {
         // Pan-mode (desktop): grab-and-drag translates the surface instead of
         // selecting/drawing. Runs before everything else so a click on a shape
@@ -2535,7 +2696,7 @@ function addZUI(
                     geoDrawType = localStorage.getItem(GEO_DRAW_TYPE_KEY) as
                         | 'area'
                         | 'route'
-                        | 'curvedLine'
+                        | CurvedPathType
                         | null
                     geoDrawProps = JSON.parse(
                         localStorage.getItem(GEO_DRAW_PROPS_KEY) ?? 'null'
@@ -2720,6 +2881,17 @@ function addZUI(
                     }
                 }
 
+                if (e.shiftKey && handleShiftSelect(e, shape)) {
+                    // resolveShapeFromPath re-shows a clicked arrow's endpoint
+                    // handles; a Shift-click adds it to a set, not edits it.
+                    if (isLineLikeType(shape?.elementData?.componentType)) {
+                        setArrowEndpointsVisible(shape, false)
+                    }
+                    shape = null
+                    two.update()
+                    return
+                }
+
                 // Track for copy BEFORE drag-prevention clears shape (pencil uses
                 // avoid-dragging so shape would become {} immediately after).
                 if (shape?.elementData?.id) {
@@ -2827,9 +2999,11 @@ function addZUI(
                     (shape?.elementData?.isLineCircle ||
                         isLineLikeType(shape?.elementData?.componentType))
                 ) {
+                    // Vertex handles own their pointer-events (curvedPathElement
+                    // enables them only while their curve is selected).
                     document
                         .querySelectorAll<HTMLElement>(
-                            '.dragger-picker:not(.is-line-circle)'
+                            '.dragger-picker:not(.is-line-circle):not(.is-vertex-handle)'
                         )
                         .forEach((el) => {
                             el.style.pointerEvents = 'none'
@@ -2875,33 +3049,9 @@ function addZUI(
                         setArrowEndpointsVisible(groupForToolbar, true)
                     }
 
-                    // First line node of the text layer (or a legacy direct
-                    // text child) — gives the toolbar a representative text
-                    // node for shape-with-text enablement.
-                    const textChild = getShapeTextNodes(groupForToolbar)[0]
-
-                    let componentInternalState = {
-                        element: {
-                            [shapeForToolbar.id]: shapeForToolbar,
-                            [groupForToolbar.id]: groupForToolbar,
-                        },
-                        group: {
-                            id: groupForToolbar.id,
-                            data: groupForToolbar,
-                        },
-                        shape: {
-                            type: groupForToolbar.elementData.componentType,
-                            id: shapeForToolbar.id,
-                            data: shapeForToolbar,
-                        },
-                        text: {
-                            data: textChild || {},
-                        },
-                        icon: {
-                            data: {},
-                        },
-                    }
-                    setSelectedComponentInBoard(componentInternalState)
+                    setSelectedComponentInBoard(
+                        buildToolbarState(groupForToolbar, shapeForToolbar)
+                    )
                 }
 
                 two.update()
@@ -3177,82 +3327,54 @@ function addZUI(
                         if (shape?.lineData) {
                             let line = shape?.lineData
 
-                            if (shape.direction === 'left') {
-                                if (e.shiftKey == true) {
-                                    let x1 = (line.vertices[0].x +=
-                                        dx / zui.scale)
-                                    let y1 = (line.vertices[0].y +=
-                                        dy / zui.scale)
-                                    updateX1Y1Vertices(
-                                        Two,
-                                        line,
-                                        x1,
-                                        y1,
-                                        shape,
-                                        two
-                                    )
-
-                                    /* update x2,y2 vertices acc. to shift key press event */
-                                    let x2 = line.vertices[1].x
-                                    let y2 = y1
-                                    updateX2Y2Vertices(
-                                        Two,
-                                        line,
-                                        x2,
-                                        y2,
-                                        shape.siblingCircle,
-                                        two
-                                    )
-                                } else {
-                                    let x1 = (line.vertices[0].x +=
-                                        dx / zui.scale)
-                                    let y1 = (line.vertices[0].y +=
-                                        dy / zui.scale)
-                                    updateX1Y1Vertices(
-                                        Two,
-                                        line,
-                                        x1,
-                                        y1,
-                                        shape,
-                                        two
-                                    )
+                            if (
+                                shape.direction === 'left' ||
+                                shape.direction === 'right'
+                            ) {
+                                const isTail = shape.direction === 'left'
+                                const moving = line.vertices[isTail ? 0 : 1]
+                                const fixed = line.vertices[isTail ? 1 : 0]
+                                if (
+                                    !endpointDragFree ||
+                                    endpointDragFree.circle !== shape
+                                ) {
+                                    endpointDragFree = {
+                                        circle: shape,
+                                        x: moving.x,
+                                        y: moving.y,
+                                    }
                                 }
-                            } else if (shape.direction === 'right') {
-                                if (e.shiftKey === true) {
-                                    let x2 = (line.vertices[1].x +=
-                                        dx / zui.scale)
-                                    let y2 = (line.vertices[1].y +=
-                                        dy / zui.scale)
-                                    updateX2Y2Vertices(
-                                        Two,
-                                        line,
-                                        x2,
-                                        y2,
-                                        shape,
-                                        two
-                                    )
-
-                                    /* update x1,y1 vertices acc. to shift key press event */
-                                    let x1 = line.vertices[0].x
-                                    let y1 = y2
+                                endpointDragFree.x += dx / zui.scale
+                                endpointDragFree.y += dy / zui.scale
+                                let { x, y } = endpointDragFree
+                                // Shift locks the dragged end to the dominant
+                                // axis through the other end (same rule as at
+                                // creation). The other end never moves.
+                                if (e.shiftKey) {
+                                    if (
+                                        Math.abs(y - fixed.y) <
+                                        Math.abs(x - fixed.x)
+                                    ) {
+                                        y = fixed.y
+                                    } else {
+                                        x = fixed.x
+                                    }
+                                }
+                                if (isTail) {
                                     updateX1Y1Vertices(
                                         Two,
                                         line,
-                                        x1,
-                                        y1,
-                                        shape.siblingCircle,
+                                        x,
+                                        y,
+                                        shape,
                                         two
                                     )
                                 } else {
-                                    let x2 = (line.vertices[1].x +=
-                                        dx / zui.scale)
-                                    let y2 = (line.vertices[1].y +=
-                                        dy / zui.scale)
                                     updateX2Y2Vertices(
                                         Two,
                                         line,
-                                        x2,
-                                        y2,
+                                        x,
+                                        y,
                                         shape,
                                         two
                                     )
@@ -3380,6 +3502,7 @@ function addZUI(
     }
 
     function mouseup(e: MouseEvent) {
+        endpointDragFree = null
         // Commit a CSS-transform move-drag: write the accumulated delta into the
         // element's real Two.js position, clear the live CSS transforms, then let
         // the normal move/persist/history path below run (it reads the committed
@@ -3958,7 +4081,7 @@ function addZUI(
                                         ...arrowDetach,
                                     }
                                 )
-                            } else if (ed.componentType === 'curvedLine') {
+                            } else if (isCurvedPathType(ed.componentType)) {
                                 // curvedLine's source of truth is an ABSOLUTE
                                 // vertex array in metadata (like pencil/route/
                                 // area). A body drag moves the group but leaves
@@ -4032,9 +4155,14 @@ function addZUI(
                 }
         }
 
-        // Restore pointer events on all components (may have been disabled during arrow drag)
+        // Restore pointer events on all components (may have been disabled during
+        // arrow drag). Skip vertex handles: their component owns the state, and
+        // resetting them here made an unselected curve's invisible handles eat
+        // clicks at its vertices.
         document
-            .querySelectorAll<HTMLElement>('.dragger-picker')
+            .querySelectorAll<HTMLElement>(
+                '.dragger-picker:not(.is-vertex-handle)'
+            )
             .forEach((el) => {
                 el.style.pointerEvents = ''
             })
@@ -4713,6 +4841,13 @@ const Canvas: React.FC<CanvasProps> = (props) => {
     useEffect(() => {
         onCameraChangeRef.current = props.onCameraChange
     }, [props.onCameraChange])
+    // Live single selection for addZUI's handlers (Shift-click multi-select).
+    const selectedComponentRef = useRef<SelectedComponent | null>(
+        props.selectedComponent
+    )
+    useEffect(() => {
+        selectedComponentRef.current = props.selectedComponent
+    }, [props.selectedComponent])
 
     const { clipboardRef, lastMouseRef } = useCanvasClipboard({
         twoJSInstance,
@@ -4746,7 +4881,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             deleteComponentFromLocalStore,
             isPencilModeRef,
             createTextAtSurfaceRef,
-            onCameraChangeRef
+            onCameraChangeRef,
+            selectedComponentRef
         )
 
         // Dev-only handles for profiling the camera from the console or a
@@ -5263,8 +5399,14 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                     )
                     .map((it) => it.id)
             )
+            // Shift-click passes the exact members; the drag-select box
+            // decides membership geometrically.
+            const explicitIds: Set<string> | null = Array.isArray(e.memberIds)
+                ? new Set(e.memberIds)
+                : null
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const isMember = (item: any): boolean => {
+                if (explicitIds) return explicitIds.has(item.id)
                 if (isInsideMarquee(item)) return true
                 // Bound connector: member iff docked to a member shape.
                 if (item.componentType === 'arrowLine') {
@@ -5292,7 +5434,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                         (item.componentType === 'pencil' ||
                             item.componentType === 'area' ||
                             item.componentType === 'route' ||
-                            item.componentType === 'curvedLine') &&
+                            isCurvedPathType(item.componentType)) &&
                         Array.isArray(item.metadata)
                     ) {
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -5371,6 +5513,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             newGroup.y = yMid
 
             newGroup.children = newChildren
+            // Shift-click groups also outline each member inside the frame.
+            if (explicitIds) newGroup.selectionStyle = 'members'
 
             // Defer hiding the originals to the group's own assembly so the
             // swap is atomic — the group hides exactly these ids in the SAME

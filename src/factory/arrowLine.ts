@@ -1,4 +1,6 @@
+import Two from 'two.js'
 import Main from './main'
+import { buildArrowLineVertices } from '../utils/updateVertices'
 import { strokeTypeToDashes } from '../utils/misc'
 
 export interface ArrowLineProperties {
@@ -39,8 +41,21 @@ export default class ArrowLineFactory extends Main<ArrowLineProperties> {
             isMobile,
         } = this.properties
 
-        const line = two.makeArrow(x1, y1, x2, y2)
-        line.linewidth = linewidth ? linewidth : 1
+        const lw = linewidth ? linewidth : 1
+        // Same Path flags as Two's makeArrow (open, straight, manual commands),
+        // but the head comes from the shared arrowhead geometry so it matches
+        // curvedArrow's (utils/arrowHead.ts).
+        const line = new (Two as ShapeLike).Path(
+            buildArrowLineVertices(Two, x1, y1, x2, y2, lw),
+            false,
+            false,
+            true
+        )
+        line.noFill()
+        line.cap = 'round'
+        line.join = 'round'
+        two.add(line)
+        line.linewidth = lw
         line.dashes = strokeTypeToDashes(strokeType)
         line.fill = 'none'
         if (stroke) line.stroke = stroke

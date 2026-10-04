@@ -7,6 +7,8 @@ export default defineConfig({
     plugins: [svgr(), react(), tsconfigPaths()],
     server: {
         host: true,
+        port: 5180,
+        strictPort: true,
         allowedHosts: ['10.201.40.95'],
     },
     test: {
