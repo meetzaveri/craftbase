@@ -10,7 +10,10 @@ import { useBoardContext } from '../../views/Board/boardContext'
 import getEditComponents from '../utils/editWrapper'
 import { elementOnBlurHandler } from '../../utils/misc'
 import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertices'
-import { isStandaloneTextType } from '../../constants/misc'
+import {
+    isCurvedPathType,
+    isStandaloneTextType,
+} from '../../constants/misc'
 import { layoutMemberOutlines } from './groupMemberOutlines'
 
 // PROTOTYPE FLAG — group resize. Flip to false to fully disable the corner
@@ -189,7 +192,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             let newMetadata = element.elementData.metadata
             if (
                 (element.elementData.componentType === 'pencil' ||
-                    element.elementData.componentType === 'curvedLine') &&
+                    isCurvedPathType(element.elementData.componentType)) &&
                 Array.isArray(element.elementData.metadata)
             ) {
                 // A group move is a uniform translation: shift the ABSOLUTE
@@ -337,7 +340,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                     // shape but aren't grouped in practice — left as-is.)
                     if (
                         (child.componentType === 'pencil' ||
-                            child.componentType === 'curvedLine') &&
+                            isCurvedPathType(child.componentType)) &&
                         Array.isArray(child.metadata)
                     ) {
                         childMetadata = child.metadata.map(
@@ -758,7 +761,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                 // every vertex about O (and its per-vertex stroke width lw).
                 let newMetadata = current.metadata
                 if (
-                    (ct === 'pencil' || ct === 'curvedLine') &&
+                    (ct === 'pencil' || isCurvedPathType(ct)) &&
                     Array.isArray(current.metadata)
                 ) {
                     newMetadata = current.metadata.map((vert: ShapeLike) => {
@@ -872,7 +875,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
                         )
                     }
                 }
-                if (ct === 'curvedLine' && Array.isArray(newMetadata)) {
+                if (isCurvedPathType(ct) && Array.isArray(newMetadata)) {
                     element.elementData.metadata = newMetadata
                     window.dispatchEvent(
                         new CustomEvent('curvedLineVertsReverted', {

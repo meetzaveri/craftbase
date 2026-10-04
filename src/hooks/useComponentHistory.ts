@@ -12,7 +12,11 @@ import {
     pollUntilElement,
 } from '../utils/canvasUtils'
 import { lineHeightFor } from '../utils/textLayout'
-import { DRAFT_STORAGE_KEY, isStandaloneTextType } from '../constants/misc'
+import {
+    DRAFT_STORAGE_KEY,
+    isCurvedPathType,
+    isStandaloneTextType,
+} from '../constants/misc'
 import type { ComponentRecord, ComponentStore } from '../types/board'
 
 // Two.js scene-group shapes are typed loosely until the canvas internals
@@ -608,7 +612,7 @@ export function useComponentHistory({
             // through its own refs via this event (works for undo AND redo).
             if (
                 Array.isArray(props.metadata) &&
-                group.elementData?.componentType === 'curvedLine'
+                isCurvedPathType(group.elementData?.componentType)
             ) {
                 group.elementData.metadata = props.metadata
                 window.dispatchEvent(

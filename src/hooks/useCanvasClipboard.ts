@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import { GROUP_COMPONENT, isStandaloneTextType } from '../constants/misc'
+import {
+    GROUP_COMPONENT,
+    isCurvedPathType,
+    isStandaloneTextType,
+} from '../constants/misc'
 import { generateUUID } from '../utils/misc'
 import {
     cloneElementData,
@@ -301,7 +305,7 @@ export function useCanvasClipboard({
                     (src.componentType === 'pencil' ||
                         src.componentType === 'area' ||
                         src.componentType === 'route' ||
-                        src.componentType === 'curvedLine') &&
+                        isCurvedPathType(src.componentType)) &&
                     Array.isArray(src.metadata)
                 ) {
                     const dx = px - src.x
@@ -391,7 +395,7 @@ export function useCanvasClipboard({
                         (c.componentType === 'pencil' ||
                             c.componentType === 'area' ||
                             c.componentType === 'route' ||
-                            c.componentType === 'curvedLine') &&
+                            isCurvedPathType(c.componentType)) &&
                         Array.isArray(c.metadata)
                     ) {
                         const meta = c.metadata as Array<{

@@ -35,7 +35,8 @@ const allElementsRaw = staticPrimaryElementData.flatMap(
 // Whiteboard-only tools hidden once geo objects are enabled — the geo workflow
 // uses point/area/route + the zoom-resistant geoText instead. 'shapes' is the
 // mobile drawer; rectangle/circle/diamond are its desktop-flattened children.
-// 'lines' is the line/curvedLine drawer (kept as a drawer on both platforms).
+// 'lines' is the line/curvedLine drawer and 'arrows' the arrowLine/curvedArrow
+// drawer (both kept as drawers on both platforms).
 // 'text' is replaced by 'geoText' (see geoElementData).
 const GEO_HIDDEN_TOOLS = new Set([
     'shapes',
@@ -43,7 +44,9 @@ const GEO_HIDDEN_TOOLS = new Set([
     'circle',
     'diamond',
     'lines',
+    'arrows',
     'arrowLine',
+    'curvedArrow',
     'pencil',
     'text',
 ])
@@ -54,6 +57,7 @@ const GEO_HIDDEN_TOOLS = new Set([
 // Keyed by parent tool → the child a bare click selects.
 const HOVER_DRAWER_DEFAULT_TOOL: Record<string, string> = {
     lines: 'line',
+    arrows: 'arrowLine',
 }
 
 // The drawer closes the instant the pointer leaves it or its icon. The two are

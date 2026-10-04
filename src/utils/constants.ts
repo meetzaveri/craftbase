@@ -4,6 +4,7 @@ import RectangleIcon from '../wireframeAssets/rectangle.svg?react'
 import DiamondIcon from '../wireframeAssets/diamond.svg?react'
 import LineIcon from '../wireframeAssets/line.svg?react'
 import CurvedLineIcon from '../wireframeAssets/curvedLine.svg?react'
+import CurvedArrowIcon from '../wireframeAssets/curvedArrow.svg?react'
 import ShapesIcon from '../wireframeAssets/shapes.svg?react'
 import TextIcon from '../wireframeAssets/text.svg?react'
 import PencilIcon from '../wireframeAssets/pencil.svg?react'
@@ -228,12 +229,27 @@ export const staticPrimaryElementData: PrimarySection[] = [
                 ],
             },
             {
-                elementName: 'arrowLine',
-                elementDisplayName: 'Arrow',
+                // Arrows drawer (arrow vs. curved arrow), same pattern as
+                // 'lines': stays a drawer on desktop and mobile, and a bare
+                // click on the icon picks the straight arrow
+                // (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar).
+                elementName: 'arrows',
+                elementDisplayName: 'Arrows',
                 elementIcon: RightArrowIcon,
-                hasDrawer: false,
-                noAction: false,
-                drawerData: [],
+                hasDrawer: true,
+                noAction: true,
+                drawerData: [
+                    {
+                        elementName: 'arrowLine',
+                        elementDisplayName: 'Arrow',
+                        elementIcon: RightArrowIcon,
+                    },
+                    {
+                        elementName: 'curvedArrow',
+                        elementDisplayName: 'Curved arrow',
+                        elementIcon: CurvedArrowIcon,
+                    },
+                ],
             },
             {
                 elementName: 'pencil',

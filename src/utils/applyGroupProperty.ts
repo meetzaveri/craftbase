@@ -12,6 +12,8 @@ import {
     LINE_LIKE_GROUP_TYPES,
 } from './groupAccepts'
 import type { GroupPropertyKey } from './groupAccepts'
+import { syncCurvedArrowHead } from '../factory/curvedArrow'
+import { refitArrowLineHead } from './updateVertices'
 
 // Bulk-apply a property to every child of the currently-focused group whose
 // element type accepts that property. Element types that don't accept the
@@ -520,6 +522,19 @@ export function createApplyGroupProperty(deps: ApplyGroupPropertyDeps) {
                 child.metadata = updatedMeta
                 recordChild(id, bulkObj)
                 return
+            }
+        })
+
+        // Arrowheads follow their shaft's stroke and width. On-canvas originals
+        // re-fit themselves on update; overlay copies have no component, so
+        // re-fit them here.
+        children.forEach((child) => {
+            if (!child?.id) return
+            const copy = findVisibleCoreObject(selectedGroup, child.id)
+            if (child.componentType === 'curvedArrow') {
+                syncCurvedArrowHead(copy)
+            } else if (child.componentType === 'arrowLine') {
+                refitArrowLineHead(copy?.children?.[0])
             }
         })
 

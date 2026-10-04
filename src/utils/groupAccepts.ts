@@ -18,6 +18,7 @@ export const LINE_LIKE_GROUP_TYPES = new Set([
     'arrowLine',
     'line',
     'curvedLine',
+    'curvedArrow',
 ])
 
 const SHAPES = ['rectangle', 'circle', 'diamond']

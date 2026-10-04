@@ -56,6 +56,8 @@ import {
     ERASER_DOT_PX,
     DEFAULT_ERASER_SIZE,
     type EraserSize,
+    isCurvedPathType,
+    type CurvedPathType,
 } from './constants/misc'
 import { createEraserTrail } from './utils/eraserTrail'
 import Spinner from './components/common/spinner'
@@ -72,6 +74,7 @@ import SelectionController, {
     SELECTION_PADDING,
 } from './canvas/selectionController'
 import { updateX1Y1Vertices, updateX2Y2Vertices } from './utils/updateVertices'
+import { fitCurvedArrowHead } from './factory/curvedArrow'
 import {
     getShapePortPoint,
     findNearestPort,
@@ -536,7 +539,7 @@ function addZUI(
     // ── Geo multi-click draw state (area / route) ────────────────────────────
     // Vertices are surface coords; preview dots/lines live in two.scene so ZUI
     // transforms them like everything else. Built into a component on finish.
-    let geoDrawType: 'area' | 'route' | 'curvedLine' | null = null
+    let geoDrawType: 'area' | 'route' | CurvedPathType | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let geoDrawProps: any = null
     let geoVertices: { x: number; y: number }[] = []
@@ -639,6 +642,23 @@ function addZUI(
         path.cap = 'round'
         path.join = 'round'
         path.opacity = 0.6
+        if (geoDrawType === 'curvedArrow') {
+            // Same head the committed arrow gets, so the preview matches it.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const T = Two as any
+            const head = new T.Path(
+                [new T.Anchor(0, 0), new T.Anchor(0, 0), new T.Anchor(0, 0)],
+                false,
+                false
+            )
+            head.noFill()
+            head.cap = 'round'
+            head.join = 'round'
+            head.opacity = 0.6
+            fitCurvedArrowHead(path, head)
+            geoCurvedPreview = two.makeGroup(path, head)
+            return
+        }
         two.add(path)
         geoCurvedPreview = path
     }
@@ -654,7 +674,7 @@ function addZUI(
         dot.fill = stroke
         dot.noStroke()
         geoDots.push(dot)
-        if (geoDrawType === 'curvedLine') {
+        if (isCurvedPathType(geoDrawType)) {
             // Curved preview through the placed vertices (no straight segments).
             rebuildCurvedPreview()
         } else if (geoVertices.length >= 2) {
@@ -671,7 +691,7 @@ function addZUI(
     const updateGeoPreview = (sx: number, sy: number) => {
         if (!geoDrawType || geoVertices.length === 0) return
         const { stroke, lw } = geoPreviewStyle()
-        if (geoDrawType === 'curvedLine') {
+        if (isCurvedPathType(geoDrawType)) {
             // Smooth rubber-band: the curve flows through all points + cursor.
             rebuildCurvedPreview({ x: sx, y: sy })
             two.update()
@@ -750,7 +770,7 @@ function addZUI(
         const type = geoDrawType
         // curvedLine is a generic whiteboard shape, not a geo object — it reuses
         // this multi-click machinery but carries no geo object-class.
-        const isGeo = type !== 'curvedLine'
+        const isGeo = !isCurvedPathType(type)
         const originX = Math.floor(verts[0]!.x)
         const originY = Math.floor(verts[0]!.y)
         const finalId = generateUUID()
@@ -881,7 +901,7 @@ function addZUI(
         // selection (its own handler fires for those).
         if (geoDrawType || selectionController.currentGroup) return
         const grp = lastSelectedShape
-        if (grp?.elementData?.componentType !== 'curvedLine') return
+        if (!isCurvedPathType(grp?.elementData?.componentType)) return
         const id = grp.elementData.id
         if (!id) return
         deleteComponentFromLocalStore(id)
@@ -2676,7 +2696,7 @@ function addZUI(
                     geoDrawType = localStorage.getItem(GEO_DRAW_TYPE_KEY) as
                         | 'area'
                         | 'route'
-                        | 'curvedLine'
+                        | CurvedPathType
                         | null
                     geoDrawProps = JSON.parse(
                         localStorage.getItem(GEO_DRAW_PROPS_KEY) ?? 'null'
@@ -2979,9 +2999,11 @@ function addZUI(
                     (shape?.elementData?.isLineCircle ||
                         isLineLikeType(shape?.elementData?.componentType))
                 ) {
+                    // Vertex handles own their pointer-events (curvedPathElement
+                    // enables them only while their curve is selected).
                     document
                         .querySelectorAll<HTMLElement>(
-                            '.dragger-picker:not(.is-line-circle)'
+                            '.dragger-picker:not(.is-line-circle):not(.is-vertex-handle)'
                         )
                         .forEach((el) => {
                             el.style.pointerEvents = 'none'
@@ -4059,7 +4081,7 @@ function addZUI(
                                         ...arrowDetach,
                                     }
                                 )
-                            } else if (ed.componentType === 'curvedLine') {
+                            } else if (isCurvedPathType(ed.componentType)) {
                                 // curvedLine's source of truth is an ABSOLUTE
                                 // vertex array in metadata (like pencil/route/
                                 // area). A body drag moves the group but leaves
@@ -4133,9 +4155,14 @@ function addZUI(
                 }
         }
 
-        // Restore pointer events on all components (may have been disabled during arrow drag)
+        // Restore pointer events on all components (may have been disabled during
+        // arrow drag). Skip vertex handles: their component owns the state, and
+        // resetting them here made an unselected curve's invisible handles eat
+        // clicks at its vertices.
         document
-            .querySelectorAll<HTMLElement>('.dragger-picker')
+            .querySelectorAll<HTMLElement>(
+                '.dragger-picker:not(.is-vertex-handle)'
+            )
             .forEach((el) => {
                 el.style.pointerEvents = ''
             })
@@ -5407,7 +5434,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                         (item.componentType === 'pencil' ||
                             item.componentType === 'area' ||
                             item.componentType === 'route' ||
-                            item.componentType === 'curvedLine') &&
+                            isCurvedPathType(item.componentType)) &&
                         Array.isArray(item.metadata)
                     ) {
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any

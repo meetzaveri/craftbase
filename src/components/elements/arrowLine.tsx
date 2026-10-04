@@ -8,6 +8,7 @@ import ElementCreator from '../../factory/arrowLine'
 import { readOpacity, focusSvgElement } from '../../utils/canvasUtils'
 
 import {
+    refitArrowLineHead,
     updateX1Y1Vertices,
     updateX2Y2Vertices,
 } from '../../utils/updateVertices'
@@ -110,6 +111,11 @@ function ArrowLine(props: ElementProps): ReactElement {
         line.opacity = readOpacity(props)
         if (props.stroke) line.stroke = props.stroke
         if (props.linewidth) line.linewidth = props.linewidth
+        // The head length scales with the stroke width, but width edits
+        // (toolbar, group edit, undo) only set `linewidth`. Re-fit before each
+        // render; cached, so unchanged frames cost one key compare.
+        const refitHead = (): void => refitArrowLineHead(line)
+        two.bind('update', refitHead)
 
         if (props.parentGroup) {
             const parentGroup = props.parentGroup
@@ -246,6 +252,7 @@ function ArrowLine(props: ElementProps): ReactElement {
 
         return (): void => {
             mountCancelled = true
+            two.unbind('update', refitHead)
             hitAreaObserver?.disconnect()
             detachHandleScale?.()
             detachHitScale?.()

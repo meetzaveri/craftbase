@@ -195,7 +195,9 @@ export async function drawArrow(page, { startX, startY, endX, endY }) {
         (els) => els.length
     )
 
-    await clickToolbarShape(page, 'Arrow')
+    // Arrow lives in the Arrows drawer; a bare click on the drawer icon picks
+    // the straight arrow (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar).
+    await clickToolbarShape(page, 'Arrows')
 
     await page.mouse.move(startX, startY)
     await page.mouse.down()
@@ -267,21 +269,41 @@ export async function drawLine(page, { startX, startY, endX, endY }) {
  * Returns the curved line's SVG group element handle.
  */
 export async function drawCurvedLine(page, points) {
+    return drawCurvedPath(page, points, {
+        drawer: 'Lines',
+        tool: 'Curved line',
+    })
+}
+
+/**
+ * Draws a curved arrow (a curved line with an arrowhead on its last vertex)
+ * via the same multi-click flow, picked from the Arrows drawer.
+ *
+ * Returns the curved arrow's SVG group element handle.
+ */
+export async function drawCurvedArrow(page, points) {
+    return drawCurvedPath(page, points, {
+        drawer: 'Arrows',
+        tool: 'Curved arrow',
+    })
+}
+
+async function drawCurvedPath(page, points, { drawer, tool }) {
     if (!Array.isArray(points) || points.length < 2) {
-        throw new Error('drawCurvedLine needs at least 2 points')
+        throw new Error(`${tool} needs at least 2 points`)
     }
     const countBefore = await page.$$eval(
         '[data-component-id]',
         (els) => els.length
     )
 
-    // Open the Lines drawer by HOVERING the parent icon, then pick the
-    // curved-line tool. Hover is how the drawer is meant to be opened
-    // (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar) and it arms nothing —
-    // clicking the parent would select its default child (a plain line),
-    // arming a pending element that the curved-line click then has to cancel.
-    await page.hover('[aria-label="Lines"]')
-    await page.click('[aria-label="Curved line"]')
+    // Open the drawer by HOVERING the parent icon, then pick the curved tool.
+    // Hover is how the drawer is meant to be opened (HOVER_DRAWER_DEFAULT_TOOL
+    // in shapesToolbar) and it arms nothing — clicking the parent would select
+    // its default child (line / arrow), arming a pending element that the
+    // curved-tool click then has to cancel.
+    await page.hover(`[aria-label="${drawer}"]`)
+    await page.click(`[aria-label="${tool}"]`)
 
     // Each click is a mousedown that pushes one vertex (mouseup is a no-op in
     // geo-draw mode — the draw only finishes on Enter/Escape/double-click).

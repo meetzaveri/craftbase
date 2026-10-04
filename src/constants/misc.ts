@@ -77,6 +77,16 @@ export const isStandaloneTextType = (
     type: string | null | undefined
 ): boolean => type === 'newText' || type === 'geoText'
 
+// Multi-point curved path types: 'curvedLine' and 'curvedArrow' (a curved line
+// with an arrowhead at its last vertex). Both store an absolute vertex array in
+// `metadata` and share every curved-path code path (multi-click draw, vertex
+// edit, group remap/move/resize, clipboard, history revert). Use this wherever
+// a "is this a curved path?" decision is made so the two stay in lockstep.
+export type CurvedPathType = 'curvedLine' | 'curvedArrow'
+export const isCurvedPathType = (
+    type: string | null | undefined
+): type is CurvedPathType => type === 'curvedLine' || type === 'curvedArrow'
+
 // Draw mode localStorage keys
 export const ARROW_DRAW_MODE_KEY = 'arrowDrawMode'
 export const TEXT_DRAW_MODE_KEY = 'textDrawMode'
@@ -213,12 +223,13 @@ export const GEO_TYPE_DEFAULTS: Record<
 // Minimum vertices required to finish a multi-click draw. Shared by the geo
 // area/route tools and the generic curved line (which reuses the same machinery).
 export const GEO_MIN_VERTICES: Record<
-    'area' | 'route' | 'curvedLine',
+    'area' | 'route' | CurvedPathType,
     number
 > = {
     area: 3,
     route: 2,
     curvedLine: 2,
+    curvedArrow: 2,
 }
 
 // Default ink for strokes. Pure black so it flips cleanly to white on a theme

@@ -164,6 +164,7 @@ function resolveSetKey({
         // Plain + curved lines: stroke-centric panel (no fill).
         if (elementType === 'line' || elementType === 'curvedLine')
             return 'LINE'
+        if (elementType === 'curvedArrow') return 'ARROW'
         // rectangle/diamond/circle all carry text the same way — show the
         // shape+text toolbar (text size/color/font) for any of them.
         const isShapeWithText =
@@ -210,6 +211,7 @@ function resolveSetKey({
     // Curved-line tool armed (multi-click): show the line panel so a stroke
     // tweak seeds the next draw, mirroring pencil/geo behavior.
     if (currentElement === 'curvedLine') return 'LINE'
+    if (currentElement === 'curvedArrow') return 'ARROW'
     // No selection and no active tool — hide the panel. Defaults still apply
     // to the next-created shape (the `useElementDefaults` state is unchanged);
     // users edit them by selecting a shape, which auto-syncs the default per

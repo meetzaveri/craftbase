@@ -21,6 +21,8 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     LAST_ADDED_ELEMENT_ID_KEY,
+    isCurvedPathType,
+    type CurvedPathType,
 } from '../../constants/misc'
 
 import './sidebar.css'
@@ -279,17 +281,18 @@ const PrimarySidebar = (): ReactElement => {
     }
 
     // Multi-click vertex placement. Powers the geo area/route tools AND the
-    // generic curved line — they share the canvas vertex-collection machinery
-    // (collect on click, finish on Esc/Enter/double-click). `curvedLine` is NOT
-    // a geo object, so it carries no `objectClass: 'geo'` and pulls its
-    // stroke/width from the shared element defaults instead of GEO_TYPE_DEFAULTS.
+    // generic curved line/arrow — they share the canvas vertex-collection
+    // machinery (collect on click, finish on Esc/Enter/double-click). Curved
+    // paths are NOT geo objects, so they carry no `objectClass: 'geo'` and pull
+    // their stroke/width from the shared element defaults instead of
+    // GEO_TYPE_DEFAULTS.
     const handleMultiClickDraw = (
-        label: 'area' | 'route' | 'curvedLine'
+        label: 'area' | 'route' | CurvedPathType
     ): void => {
         togglePencilMode(false)
         togglePointer(false)
 
-        const isGeo = label !== 'curvedLine'
+        const isGeo = !isCurvedPathType(label)
         const geoDef = isGeo ? GEO_TYPE_DEFAULTS[label] : null
         const baseProps = {
             componentType: label,
@@ -360,7 +363,8 @@ const PrimarySidebar = (): ReactElement => {
                 handleArrowElement(label)
                 break
             case 'curvedLine':
-                handleMultiClickDraw('curvedLine')
+            case 'curvedArrow':
+                handleMultiClickDraw(label)
                 break
             case 'text':
                 handleTextElement()
