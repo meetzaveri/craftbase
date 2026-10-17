@@ -42,6 +42,12 @@ interface Pos {
     left: number
 }
 
+// Touch devices synthesize mouseenter/focus on tap, which would leave a hint
+// stuck on screen after every tap. Hints are a hover affordance, so skip them
+// when the primary input can't hover.
+const canHover = (): boolean =>
+    !window.matchMedia?.('(hover: none)')?.matches
+
 /**
  * Lightweight, dependency-free tooltip.
  *
@@ -73,7 +79,7 @@ const Tooltip = ({
     const [pos, setPos] = useState<Pos | null>(null)
 
     const show = useCallback((): void => {
-        if (disabled || !label) return
+        if (disabled || !label || !canHover()) return
         const open = (): void => {
             const el = triggerRef.current
             if (el) setAnchor(el.getBoundingClientRect())
