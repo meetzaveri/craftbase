@@ -126,6 +126,12 @@ const ColorPicker = ({
         setRemovingColor(null)
     }
 
+    // Live preview for the swatch beside the hex field: reflects the typed or
+    // pasted value as soon as it is a full 6-digit hex, before it's committed.
+    const hexPreview = /^[0-9A-Fa-f]{6}$/.test(hexInput)
+        ? `#${hexInput.toUpperCase()}`
+        : null
+
     const hasColor = !!currentColor && !isMixed
     const isTransparent = isTransparentColor(currentColor)
     const mixedSwatchBg =
@@ -330,26 +336,6 @@ const ColorPicker = ({
                                         </button>
                                     )
                                 )}
-                                <button
-                                    onClick={handleSaveColor}
-                                    title="Save current color"
-                                    className="w-[22px] h-[22px] rounded-[5px] flex-shrink-0 flex items-center justify-center bg-canvas border-dashed border-[1.5px] border-border-card hover:border-accent-dark transition-colors"
-                                >
-                                    <svg
-                                        width="10"
-                                        height="10"
-                                        viewBox="0 0 10 10"
-                                        fill="none"
-                                        className="text-ink-muted"
-                                    >
-                                        <path
-                                            d="M5 2V8M2 5H8"
-                                            stroke="currentColor"
-                                            strokeWidth="1.5"
-                                            strokeLinecap="round"
-                                        />
-                                    </svg>
-                                </button>
                             </div>
 
                             <div className="flex items-center gap-1.5">
@@ -357,7 +343,7 @@ const ColorPicker = ({
                                     className="w-5 h-5 rounded-[4px] flex-shrink-0 border border-border-card"
                                     style={{
                                         background: swatchBackground(
-                                            currentColor
+                                            hexPreview ?? currentColor
                                         ),
                                     }}
                                 />
@@ -384,9 +370,28 @@ const ColorPicker = ({
                                                 handleHexSubmit()
                                         }}
                                         placeholder="3DB88A"
-                                        maxLength={6}
                                     />
                                 </div>
+                                <button
+                                    onClick={handleSaveColor}
+                                    title="Save current color"
+                                    className="w-[26px] self-stretch rounded-[5px] flex-shrink-0 flex items-center justify-center bg-canvas border-dashed border-[1.5px] border-border-card hover:border-accent-dark transition-colors"
+                                >
+                                    <svg
+                                        width="10"
+                                        height="10"
+                                        viewBox="0 0 10 10"
+                                        fill="none"
+                                        className="text-ink-muted"
+                                    >
+                                        <path
+                                            d="M5 2V8M2 5H8"
+                                            stroke="currentColor"
+                                            strokeWidth="1.5"
+                                            strokeLinecap="round"
+                                        />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                     </motion.div>

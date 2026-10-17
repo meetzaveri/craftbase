@@ -242,16 +242,26 @@ function NewText(props: ElementProps): ReactElement {
             const surfaceWidth = startRect.width / scale0
             // Calibrate the constant part (canvas page offset + glyph bearing)
             // from the real start position so there's no jump entering edit.
-            const calibX =
-                startRect.left -
-                8 -
-                two.scene.translation.x -
-                surfaceLeft * scale0
-            const calibY =
-                startRect.top +
-                startRect.height / 2 -
-                two.scene.translation.y -
-                surfaceCenterY * scale0
+            // A freshly created text is empty, and Firefox reports an empty
+            // <text>'s rect as a zero box at (0,0) — which would pin the editor
+            // to the top-left corner. Fall back to the SVG root's page offset
+            // (bearing is nil with no glyphs) when the measured box is empty.
+            const isEmptyRect = startRect.width === 0 && startRect.height === 0
+            const svgRect = (
+                two.renderer.domElement as Element
+            ).getBoundingClientRect()
+            const calibX = isEmptyRect
+                ? svgRect.left - 8
+                : startRect.left -
+                  8 -
+                  two.scene.translation.x -
+                  surfaceLeft * scale0
+            const calibY = isEmptyRect
+                ? svgRect.top
+                : startRect.top +
+                  startRect.height / 2 -
+                  two.scene.translation.y -
+                  surfaceCenterY * scale0
 
             // Line count the block was laid out with when editing began. The
             // editor's top edge is pinned to THIS block's top, so typing extends
