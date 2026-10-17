@@ -336,3 +336,6 @@ export const MOBILE_TEXT_SIZES_OBJECT = {
     L: 28,
     XL: 36,
 } as const
+
+// Size every newly created text element starts at.
+export const NEW_TEXT_SIZE: TextSizeEntry['label'] = 'M'

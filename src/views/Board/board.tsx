@@ -62,6 +62,7 @@ import { lineHeightFor } from '../../utils/textLayout'
 import {
     TEXT_SIZES_OBJECT,
     MOBILE_TEXT_SIZES_OBJECT,
+    NEW_TEXT_SIZE,
     TRANSPARENT_FILL,
 } from '../../utils/constants'
 import {
@@ -1113,9 +1114,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         }
         const userId = localStorage.getItem('userId')
         const sizesMap = isMobile ? MOBILE_TEXT_SIZES_OBJECT : TEXT_SIZES_OBJECT
-        const fontSizePx =
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (sizesMap as any)[defaultTextSize] ?? typeItem.metadata?.fontSize
+        // A new text always starts at size M in the theme ink (black in light
+        // mode, white in dark), whatever text size/color was last picked.
+        const fontSizePx = sizesMap[NEW_TEXT_SIZE]
         return {
             id,
             componentType,
@@ -1143,7 +1144,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             width: typeItem.width,
             height: typeItem.height,
             fill: typeItem.fill,
-            textColor: defaultTextColor ?? typeItem.textColor,
+            textColor: themeDefaultInk(),
             updatedBy: userId,
         }
     }
