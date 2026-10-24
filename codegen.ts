@@ -34,11 +34,10 @@ const config: CodegenConfig = {
     documents: ['src/**/*.{ts,tsx,js,jsx}'],
     generates: {
         'src/schema/generated.ts': {
-            plugins: [
-                'typescript',
-                'typescript-operations',
-                'typed-document-node',
-            ],
+            // typescript-operations v6 emits the input/enum types its
+            // operations need, so the standalone `typescript` plugin would
+            // only duplicate them.
+            plugins: ['typescript-operations', 'typed-document-node'],
             config: {
                 useTypeImports: true,
                 skipTypename: false,
