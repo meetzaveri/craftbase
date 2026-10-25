@@ -12,9 +12,15 @@ const DB_NAME = 'craftbase-assets'
 const DB_VERSION = 1
 const STORE_NAME = 'images'
 
+// Bytes are stored as an ArrayBuffer, not a Blob: Safari private windows
+// reject Blob values in IndexedDB ("Error preparing Blob/File data to be
+// stored in object store"), while ArrayBuffers clone fine everywhere.
 interface StoredImageAsset {
     id: string
-    blob: Blob
+    bytes?: ArrayBuffer
+    type?: string
+    /** Legacy shape, written before the ArrayBuffer switch. Read-only. */
+    blob?: Blob
     createdAt: number
 }
 
@@ -70,8 +76,7 @@ function fallbackHash(bytes: Uint8Array): string {
     return `fnv-${hex(h1)}${hex(h2)}-${bytes.length.toString(16)}`
 }
 
-async function hashBlob(blob: Blob): Promise<string> {
-    const buffer = await blob.arrayBuffer()
+async function hashBytes(buffer: ArrayBuffer): Promise<string> {
     // SubtleCrypto only exists on secure origins (https / localhost). Over
     // plain http on a LAN IP (mobile testing) it's undefined.
     if (!globalThis.crypto?.subtle) return fallbackHash(new Uint8Array(buffer))
@@ -96,13 +101,19 @@ export async function isImageAssetStoreAvailable(): Promise<boolean> {
  * unavailable or full.
  */
 export async function putImageAsset(blob: Blob): Promise<string> {
-    const id = await hashBlob(blob)
+    const bytes = await blob.arrayBuffer()
+    const id = await hashBytes(bytes)
     const db = await openDb()
     const store = db
         .transaction(STORE_NAME, 'readwrite')
         .objectStore(STORE_NAME)
     // Same id means same bytes, so overwriting an existing entry is harmless.
-    const record: StoredImageAsset = { id, blob, createdAt: Date.now() }
+    const record: StoredImageAsset = {
+        id,
+        bytes,
+        type: blob.type,
+        createdAt: Date.now(),
+    }
     await requestToPromise(store.put(record))
     return id
 }
@@ -116,7 +127,11 @@ export async function getImageAssetBlob(id: string): Promise<Blob | null> {
             .objectStore(STORE_NAME)
         const record = (await requestToPromise(store.get(id))) as
             StoredImageAsset | undefined
-        return record?.blob ?? null
+        if (!record) return null
+        if (record.bytes) {
+            return new Blob([record.bytes], { type: record.type ?? '' })
+        }
+        return record.blob ?? null
     } catch {
         return null
     }

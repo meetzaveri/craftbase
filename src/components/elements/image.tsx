@@ -6,6 +6,8 @@ import ElementFactory from '../../factory/image'
 import { readOpacity } from '../../utils/canvasUtils'
 import { scheduleRender } from '../../utils/renderScheduler'
 import { IMAGE_COMPONENT } from '../../constants/misc'
+import { IMAGE_SETTLED_EVENT } from '../../utils/imageNode'
+import type { ImageSettledDetail } from '../../utils/imageNode'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -27,6 +29,12 @@ function Image(props: ElementProps): ReactElement {
         const elementFactory = new ElementFactory(two, props.x, props.y, {
             ...props,
             ownsImageNode: true,
+            onImageSettled: () =>
+                window.dispatchEvent(
+                    new CustomEvent<ImageSettledDetail>(IMAGE_SETTLED_EVENT, {
+                        detail: { id: props.id },
+                    })
+                ),
         })
         const { group, frame, disposeImageNode } =
             elementFactory.createElement()

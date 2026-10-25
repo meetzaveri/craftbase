@@ -65,9 +65,14 @@ function canvasToBlob(
  * Files already within the cap pass through untouched (GIFs always do, so
  * animation survives). Oversized PNGs stay PNG so transparency survives;
  * other oversized formats re-encode to WebP. Throws ImageRejectedError on
- * bad type/size/decode.
+ * bad type/size/decode. `onDecoded` gets the final pixel size as soon as the
+ * file is decoded, ahead of the slower re-encode, so callers can size a
+ * loading placeholder.
  */
-export async function prepareImageFile(file: File): Promise<PreparedImage> {
+export async function prepareImageFile(
+    file: File,
+    onDecoded?: (width: number, height: number) => void
+): Promise<PreparedImage> {
     if (!isAcceptedImageFile(file)) throw new ImageRejectedError('type')
     if (file.size > MAX_IMAGE_FILE_BYTES) throw new ImageRejectedError('size')
 
@@ -83,6 +88,7 @@ export async function prepareImageFile(file: File): Promise<PreparedImage> {
 
     if (file.type === 'image/gif' || longEdge <= MAX_IMAGE_EDGE_PX) {
         bitmap.close()
+        onDecoded?.(width, height)
         return {
             blob: file,
             mimeType: file.type,
@@ -94,6 +100,7 @@ export async function prepareImageFile(file: File): Promise<PreparedImage> {
     const ratio = MAX_IMAGE_EDGE_PX / longEdge
     const targetW = Math.round(width * ratio)
     const targetH = Math.round(height * ratio)
+    onDecoded?.(targetW, targetH)
     const canvas = document.createElement('canvas')
     canvas.width = targetW
     canvas.height = targetH

@@ -34,6 +34,14 @@ export const IMAGE_NODE_ATTR = 'data-cb-image'
 export const IMAGE_PLACEHOLDER_FILL = 'rgba(128, 128, 128, 0.12)'
 export const IMAGE_PLACEHOLDER_STROKE = 'rgba(128, 128, 128, 0.6)'
 
+// Fired on window by the image element once its bitmap has painted or turned
+// out to be missing. useImageDrop listens to drop its loading placeholder.
+export const IMAGE_SETTLED_EVENT = 'imageNodeSettled'
+
+export interface ImageSettledDetail {
+    id: string
+}
+
 /** Prefer a remote URL (future shared-board uploads), else the local asset. */
 async function resolveImageSrc(meta: ImageMetadata): Promise<string | null> {
     if (meta.url) return meta.url
@@ -54,16 +62,24 @@ function isInScene(two: TwoLike, shape: ShapeLike): boolean {
  * Resolve the bitmap and keep an <image> glued to `frame`'s size. Returns a
  * disposer. With `autoDispose` (group-select member copies, which nothing
  * explicitly tears down) the binding also releases itself once the group
- * leaves the scene.
+ * leaves the scene. `onSettled` fires once, when the bitmap has painted or
+ * the asset turned out to be missing.
  */
 export function attachImageNode(
     two: TwoLike,
     group: ShapeLike,
     frame: ShapeLike,
     meta: ImageMetadata,
-    autoDispose: boolean
+    autoDispose: boolean,
+    onSettled?: () => void
 ): () => void {
     let disposed = false
+    let settled = false
+    const settle = (): void => {
+        if (settled || disposed) return
+        settled = true
+        onSettled?.()
+    }
     let imageEl: SVGImageElement | null = null
     let lastW = -1
     let lastH = -1
@@ -101,6 +117,17 @@ export function attachImageNode(
         frame.fill = IMAGE_PLACEHOLDER_FILL
         frame.stroke = IMAGE_PLACEHOLDER_STROKE
         scheduleRender(two)
+        settle()
+    }
+
+    // Keep the placeholder frame until the bitmap has decoded, so the element
+    // never flashes empty between "frame cleared" and "pixels painted".
+    const showLoaded = (): void => {
+        if (disposed) return
+        frame.fill = 'transparent'
+        frame.noStroke()
+        scheduleRender(two)
+        settle()
     }
 
     resolveImageSrc(meta)
@@ -119,14 +146,12 @@ export function attachImageNode(
                 el.setAttribute(IMAGE_NODE_ATTR, '1')
                 el.setAttribute('href', src)
                 el.setAttribute('preserveAspectRatio', 'none')
-                el.addEventListener('error', showMissing)
+                el.addEventListener('error', showMissing, { once: true })
+                el.addEventListener('load', showLoaded, { once: true })
                 groupEl.insertBefore(el, groupEl.firstChild)
                 imageEl = el
                 sync()
-                frame.fill = 'transparent'
-                frame.noStroke()
                 two.bind('update', onUpdate)
-                scheduleRender(two)
             })
         })
         .catch(showMissing)

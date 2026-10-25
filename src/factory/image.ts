@@ -16,6 +16,8 @@ export interface ImageProperties {
      * releases itself once the copy leaves the scene.
      */
     ownsImageNode?: boolean
+    /** Called once the bitmap has painted or turned out to be missing. */
+    onImageSettled?: () => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,7 +30,8 @@ export default class ImageFactory extends Main<ImageProperties> {
         disposeImageNode: () => void
     } {
         const two = this.two
-        const { width, height, metadata, ownsImageNode } = this.properties
+        const { width, height, metadata, ownsImageNode, onImageSettled } =
+            this.properties
 
         const frame = two.makeRectangle(0, 0, width || 240, height || 160)
         frame.fill = IMAGE_PLACEHOLDER_FILL
@@ -45,7 +48,8 @@ export default class ImageFactory extends Main<ImageProperties> {
             group,
             frame,
             metadata || {},
-            !ownsImageNode
+            !ownsImageNode,
+            onImageSettled
         )
 
         return { group, frame, disposeImageNode }

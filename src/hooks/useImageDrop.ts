@@ -10,7 +10,11 @@ import {
     isAcceptedImageFile,
     prepareImageFile,
 } from '../utils/imageDrop'
-import type { ImageMetadata } from '../utils/imageNode'
+import { IMAGE_SETTLED_EVENT } from '../utils/imageNode'
+import type { ImageMetadata, ImageSettledDetail } from '../utils/imageNode'
+import { createPendingImageNode } from '../utils/imagePendingNode'
+import type { PendingImageNode } from '../utils/imagePendingNode'
+import { prefetchElementModule } from '../elementModules'
 import type { ComponentRecord } from '../types/board'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,6 +24,9 @@ type ZuiInstanceLike = any
 
 // Surface-unit offset between consecutive images of a multi-file drop.
 const MULTI_DROP_OFFSET = 24
+// Upper bound on how long a loading placeholder outlives its record, in case
+// the element never reports back (unmounted by an undo mid-load, etc.).
+const PENDING_TIMEOUT_MS = 15_000
 
 // Window event the toolbar's Image tool fires with the picked files. The
 // canvas places them at the viewport center.
@@ -81,26 +88,67 @@ export function useImageDrop(options: ImageDropOptions): void {
         // Accept the drag even on shared boards: a 'none' dropEffect would
         // suppress the drop event, and the user would get a dead cursor with
         // no explanation. onDrop refuses it there with a notice instead.
+        // Loading placeholders: every one still on screen, and the release
+        // callback of each one already handed off to a stored record.
+        const livePending = new Set<PendingImageNode>()
+        const releaseById = new Map<string, () => void>()
+
+        const removePending = (pending: PendingImageNode): void => {
+            livePending.delete(pending)
+            pending.remove()
+        }
+
+        // The record exists; keep the placeholder until the element reports
+        // its bitmap painted (IMAGE_SETTLED_EVENT), so there is no blank gap.
+        const handOffPending = (
+            id: string,
+            pending: PendingImageNode
+        ): void => {
+            const release = (): void => {
+                clearTimeout(timer)
+                releaseById.delete(id)
+                removePending(pending)
+            }
+            const timer = setTimeout(release, PENDING_TIMEOUT_MS)
+            releaseById.set(id, release)
+        }
+
+        const onImageSettled = (e: Event): void => {
+            const id = (e as CustomEvent<ImageSettledDetail>).detail?.id
+            if (id) releaseById.get(id)?.()
+        }
+
         const onDragOver = (e: DragEvent): void => {
             if (!hasFiles(e)) return
             e.preventDefault()
+            // Warm the element chunk while the user is still dragging, so the
+            // first drop on a fresh page doesn't also wait on the network.
+            prefetchElementModule(IMAGE_COMPONENT)
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
         }
 
         const addImageAt = async (
             file: File,
             surfaceX: number,
-            surfaceY: number
+            surfaceY: number,
+            pending: PendingImageNode
         ): Promise<void> => {
             const { boardId, addToLocalComponentStore, twoJSInstance } =
                 optionsRef.current
-            const prepared = await prepareImageFile(file)
-            const assetId = await putImageAsset(prepared.blob)
             const scale = twoJSInstance?.scene?.scale || 1
-            const { width, height } = fitImageSize(
+            const fit = (
+                w: number,
+                h: number
+            ): ReturnType<typeof fitImageSize> =>
+                fitImageSize(w, h, IMAGE_DROP_MAX_SCREEN_PX / scale)
+            const prepared = await prepareImageFile(file, (w, h) => {
+                const size = fit(w, h)
+                pending.setSize(size.width, size.height)
+            })
+            const assetId = await putImageAsset(prepared.blob)
+            const { width, height } = fit(
                 prepared.naturalWidth,
-                prepared.naturalHeight,
-                IMAGE_DROP_MAX_SCREEN_PX / scale
+                prepared.naturalHeight
             )
             const metadata: ImageMetadata = {
                 assetId,
@@ -127,6 +175,7 @@ export function useImageDrop(options: ImageDropOptions): void {
                 metadata,
                 updatedBy: localStorage.getItem('userId'),
             } as unknown as ComponentRecord
+            handOffPending(id, pending)
             addToLocalComponentStore(id, IMAGE_COMPONENT, record)
         }
 
@@ -152,7 +201,22 @@ export function useImageDrop(options: ImageDropOptions): void {
                 if (files.length > 0) showCanvasNotice(REJECT_MESSAGES.type)
                 return
             }
+            prefetchElementModule(IMAGE_COMPONENT)
             const surface = zui.clientToSurface(clientX, clientY)
+            const spots = images.map((_, i) => ({
+                x: surface.x + i * MULTI_DROP_OFFSET,
+                y: surface.y + i * MULTI_DROP_OFFSET,
+            }))
+            // Every file gets its loader right away, before any decoding.
+            const pendings = spots.map((spot) => {
+                const pending = createPendingImageNode(
+                    optionsRef.current.twoJSInstance,
+                    spot.x,
+                    spot.y
+                )
+                livePending.add(pending)
+                return pending
+            })
             // Sequential, so z-order positions follow drop order.
             images
                 .reduce<Promise<void>>(
@@ -160,9 +224,12 @@ export function useImageDrop(options: ImageDropOptions): void {
                         chain.then(() =>
                             addImageAt(
                                 file,
-                                surface.x + i * MULTI_DROP_OFFSET,
-                                surface.y + i * MULTI_DROP_OFFSET
+                                spots[i]?.x ?? surface.x,
+                                spots[i]?.y ?? surface.y,
+                                pendings[i] as PendingImageNode
                             ).catch((err: unknown) => {
+                                const pending = pendings[i]
+                                if (pending) removePending(pending)
                                 showCanvasNotice(
                                     err instanceof ImageRejectedError
                                         ? REJECT_MESSAGES[err.reason]
@@ -208,7 +275,12 @@ export function useImageDrop(options: ImageDropOptions): void {
         window.addEventListener('dragover', blockNavigation)
         window.addEventListener('drop', blockNavigation)
         window.addEventListener(INSERT_IMAGE_FILES_EVENT, onInsertRequest)
+        window.addEventListener(IMAGE_SETTLED_EVENT, onImageSettled)
         return (): void => {
+            releaseById.forEach((release) => release())
+            livePending.forEach((pending) => pending.remove())
+            livePending.clear()
+            window.removeEventListener(IMAGE_SETTLED_EVENT, onImageSettled)
             root.removeEventListener('dragover', onDragOver)
             root.removeEventListener('drop', onDrop)
             window.removeEventListener('dragover', blockNavigation)

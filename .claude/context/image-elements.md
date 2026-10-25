@@ -8,6 +8,7 @@
 ## Storage
 
 - **Bytes live in IndexedDB**, not the record. DB `craftbase-assets`, store `images`, keyed by SHA-256 of the blob (`src/utils/imageAssetStore.ts`). Repeat drops and pastes share one entry.
+- **Stored as `ArrayBuffer` + `type`, never a `Blob`.** Safari private windows reject Blob values in IndexedDB ("Error preparing Blob/File data to be stored in object store"). Reads still accept the legacy `blob` field.
 - **The record holds a reference.** `metadata = { assetId, url, mimeType, naturalWidth, naturalHeight, opacity }`. That is about 150 bytes in the localStorage draft.
 - **Why not base64 in metadata.** The draft cap is 3 MB UTF-8 (`MAX_DRAFT_UTF8_BYTES`). base64 adds 33%, and `writeDraft` re-serializes the whole store on every edit. One phone photo would fill the board.
 - **Pruning.** Unreferenced assets are deleted only on draft load (`useLocalDraftPersistence`). Never prune on delete: undo must be able to restore the image.
@@ -18,6 +19,14 @@
 - `src/utils/imageNode.ts` inserts a native SVG `<image>` at the front of the group's `<g>` and syncs it to the frame size on every Two.js `update`. `Two.Image` was avoided because it paints a pattern fill that drifts on resize.
 - Source resolution is `metadata.url ?? objectURL(assetId)`. A missing asset shows the dashed placeholder.
 - Group-select copies are built from the factory, so they get their own `<image>`. It auto-disposes when the copy leaves the scene. The element component owns and disposes its own node (`ownsImageNode: true`).
+
+## Loading placeholder
+
+- **Why.** A phone photo spends ~0.6 s (laptop) to a few seconds (phone) in decode, downscale and WebP re-encode before a record exists. Without feedback the drop looks ignored.
+- **What.** `src/utils/imagePendingNode.ts` appends a plain SVG `<g data-cb-image-pending>` to the scene's `<g>` at the drop point. It is not a Two.js shape or a store record, so it follows pan/zoom but never touches the draft, history or z-order.
+- **Sequence.** Spinner at once. `prepareImageFile`'s `onDecoded` reports the final size right after decode, and the dashed frame appears at that size. The image element's `<image>` fires `load`, `attachImageNode` calls `onSettled`, `image.tsx` dispatches `IMAGE_SETTLED_EVENT` with the record id, and `useImageDrop` removes the loader. The frame turns transparent only on `load`, so there is no blank flash.
+- **Failure.** A rejected file removes its loader and shows the notice. A 15 s timeout removes any loader whose element never reports back.
+- The first `dragover` prefetches the image element chunk.
 
 ## Eraser
 
