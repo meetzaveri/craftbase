@@ -179,6 +179,8 @@ export interface BoardContextValue {
     clearBoard: () => void
     /** Open the file picker → parse → new-vs-merge chooser flow (P0 import). */
     beginBoardImport: () => void
+    /** Show a short self-dismissing notice at the bottom of the canvas. */
+    showCanvasNotice: (message: string) => void
 
     // Two.js handles
     twoJSInstance: Two | null

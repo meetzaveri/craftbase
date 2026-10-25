@@ -8,7 +8,12 @@
 // (unzoomed, scene-space) transform, getBBox reports its bounds in that same
 // space, and using those bounds as the viewBox yields a 1:1 portable asset.
 
-import { SVG_NS, embedFonts, stripSelectionChrome } from './svgExportShared'
+import {
+    SVG_NS,
+    embedFonts,
+    inlineImageHrefs,
+    stripSelectionChrome,
+} from './svgExportShared'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GroupLike = any
@@ -83,6 +88,7 @@ export async function exportSelectionAsSvg(group: GroupLike): Promise<void> {
 
         // Font fetch is async; keep the element hidden (style attr) until the
         // synchronous serialize below so it never flashes on-screen.
+        await inlineImageHrefs(svg)
         await embedFonts(svg)
 
         // Strip the off-screen hiding style only from the serialized output.

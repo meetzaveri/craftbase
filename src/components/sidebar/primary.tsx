@@ -21,11 +21,14 @@ import {
     GEO_DRAW_PROPS_KEY,
     GEO_POINT_PLACE_MODE_KEY,
     LAST_ADDED_ELEMENT_ID_KEY,
+    IMAGE_COMPONENT,
     isCurvedPathType,
     type CurvedPathType,
 } from '../../constants/misc'
 
 import './sidebar.css'
+import { openImageFilePicker } from '../../utils/imageDrop'
+import { requestImageInsert } from '../../hooks/useImageDrop'
 import ShareLinkPopup from './shareLinkPopup'
 import ThemeSwitcher from './themeSwitcher'
 import MenuDrawer from './menuDrawer'
@@ -328,6 +331,16 @@ const PrimarySidebar = (): ReactElement => {
     }
 
     const addElement = (label: string, category?: string): void => {
+        // Image is a one-shot action, not a draw mode: pick files, hand them to
+        // the canvas (useImageDrop places them at the viewport center), and
+        // leave the active tool alone.
+        if (label === IMAGE_COMPONENT) {
+            prefetchElementModule(IMAGE_COMPONENT)
+            void openImageFilePicker().then((files) => {
+                if (files.length > 0) requestImageInsert(files)
+            })
+            return
+        }
         // Warm the shape's lazy chunk NOW, while the user moves to the canvas
         // and drags (~700ms–1s). By mouseup the chunk is cached, so the
         // component mounts instantly instead of the freshly-drawn shape sitting

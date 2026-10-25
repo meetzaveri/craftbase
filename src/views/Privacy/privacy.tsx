@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import routes from '../../routes'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 
-const LAST_UPDATED = 'May 17, 2026'
+const LAST_UPDATED = 'October 25, 2026'
 
 const ChevronLeft = (): ReactNode => (
     <svg
@@ -86,7 +86,9 @@ const PrivacyPage: React.FC = () => {
                         your browser until <em>you</em> explicitly choose to
                         share a board &mdash; at which point that board becomes
                         publicly viewable. We use a privacy-first analytics tool
-                        that doesn't set cookies or store your IP address.
+                        that doesn't set cookies or store your IP address, and
+                        an error reporting tool that tells us when the app
+                        breaks.
                     </p>
                 </div>
 
@@ -117,11 +119,11 @@ const PrivacyPage: React.FC = () => {
 
                 <Section title="Your boards and what you draw">
                     <p>
-                        <strong>Local mode (the default).</strong> While you're
-                        just sketching, everything you create &mdash; shapes,
-                        text, drawings &mdash; stays only in your own browser's
-                        local storage. It is not uploaded to our servers and we
-                        cannot see it.
+                        <strong>Local mode (the default).</strong> Everything
+                        you create stays in your browser's own storage. Shapes,
+                        text and drawings are kept in local storage. Images you
+                        add are kept in your browser's IndexedDB storage. None
+                        of it is uploaded to our servers, and we can't see it.
                     </p>
                     <p>
                         <strong>Shared boards.</strong> When you choose to share
@@ -131,7 +133,38 @@ const PrivacyPage: React.FC = () => {
                         with the link. Please don't put confidential or
                         sensitive information on a board you intend to share.
                         Sharing is always your explicit choice &mdash; nothing
-                        leaves your browser until you opt in.
+                        leaves your browser until you opt in. Images are not
+                        included in shared boards. They stay on your device.
+                    </p>
+                    <p>
+                        <strong>Photo details.</strong> Photos often carry
+                        hidden details. Craftbase removes these when you add an
+                        image, before it is saved:
+                    </p>
+                    <ul className="list-disc pl-5 space-y-1">
+                        <li>Location where the photo was taken (GPS)</li>
+                        <li>Date and time it was taken</li>
+                        <li>
+                            Camera or phone make and model, and its settings
+                        </li>
+                        <li>Editing software and edit history</li>
+                        <li>Captions, keywords, author and copyright fields</li>
+                        <li>Comments and text notes stored in the file</li>
+                        <li>
+                            Extra images some phones attach, such as thumbnails
+                            and depth maps
+                        </li>
+                    </ul>
+                    <p>
+                        We keep only what's needed to show the image correctly:
+                        its color profile, its rotation (applied to the image
+                        itself), and animation looping for GIFs.
+                    </p>
+                    <p>
+                        <strong>Exports.</strong> When you export a board as
+                        JSON, SVG or PNG, the file includes copies of your
+                        images. Share exported files with the same care as the
+                        photos themselves.
                     </p>
                 </Section>
 
@@ -162,6 +195,29 @@ const PrivacyPage: React.FC = () => {
                     </p>
                 </Section>
 
+                <Section title="Error reports">
+                    <p>
+                        When the app hits an error, we send a report to{' '}
+                        <a
+                            href="https://sentry.io/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent-dark font-semibold no-underline border-b border-accent-dark"
+                        >
+                            Sentry
+                        </a>{' '}
+                        so we can fix it. A report includes the page address,
+                        your browser and operating system, and technical details
+                        of the error. For a sample of visits we also record how
+                        long pages take to load.
+                    </p>
+                    <p>
+                        Reports do <strong>not</strong> include your IP address
+                        or what you draw or write on your boards. They are not
+                        used for tracking or advertising.
+                    </p>
+                </Section>
+
                 <Section title="What we never collect">
                     <ul className="list-disc pl-5 space-y-1">
                         <li>Your name, email, or phone number</li>
@@ -174,6 +230,7 @@ const PrivacyPage: React.FC = () => {
                             The contents of boards you keep in local mode and
                             never share
                         </li>
+                        <li>Images you add to the canvas</li>
                     </ul>
                     <p>We do not sell or rent any data to anyone.</p>
                 </Section>
@@ -181,8 +238,13 @@ const PrivacyPage: React.FC = () => {
                 <Section title="Your controls">
                     <p>
                         You can reset your anonymous identity and wipe all
-                        locally-stored boards at any time by clearing this
-                        site's data in your browser settings.
+                        locally-stored boards and images at any time by clearing
+                        this site's data in your browser settings.
+                    </p>
+                    <p>
+                        When you delete an image from a board, its stored copy
+                        is removed the next time the board loads. It is kept
+                        until then so you can undo the delete.
                     </p>
                     <p>
                         Note that once a board has been shared it is public, and

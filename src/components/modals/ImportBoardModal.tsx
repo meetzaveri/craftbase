@@ -9,6 +9,8 @@ interface ImportBoardModalProps {
     error?: string | null
     total?: number
     skipped?: number
+    /** Images left out because shared boards don't support them yet. */
+    excludedImages?: number
     onOpenAsNew?: () => void
     onMerge?: () => void
 }
@@ -25,10 +27,11 @@ export default function ImportBoardModal({
     error,
     total = 0,
     skipped = 0,
+    excludedImages = 0,
     onOpenAsNew,
     onMerge,
 }: ImportBoardModalProps): ReactElement {
-    const valid = total - skipped
+    const valid = total - skipped - excludedImages
 
     return (
         <Modal open={open} onClose={onClose} locked={false}>
@@ -63,6 +66,13 @@ export default function ImportBoardModal({
                             <p className="text-xs text-neutrals-n700 mb-3">
                                 {skipped} unreadable item
                                 {skipped === 1 ? '' : 's'} will be skipped.
+                            </p>
+                        )}
+                        {excludedImages > 0 && (
+                            <p className="text-xs text-neutrals-n700 mb-3">
+                                {excludedImages} image
+                                {excludedImages === 1 ? '' : 's'} will be left
+                                out. Shared boards don’t support images yet.
                             </p>
                         )}
                         <p className="text-sm text-neutrals-n700 mb-4">

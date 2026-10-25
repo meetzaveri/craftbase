@@ -103,6 +103,7 @@ const SHAPE_ADAPTERS: Record<string, ShapeAdapter> = {
     rectangle: DEFAULT_ADAPTER,
     circle: DEFAULT_ADAPTER,
     diamond: DEFAULT_ADAPTER,
+    image: DEFAULT_ADAPTER,
     newText: TEXT_ADAPTER,
 }
 

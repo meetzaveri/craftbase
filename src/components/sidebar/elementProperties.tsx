@@ -82,6 +82,8 @@ const SETS = {
     LINE: ['stroke', 'strokeWidth', 'strokeType', 'opacity'],
     PENCIL: ['stroke', 'strokeWidth', 'strokeType', 'opacity'],
     TEXT: ['textColor', 'textSize', 'textFont', 'opacity'],
+    // Bitmap: nothing to stroke or fill, only dim.
+    IMAGE: ['opacity'],
     // Geo objects: stroke-centric. Area's fill is auto-derived from stroke, so
     // no fill control — but its outline still takes width/type like a route.
     // Point has no edit-area set: its category is chosen from the point drawer
@@ -119,6 +121,7 @@ const SET_LABELS = {
     LINE: 'Line',
     PENCIL: 'Pencil',
     TEXT: 'Text',
+    IMAGE: 'Image',
     RECT_WITH_TEXT: 'Shape',
     GROUP: 'Group',
     GEO_AREA: 'Area',
@@ -159,6 +162,9 @@ function resolveSetKey({
         // otherwise fall into the SHAPE branch below. Points have no edit-area
         // panel — their category is set from the toolbar drawer.
         if (elementType === 'point') return null
+        // Image's frame is a plain rectangle path; route it before the SHAPE
+        // branch so fill/stroke controls don't show.
+        if (elementType === 'image') return 'IMAGE'
         if (elementType === 'area') return 'GEO_AREA'
         if (elementType === 'route') return 'GEO_ROUTE'
         // Plain + curved lines: stroke-centric panel (no fill).
