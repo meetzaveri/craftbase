@@ -26,6 +26,7 @@ import { useMediaQueryUtils } from './constants/exportHooks'
 import {
     GROUP_COMPONENT,
     componentTypes,
+    IMAGE_COMPONENT,
     RUBBER_MODE_KEY,
     VIEWPORT_KEY_PREFIX,
     MOBILE_VIEWPORT_KEY_PREFIX,
@@ -1622,16 +1623,40 @@ function addZUI(
         () => zui.scale || 1
     )
 
-    function componentIdAtPoint(x: number, y: number): string | null {
-        const el = document.elementFromPoint(x, y)
-        if (!el) return null
-
+    // Nearest component group at or above `el`.
+    function componentElementFor(el: Element): Element | null {
         let target: Element | null = el
         while (target && target !== document.body) {
-            const componentId =
-                target.getAttribute?.('data-component-id') ?? null
-            if (componentId) return componentId
+            if (target.getAttribute?.('data-component-id')) return target
             target = target.parentElement
+        }
+        return null
+    }
+
+    // Topmost component under the point. With `skipImages` (Shift held while
+    // erasing) it looks through the whole stack and returns the topmost
+    // non-image component, so a stroke is erasable whether it sits above or
+    // below an image, and the image itself is never hit.
+    function componentIdAtPoint(
+        x: number,
+        y: number,
+        skipImages: boolean
+    ): string | null {
+        const stack = skipImages
+            ? document.elementsFromPoint(x, y)
+            : [document.elementFromPoint(x, y)]
+        for (const el of stack) {
+            if (!el) continue
+            const component = componentElementFor(el)
+            if (!component) continue
+            if (
+                skipImages &&
+                component.getAttribute('data-component-type') ===
+                    IMAGE_COMPONENT
+            ) {
+                continue
+            }
+            return component.getAttribute('data-component-id')
         }
         return null
     }
@@ -1641,7 +1666,8 @@ function addZUI(
     // size gives a more forgiving catch area for thin strokes / small shapes.
     const ERASER_SAMPLE_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]
 
-    function eraseElementAtPoint(x: number, y: number) {
+    // `keepImages`: Shift held — erase drawings but leave image elements.
+    function eraseElementAtPoint(x: number, y: number, keepImages: boolean) {
         const radius = getEraserRadius()
         const points: Array<[number, number]> =
             radius > 0
@@ -1659,7 +1685,7 @@ function addZUI(
 
         const componentIds = new Set<string>()
         for (const [px, py] of points) {
-            const id = componentIdAtPoint(px, py)
+            const id = componentIdAtPoint(px, py, keepImages)
             if (id && !pendingDeletionSet.has(id)) componentIds.add(id)
         }
         if (componentIds.size === 0) return
@@ -2832,7 +2858,7 @@ function addZUI(
             case SCENARIO_RUBBER_MODE: {
                 domElement.addEventListener('mousemove', mousemove, false)
                 domElement.addEventListener('mouseup', mouseup, false)
-                eraseElementAtPoint(e.clientX, e.clientY)
+                eraseElementAtPoint(e.clientX, e.clientY, e.shiftKey)
                 {
                     const p = toSurface(e)
                     eraserTrail.addPoint(p.x, p.y)
@@ -3256,7 +3282,7 @@ function addZUI(
                 break
             }
             case SCENARIO_RUBBER_MODE: {
-                eraseElementAtPoint(e.clientX, e.clientY)
+                eraseElementAtPoint(e.clientX, e.clientY, e.shiftKey)
                 const p = toSurface(e)
                 eraserTrail.addPoint(p.x, p.y)
                 break

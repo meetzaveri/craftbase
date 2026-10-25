@@ -209,8 +209,8 @@ export const staticPrimaryElementData: PrimarySection[] = [
                 // Lines live behind their own drawer (main icon = straight line);
                 // clicking it opens a secondary drawer to pick line vs. curved
                 // line. Unlike 'shapes', this drawer is NOT flattened on desktop
-                // (see flattenShapesForDesktop), so it stays a drawer on both
-                // desktop and mobile.
+                // (see flattenShapesForDesktop). On mobile it merges with
+                // 'arrows' into one drawer (mergeConnectorsForMobile).
                 elementName: 'lines',
                 elementDisplayName: 'Lines',
                 elementIcon: LineIcon,
@@ -231,9 +231,9 @@ export const staticPrimaryElementData: PrimarySection[] = [
             },
             {
                 // Arrows drawer (arrow vs. curved arrow), same pattern as
-                // 'lines': stays a drawer on desktop and mobile, and a bare
-                // click on the icon picks the straight arrow
-                // (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar).
+                // 'lines': a drawer on desktop (merged with 'lines' on
+                // mobile), and a bare click on the icon picks the straight
+                // arrow (HOVER_DRAWER_DEFAULT_TOOL in shapesToolbar).
                 elementName: 'arrows',
                 elementDisplayName: 'Arrows',
                 elementIcon: RightArrowIcon,

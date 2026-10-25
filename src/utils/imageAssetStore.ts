@@ -55,11 +55,27 @@ function requestToPromise<T>(req: IDBRequest<T>): Promise<T> {
     })
 }
 
+// Two independent 32-bit FNV-1a passes (different offset bases) plus the byte
+// length. Only used where SubtleCrypto is missing; the id just has to dedupe
+// identical bytes, not resist attack.
+function fallbackHash(bytes: Uint8Array): string {
+    let h1 = 0x811c9dc5
+    let h2 = 0x01000193
+    for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i] ?? 0
+        h1 = Math.imul(h1 ^ b, 0x01000193)
+        h2 = Math.imul(h2 ^ b, 0x01000193) ^ (h2 >>> 15)
+    }
+    const hex = (n: number): string => (n >>> 0).toString(16).padStart(8, '0')
+    return `fnv-${hex(h1)}${hex(h2)}-${bytes.length.toString(16)}`
+}
+
 async function hashBlob(blob: Blob): Promise<string> {
-    const digest = await crypto.subtle.digest(
-        'SHA-256',
-        await blob.arrayBuffer()
-    )
+    const buffer = await blob.arrayBuffer()
+    // SubtleCrypto only exists on secure origins (https / localhost). Over
+    // plain http on a LAN IP (mobile testing) it's undefined.
+    if (!globalThis.crypto?.subtle) return fallbackHash(new Uint8Array(buffer))
+    const digest = await crypto.subtle.digest('SHA-256', buffer)
     return Array.from(new Uint8Array(digest))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('')

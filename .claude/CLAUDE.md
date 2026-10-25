@@ -183,6 +183,7 @@ Application constants and configuration.
 - `elementSchema.ts` - Element schema definitions
 - `misc.ts` - Miscellaneous constants
 - `exportHooks.ts` - Custom hook exports
+- `hints.ts` - Single source of truth for user-facing hints (shortcuts, modifier gestures, tips). The Keyboard shortcuts modal renders the entries with `combos`; a future docs page can render all. New hidden gesture or tip → add one entry here
 
 ### `/src/hooks`
 

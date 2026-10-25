@@ -5,6 +5,7 @@ import { useBoardContext } from '../../views/Board/boardContext'
 import ElementFactory from '../../factory/image'
 import { readOpacity } from '../../utils/canvasUtils'
 import { scheduleRender } from '../../utils/renderScheduler'
+import { IMAGE_COMPONENT } from '../../constants/misc'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -39,6 +40,8 @@ function Image(props: ElementProps): ReactElement {
             if (groupEl) {
                 groupEl.setAttribute('class', 'dragger-picker')
                 groupEl.setAttribute('data-component-id', props.id)
+                // Lets DOM hit-tests (Shift + eraser) skip images cheaply.
+                groupEl.setAttribute('data-component-type', IMAGE_COMPONENT)
             }
         })
 

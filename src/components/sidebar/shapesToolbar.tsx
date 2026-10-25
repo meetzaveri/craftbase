@@ -37,7 +37,7 @@ const allElementsRaw = staticPrimaryElementData.flatMap(
 // uses point/area/route + the zoom-resistant geoText instead. 'shapes' is the
 // mobile drawer; rectangle/circle/diamond are its desktop-flattened children.
 // 'lines' is the line/curvedLine drawer and 'arrows' the arrowLine/curvedArrow
-// drawer (both kept as drawers on both platforms).
+// drawer (separate on desktop; merged into 'connectors' on mobile).
 // 'text' is replaced by 'geoText' (see geoElementData).
 const GEO_HIDDEN_TOOLS = new Set([
     'shapes',
@@ -46,6 +46,7 @@ const GEO_HIDDEN_TOOLS = new Set([
     'diamond',
     'lines',
     'arrows',
+    'connectors',
     'arrowLine',
     'curvedArrow',
     'pencil',
@@ -59,6 +60,7 @@ const GEO_HIDDEN_TOOLS = new Set([
 const HOVER_DRAWER_DEFAULT_TOOL: Record<string, string> = {
     lines: 'line',
     arrows: 'arrowLine',
+    connectors: 'arrowLine',
 }
 
 // The drawer closes the instant the pointer leaves it or its icon. The two are
@@ -85,6 +87,35 @@ const flattenShapesForDesktop = (
               }))
             : [el]
     )
+
+// Mobile only: the bottom bar is too narrow for separate Lines and Arrows
+// drawers, so they merge into one Connectors tool whose drawer holds all four
+// (arrow, curved arrow, line, curved line). It takes the slot of whichever of
+// the two comes first; a bare tap picks the arrow (HOVER_DRAWER_DEFAULT_TOOL).
+const mergeConnectorsForMobile = (
+    elements: PrimaryElement[]
+): PrimaryElement[] => {
+    const lines = elements.find((el) => el.elementName === 'lines')
+    const arrows = elements.find((el) => el.elementName === 'arrows')
+    if (!lines || !arrows) return elements
+    const connectors: PrimaryElement = {
+        elementName: 'connectors',
+        elementDisplayName: 'Lines & arrows',
+        elementIcon: arrows.elementIcon,
+        hasDrawer: true,
+        noAction: true,
+        drawerData: [...arrows.drawerData, ...lines.drawerData],
+    }
+    return elements.flatMap((el) => {
+        if (el === lines || el === arrows) {
+            const isFirst =
+                elements.indexOf(el) ===
+                Math.min(elements.indexOf(lines), elements.indexOf(arrows))
+            return isFirst ? [connectors] : []
+        }
+        return [el]
+    })
+}
 
 interface ShapesToolbarProps {
     addElement: (label: string, category?: string) => void
@@ -145,7 +176,9 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
 
     const allElements = (() => {
         const list = (
-            isMobile ? allElementsRaw : flattenShapesForDesktop(allElementsRaw)
+            isMobile
+                ? mergeConnectorsForMobile(allElementsRaw)
+                : flattenShapesForDesktop(allElementsRaw)
         )
             // Whiteboard shape tools are hidden in geo mode in favour of the
             // geo toolset (point/area/route/geoText).

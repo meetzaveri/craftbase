@@ -19,6 +19,11 @@
 - Source resolution is `metadata.url ?? objectURL(assetId)`. A missing asset shows the dashed placeholder.
 - Group-select copies are built from the factory, so they get their own `<image>`. It auto-disposes when the copy leaves the scene. The element component owns and disposes its own node (`ownsImageNode: true`).
 
+## Eraser
+
+- **Shift + erase keeps images.** `componentIdAtPoint` in `newCanvas.tsx` normally hit-tests only the topmost element. With Shift held it walks the full `elementsFromPoint` stack and takes the topmost non-image component, so strokes are erased whether they're above or below an image.
+- Image groups carry `data-component-type="image"` (set in `image.tsx`), so this check is a DOM attribute read, not a scene scan.
+
 ## Local-mode-only rules
 
 - `persistBoard` filters image rows out. The local draft keeps them.
