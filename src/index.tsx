@@ -11,6 +11,13 @@ Sentry.init({
     integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: 0.2,
     enabled: import.meta.env.MODE !== 'development' ? true : false,
+    // The privacy page promises reports carry no IP address and no board
+    // contents. sendDefaultPii: false makes the SDK send infer_ip: 'never',
+    // so Sentry won't derive the IP server-side. Console breadcrumbs are
+    // dropped because logged values can echo element data or text.
+    sendDefaultPii: false,
+    beforeBreadcrumb: (breadcrumb) =>
+        breadcrumb.category === 'console' ? null : breadcrumb,
 })
 
 // Stale-deploy recovery: when a tab loaded before a deploy lazy-imports a chunk

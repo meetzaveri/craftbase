@@ -5,6 +5,7 @@
 // loaded fonts, so without embedding, canvas text falls back to a system font.
 
 import { DEFAULT_TEXT_FONT_FAMILY } from '../constants/misc'
+import { blobToDataUrl } from './imageAssetStore'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -32,6 +33,28 @@ export function markSelectionChrome(twoObject: any): void {
 export function stripSelectionChrome(root: Element): void {
     root.querySelectorAll(`[${SELECTION_CHROME_ATTR}]`).forEach((n) =>
         n.remove()
+    )
+}
+
+/**
+ * Image elements paint via `<image href="blob:...">` (see utils/imageNode.ts).
+ * Blob URLs are tab-local, and an SVG rasterized through <img> can't load
+ * external resources at all, so swap each one for an inline data URL in the
+ * export clone. Failures leave the href as-is (the image just won't show).
+ */
+export async function inlineImageHrefs(root: Element): Promise<void> {
+    const nodes = Array.from(root.querySelectorAll('image'))
+    await Promise.all(
+        nodes.map(async (node) => {
+            const href = node.getAttribute('href')
+            if (!href?.startsWith('blob:')) return
+            try {
+                const blob = await (await fetch(href)).blob()
+                node.setAttribute('href', await blobToDataUrl(blob))
+            } catch {
+                // Leave it; the rest of the export still succeeds.
+            }
+        })
     )
 }
 

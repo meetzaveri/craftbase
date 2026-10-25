@@ -20,6 +20,10 @@ import {
     measureStoredDraftUtf8Bytes,
     MAX_DRAFT_UTF8_BYTES,
 } from '../utils/boardSizeGuard'
+import {
+    collectImageAssetIds,
+    pruneImageAssets,
+} from '../utils/imageAssetStore'
 
 export interface LocalDraftPersistenceOptions {
     isPersisted: boolean
@@ -102,6 +106,11 @@ export function useLocalDraftPersistence({
         }
 
         let restoredDraft = false
+        // Image blobs referenced by the restored draft. Anything else in the
+        // asset store is from deleted images or older drafts and is pruned
+        // below. Stays null when the draft is deferred (over budget, not
+        // parsed), so nothing is pruned out from under it.
+        let referencedAssetIds: Set<string> | null = new Set()
         try {
             const draft = localStorage.getItem(DRAFT_STORAGE_KEY)
             if (draft) {
@@ -116,6 +125,7 @@ export function useLocalDraftPersistence({
                     deferredRawDraftRef.current = draft
                     setShowBoardTooLargeModal(true)
                     restoredDraft = true
+                    referencedAssetIds = null
                 } else {
                     const parsed = JSON.parse(draft) as PersistedDraft
                     const age = Date.now() - (parsed.timestamp ?? 0)
@@ -129,6 +139,8 @@ export function useLocalDraftPersistence({
                         if (Object.keys(safeComponents).length > 0) {
                             setComponentStore(safeComponents)
                             restoredDraft = true
+                            referencedAssetIds =
+                                collectImageAssetIds(safeComponents)
                         }
                     } else {
                         localStorage.removeItem(DRAFT_STORAGE_KEY)
@@ -140,6 +152,10 @@ export function useLocalDraftPersistence({
             localStorage.removeItem(DRAFT_STORAGE_KEY)
             localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
         }
+
+        // Pruning only happens here, on load, never on delete: undo has to be
+        // able to bring a deleted image back within the session.
+        if (referencedAssetIds) void pruneImageAssets(referencedAssetIds)
 
         // First-visit welcome seed: only when opt-in flag is set, no draft was
         // restored, and the user has not previously dismissed the sketch on

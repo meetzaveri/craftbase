@@ -44,9 +44,11 @@ import ImportBoardModal from '../../components/modals/ImportBoardModal'
 import {
     openBoardFilePicker,
     parseImportedBoard,
+    excludeImages,
 } from '../../utils/importBoard'
 import type { ParsedImport, BoardViewport } from '../../utils/importBoard'
 import { draftFitsForStore } from '../../utils/boardSizeGuard'
+import { restoreImageAssets } from '../../utils/imageAssetStore'
 import { generateUUID, generateRandomUsernames } from '../../utils/misc'
 import { prefetchElementModule } from '../../elementModules'
 import {
@@ -86,6 +88,7 @@ import {
     GEO_POINT_PLACE_MODE_KEY,
     DEFAULT_GEO_RESIST,
     WELCOME_DISMISSED_KEY,
+    isImageType,
 } from '../../constants/misc'
 import {
     isWelcomeComponent,
@@ -223,6 +226,13 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         isPersisted,
         boardId,
     })
+
+    // Short transient notice (image drop refusals, etc.).
+    const [canvasNotice, setCanvasNotice] = useState<string | null>(null)
+    const showCanvasNotice = useCallback((message: string) => {
+        setCanvasNotice(message)
+    }, [])
+    const dismissCanvasNotice = useCallback(() => setCanvasNotice(null), [])
 
     const [lastAddedElement, setLastAddedElement] =
         useState<ComponentRecord | null>(null)
@@ -451,7 +461,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(stateRefForComponentStore.current, viewport)
+        void exportBoardAsJson(stateRefForComponentStore.current, viewport)
         setShowBoardFullModal(false)
     }, [])
 
@@ -520,6 +530,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             const newLocalId = generateUUID()
             const store: ComponentStore = {}
             Object.entries(parsed.components).forEach(([id, comp]) => {
+                // Backstop for the filter in beginBoardImport: this path sets
+                // the store directly, skipping addToLocalComponentStore's
+                // shared-board image guard.
+                if (isPersistedRef.current && isImageType(comp.componentType))
+                    return
                 store[id] = { ...comp, boardId: newLocalId }
             })
             stateRefForComponentStore.current = store
@@ -611,10 +626,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         const text = await openBoardFilePicker()
         if (text == null) return // cancelled
         try {
-            const parsed = parseImportedBoard(text)
+            const raw = parseImportedBoard(text)
+            const parsed = isPersistedRef.current ? excludeImages(raw) : raw
             if (Object.keys(parsed.components).length === 0) {
                 pendingImportRef.current = null
-                setImportError('This file has no readable board elements.')
+                setImportError(
+                    parsed.excludedImages > 0
+                        ? "This file only has images. Shared boards don't support images yet."
+                        : 'This file has no readable board elements.'
+                )
             } else {
                 pendingImportRef.current = parsed
                 setImportError(null)
@@ -655,7 +675,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (rejectIfWontFit(parsed.components)) return // stay open, show error
         setShowImportChooser(false)
         pendingImportRef.current = null
-        importAsNewCanvas(parsed)
+        // Blobs first, so image elements find their asset when they mount.
+        void restoreImageAssets(parsed.assets).then(() =>
+            importAsNewCanvas(parsed)
+        )
     }, [importAsNewCanvas, rejectIfWontFit])
 
     const handleImportMerge = useCallback(() => {
@@ -672,7 +695,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (rejectIfWontFit(projected)) return // stay open, show error
         setShowImportChooser(false)
         pendingImportRef.current = null
-        mergeImportedBoard(parsed)
+        void restoreImageAssets(parsed.assets).then(() =>
+            mergeImportedBoard(parsed)
+        )
     }, [mergeImportedBoard, rejectIfWontFit])
 
     const handleImportChooserClose = useCallback(() => {
@@ -787,6 +812,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 const baseComponentStore: ComponentStore = { ...componentStore }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 getComponentsForBoardData.components.forEach((item: any) => {
+                    // Shared boards never render images (local-mode only).
+                    if (isImageType(item.componentType)) return
                     baseComponentStore[item.id] = item as ComponentRecord
                 })
                 setComponentStore(baseComponentStore)
@@ -1012,6 +1039,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         ) {
             return
         }
+
+        // Images are local-mode only. Covers every add path (drop is already
+        // refused upstream; this catches import-merge and paste on a shared
+        // board) so an image row never reaches the DB.
+        if (isPersistedRef.current && isImageType(type)) return
 
         // Strip transient grouping coords — not part of DB schema
         const {
@@ -1459,6 +1491,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             .filter(([, comp]) => (comp as ComponentRecord)?.componentType)
             // Welcome-sketch seeds are onboarding scaffolding — never share them.
             .filter(([, comp]) => !isWelcomeComponent(comp as ComponentRecord))
+            // Images are local-mode only: their bytes live in this browser's
+            // IndexedDB, so a shared row would point at nothing. They stay in
+            // the local draft. (Once uploads land, rows with metadata.url can
+            // be let through.)
+            .filter(
+                ([, comp]) =>
+                    !isImageType((comp as ComponentRecord).componentType)
+            )
             .map(([, comp]) => {
                 const {
                     relativeX: _rX,
@@ -1995,6 +2035,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         boardId,
         isPersisted,
         persistBoard,
+        showCanvasNotice,
         backgroundBoardId,
         isPencilMode,
         isArrowDrawMode,
@@ -2199,6 +2240,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 error={importError}
                 total={pendingImportRef.current?.total}
                 skipped={pendingImportRef.current?.skipped}
+                excludedImages={pendingImportRef.current?.excludedImages}
                 onOpenAsNew={handleImportOpenAsNew}
                 onMerge={handleImportMerge}
             />
@@ -2206,6 +2248,12 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 open={showPerfWarning}
                 onClose={dismissPerfWarning}
                 message={`This board has over ${PERFORMANCE_WARNING_THRESHOLD.toLocaleString()} elements — panning, zooming and editing may feel slow.`}
+            />
+            <Toast
+                open={canvasNotice !== null}
+                onClose={dismissCanvasNotice}
+                message={canvasNotice ?? ''}
+                duration={4000}
             />
             {/* {!isPersisted && draftSizeBytes > 0 && (
                 <div

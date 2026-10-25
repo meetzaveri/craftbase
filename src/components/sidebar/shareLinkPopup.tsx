@@ -8,6 +8,29 @@ import ShareIcon from '../../assets/share-android.svg?react'
 import CopyIcon from '../../assets/copy.svg'
 import { useBoardContext } from '../../views/Board/boardContext'
 import { UPDATE_BOARD_VISIBILITY } from '../../schema/mutations'
+import { isImageType } from '../../constants/misc'
+
+// Shown first in the share dialog when the board has images: they're
+// local-mode only and get left out of the shared copy.
+const ShareImagesNote = (): ReactElement => (
+    <div
+        role="note"
+        className="mb-4 rounded-md border border-border-card border-l-4 border-l-accent-dark bg-sidebar px-4 py-3"
+    >
+        <p className="text-sm text-ink">
+            <span className="font-display font-semibold text-accent-dark">
+                Note:
+            </span>{' '}
+            <span className="font-semibold">
+                Images won't be included in the shared board.
+            </span>
+        </p>
+        <p className="mt-1 text-sm text-ink-mid">
+            Shared boards don't support images yet. Your images stay on this
+            device and remain on your canvas here.
+        </p>
+    </div>
+)
 
 const ShareLinkPopup = (): ReactElement => {
     const refNode = useRef<HTMLDivElement | null>(null)
@@ -30,9 +53,13 @@ const ShareLinkPopup = (): ReactElement => {
     // wrongly showed "Nothing to share yet" until the user touched the board.
     // Mirror persistBoard's filter (entries without componentType are skipped
     // there) so the two stay consistent.
-    const hasComponents = Object.values(stateRefForComponentStore.current).some(
-        (c) => c?.componentType
+    // Images are dropped from the shared copy (local-mode only), so they don't
+    // count as shareable content on their own.
+    const storeValues = Object.values(stateRefForComponentStore.current)
+    const hasComponents = storeValues.some(
+        (c) => c?.componentType && !isImageType(c.componentType)
     )
+    const hasImages = storeValues.some((c) => isImageType(c?.componentType))
     const [updateBoardVisibility] = useMutation(UPDATE_BOARD_VISIBILITY)
 
     useEffect(() => {
@@ -165,6 +192,7 @@ const ShareLinkPopup = (): ReactElement => {
                             <h2 className="text-lg font-semibold mb-3 font-display">
                                 Share this board
                             </h2>
+                            {hasImages && <ShareImagesNote />}
                             <p className="text-sm text-ink-mid mb-2">
                                 We'll generate a unique board link so you can
                                 share your work with others.
@@ -208,6 +236,12 @@ const ShareLinkPopup = (): ReactElement => {
                                 Before you share, please create something on the
                                 board to make it shareable.
                             </p>
+                            {hasImages && (
+                                <p className="text-sm text-ink-mid mb-4">
+                                    Images can't be shared yet, so a board with
+                                    only images has nothing to share.
+                                </p>
+                            )}
                             <div className="flex justify-end">
                                 <Button
                                     intent="primary"
