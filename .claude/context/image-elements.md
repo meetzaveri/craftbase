@@ -46,6 +46,7 @@
 - `persistBoard` filters image rows out. The local draft keeps them.
 - The shared-board load skips `image` rows.
 - `addToLocalComponentStore` refuses images when `isPersistedRef.current` is true. That catches import-merge and paste on shared boards.
+- **JSON import on a shared board** drops images right after parsing (`excludeImages` in `importBoard.ts`, called from `beginBoardImport`). The chooser says how many were left out, and an images-only file is refused with a reason. `importAsNewCanvas` writes the store directly, skipping the guard above, so it also skips images as a backstop.
 - The share modal warns when images are present (`shareLinkPopup.tsx`).
 - A drop on a shared board is accepted at `dragover` and refused in `drop` with a notice, so the user sees why.
 

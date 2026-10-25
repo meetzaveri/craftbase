@@ -10,6 +10,9 @@ const Backdrop = styled.div`
     right: 0;
     bottom: 0;
     left: 0;
+    /* Above the canvas chrome (toolbar, menu, zoom: z 10-20) so the backdrop
+       dims them too, but below toasts (50), menus (100+) and tooltips (200). */
+    z-index: 40;
     background-color: rgba(51, 51, 51, 0.3);
     backdrop-filter: blur(1px);
     opacity: 0;

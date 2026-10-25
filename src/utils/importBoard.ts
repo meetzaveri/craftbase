@@ -1,5 +1,5 @@
 import type { ComponentRecord, ComponentStore } from '../types/board'
-import { GROUP_COMPONENT } from '../constants/misc'
+import { GROUP_COMPONENT, isImageType } from '../constants/misc'
 
 export interface BoardViewport {
     scale: number
@@ -18,6 +18,8 @@ export interface ParsedImport {
     skipped: number
     /** Image bytes (assetId → data URL) from a 1.1+ export; {} when absent. */
     assets: Record<string, string>
+    /** Image records left out because the target is a shared board. */
+    excludedImages: number
 }
 
 /**
@@ -110,5 +112,26 @@ export function parseImportedBoard(text: string): ParsedImport {
         total: entries.length,
         skipped,
         assets: parseAssets(raw?.assets),
+        excludedImages: 0,
+    }
+}
+
+/**
+ * Drop image records (and their bytes) from a parsed import. Shared boards
+ * don't support images yet: they're never persisted, so an imported image
+ * would render once and vanish on refresh.
+ */
+export function excludeImages(parsed: ParsedImport): ParsedImport {
+    const components: ComponentStore = {}
+    let excluded = 0
+    Object.entries(parsed.components).forEach(([id, comp]) => {
+        if (isImageType(comp.componentType)) excluded++
+        else components[id] = comp
+    })
+    return {
+        ...parsed,
+        components,
+        assets: {},
+        excludedImages: parsed.excludedImages + excluded,
     }
 }

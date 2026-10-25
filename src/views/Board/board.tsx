@@ -44,6 +44,7 @@ import ImportBoardModal from '../../components/modals/ImportBoardModal'
 import {
     openBoardFilePicker,
     parseImportedBoard,
+    excludeImages,
 } from '../../utils/importBoard'
 import type { ParsedImport, BoardViewport } from '../../utils/importBoard'
 import { draftFitsForStore } from '../../utils/boardSizeGuard'
@@ -529,6 +530,11 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             const newLocalId = generateUUID()
             const store: ComponentStore = {}
             Object.entries(parsed.components).forEach(([id, comp]) => {
+                // Backstop for the filter in beginBoardImport: this path sets
+                // the store directly, skipping addToLocalComponentStore's
+                // shared-board image guard.
+                if (isPersistedRef.current && isImageType(comp.componentType))
+                    return
                 store[id] = { ...comp, boardId: newLocalId }
             })
             stateRefForComponentStore.current = store
@@ -620,10 +626,15 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         const text = await openBoardFilePicker()
         if (text == null) return // cancelled
         try {
-            const parsed = parseImportedBoard(text)
+            const raw = parseImportedBoard(text)
+            const parsed = isPersistedRef.current ? excludeImages(raw) : raw
             if (Object.keys(parsed.components).length === 0) {
                 pendingImportRef.current = null
-                setImportError('This file has no readable board elements.')
+                setImportError(
+                    parsed.excludedImages > 0
+                        ? "This file only has images. Shared boards don't support images yet."
+                        : 'This file has no readable board elements.'
+                )
             } else {
                 pendingImportRef.current = parsed
                 setImportError(null)
@@ -2229,6 +2240,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 error={importError}
                 total={pendingImportRef.current?.total}
                 skipped={pendingImportRef.current?.skipped}
+                excludedImages={pendingImportRef.current?.excludedImages}
                 onOpenAsNew={handleImportOpenAsNew}
                 onMerge={handleImportMerge}
             />
