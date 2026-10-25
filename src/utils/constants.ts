@@ -13,6 +13,7 @@ import EraserIcon from '../wireframeAssets/eraser.svg?react'
 
 import RightArrowIcon from '../assets/right_arrow.svg?react'
 import PanIcon from '../assets/pan.svg?react'
+import ImageIcon from '../assets/image.svg?react'
 
 import PinIcon from '../wireframeAssets/pin.svg?react'
 import PolygonIcon from '../wireframeAssets/polygon.svg?react'
@@ -257,6 +258,17 @@ export const staticPrimaryElementData: PrimarySection[] = [
                 elementIcon: PencilIcon,
                 hasDrawer: false,
                 noAction: false,
+                drawerData: [],
+            },
+            {
+                // One-shot action, not a mode: opens the file picker and
+                // inserts the picked images at the viewport center. Local mode
+                // only (hidden on shared boards, see shapesToolbar).
+                elementName: 'image',
+                elementDisplayName: 'Image',
+                elementIcon: ImageIcon,
+                hasDrawer: false,
+                noAction: true,
                 drawerData: [],
             },
             {

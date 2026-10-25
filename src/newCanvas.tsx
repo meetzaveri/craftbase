@@ -137,6 +137,7 @@ import {
 import { isSelectPanMode, isPanMode } from './utils/drawModeUtils'
 import { scheduleRender } from './utils/renderScheduler'
 import { useCanvasClipboard } from './hooks/useCanvasClipboard'
+import { useImageDrop } from './hooks/useImageDrop'
 import type { HistoryEntry } from './hooks/useComponentHistory'
 import { exportSelectionAsSvg } from './utils/exportSelectionAsSvg'
 import CanvasContextMenu from './components/canvasContextMenu'
@@ -4774,6 +4775,8 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         recordBatchToHistoryLog,
         enableTextDrawMode,
         createTextAtSurface,
+        isPersisted,
+        showCanvasNotice,
     } = useBoardContext()
 
     // addZUI's post-draw resets funnel a 'pointer' through setPointerElement.
@@ -4857,6 +4860,15 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         recordBatchToHistoryLog,
         renderGroupRef,
         stateRefForComponentStore,
+    })
+
+    useImageDrop({
+        twoJSInstance,
+        zuiInstanceRef,
+        boardId: props.boardId,
+        isPersisted,
+        addToLocalComponentStore,
+        showCanvasNotice,
     })
 
     useEffect(() => {

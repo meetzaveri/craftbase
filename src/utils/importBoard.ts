@@ -16,6 +16,8 @@ export interface ParsedImport {
     total: number
     /** Records dropped for being malformed / unknown. */
     skipped: number
+    /** Image bytes (assetId → data URL) from a 1.1+ export; {} when absent. */
+    assets: Record<string, string>
 }
 
 /**
@@ -53,6 +55,17 @@ function isValidRecord(value: unknown): value is ComponentRecord {
         Number.isFinite(r.x) &&
         Number.isFinite(r.y)
     )
+}
+
+function parseAssets(value: unknown): Record<string, string> {
+    if (!value || typeof value !== 'object') return {}
+    const out: Record<string, string> = {}
+    Object.entries(value as Record<string, unknown>).forEach(([id, url]) => {
+        if (typeof url === 'string' && url.startsWith('data:image/')) {
+            out[id] = url
+        }
+    })
+    return out
 }
 
 function isValidViewport(value: unknown): value is BoardViewport {
@@ -96,5 +109,6 @@ export function parseImportedBoard(text: string): ParsedImport {
         viewport: isValidViewport(raw?.viewport) ? raw.viewport : null,
         total: entries.length,
         skipped,
+        assets: parseAssets(raw?.assets),
     }
 }

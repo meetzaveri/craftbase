@@ -194,7 +194,7 @@ const MenuDrawer = (): ReactElement => {
                   ty: scene.translation.y,
               }
             : { scale: 1, tx: 0, ty: 0 }
-        exportBoardAsJson(stateRefForComponentStore.current, viewport)
+        void exportBoardAsJson(stateRefForComponentStore.current, viewport)
         setShowExportSubmenu(false)
         setShowMenu(false)
     }

@@ -16,6 +16,7 @@ import {
     sizedCategoryIcon,
     ERASER_SIZES,
     ERASER_DOT_PX,
+    IMAGE_COMPONENT,
     type EraserSize,
 } from '../../constants/misc'
 
@@ -108,6 +109,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         applyProperty,
         eraserSize,
         setEraserSizeInBoard,
+        isPersisted,
     } = useBoardContext()
     const { isMobile } = useMediaQueryUtils()
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
@@ -151,6 +153,8 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                 (el) =>
                     !geoObjectsEnabled || !GEO_HIDDEN_TOOLS.has(el.elementName)
             )
+            // Images are local-mode only; shared boards don't offer the tool.
+            .filter((el) => !isPersisted || el.elementName !== IMAGE_COMPONENT)
             // Geo tools (point/area/route/geoText) appear alongside the shape
             // tools only when the consumer opts in via the geoObjectsEnabled
             // Board prop.
@@ -391,6 +395,13 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                                                 ? homeTool
                                                 : element.elementName
                                         )
+                                    } else if (
+                                        element.elementName === IMAGE_COMPONENT
+                                    ) {
+                                        // One-shot file picker; the active
+                                        // tool stays as it was.
+                                        setOpenDrawer(null)
+                                        addElement(IMAGE_COMPONENT)
                                     } else {
                                         setOpenDrawer(null)
                                         if (element.elementName === 'rubber') {

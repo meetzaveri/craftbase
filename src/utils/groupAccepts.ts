@@ -50,6 +50,7 @@ export const GROUP_PROPERTY_ACCEPTS: Record<GroupPropertyKey, Set<string>> = {
         'newText',
         'geoText',
         'pencil',
+        'image',
     ]),
     // rectangle, diamond and circle all carry text the same way (see
     // applyShapeText), so a group text edit must reach every one of them.

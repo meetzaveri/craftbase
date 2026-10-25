@@ -1,6 +1,12 @@
 export const offsetHeight = 0
 export const GROUP_COMPONENT = 'groupobject'
 
+// Local-mode-only image element. Its bytes live in IndexedDB (see
+// utils/imageAssetStore.ts); shared boards strip it on share and on load.
+export const IMAGE_COMPONENT = 'image'
+export const isImageType = (type: string | null | undefined): boolean =>
+    type === IMAGE_COMPONENT
+
 // Default canvas text font (single source of truth). Kept in sync with the
 // `--font-sketch` var in App.css, the Tailwind `sketch` token, and the Google
 // Fonts <link> in index.html. Every canvas-text fallback
@@ -51,6 +57,7 @@ export const componentTypes = {
     point: 'point',
     area: 'area',
     route: 'route',
+    image: 'image',
 } as const
 
 // Geo objects (point/area/route) ride the same components_component pipeline as

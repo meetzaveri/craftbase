@@ -123,6 +123,7 @@ Reusable React UI components.
     - Arrow components: `arrowLine.tsx`, `divider.tsx`
     - Drawing: `pencil.tsx`
     - Text components: `newText.tsx`
+    - Image (local mode only): `image.tsx`
     - Other: `groupobject.tsx`
 
 - **`sidebar/`**: Left sidebar UI
@@ -304,6 +305,7 @@ See detailed notes in `.claude/context/` for feature-specific implementation det
 - `.claude/context/responsive-design.md` - When to use Tailwind responsive prefixes vs `useMediaQueryUtils` hook; breakpoint values for both; the core decision rule
 - `.claude/context/font-guide.md` - Font system: Geist (UI chrome), Fraunces (branding/headings), Caveat Brush (canvas sketch); CSS variables, Tailwind config, and usage rules per area
 - `.claude/context/reorder.md` - How reording/positioning of elements in Z-Axis (Z-order) works in craftbase
+- `.claude/context/image-elements.md` - Local-mode-only image elements: IndexedDB blob store + `metadata.assetId` reference, native `<image>` rendering, share/load stripping, export inlining
 - `.claude/context/v1-readiness-roadmap.md` - the roadmpa for v1 readiness of craftbase consisting of plan and promises of data durability, API stability and operational confidence.
 
 ## Port connectors (connectable arrows)

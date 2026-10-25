@@ -9,7 +9,7 @@ export default defineConfig({
         host: true,
         port: 5180,
         strictPort: true,
-        allowedHosts: ['10.201.40.95'],
+        allowedHosts: ['10.251.150.95'],
     },
     test: {
         globals: true,
