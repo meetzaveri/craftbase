@@ -2,6 +2,8 @@
 // stored. Large photos are downscaled so a handful of camera images doesn't
 // fill the IndexedDB quota or make the SVG renderer decode 50 MP bitmaps.
 
+import { stripImageMetadata } from './imageMetadata'
+
 export const ACCEPTED_IMAGE_TYPES = new Set([
     'image/png',
     'image/jpeg',
@@ -62,9 +64,10 @@ function canvasToBlob(
 
 /**
  * Decode, downscale (long edge ≤ 2048 px) and re-encode a dropped file.
- * Files already within the cap pass through untouched (GIFs always do, so
- * animation survives). Oversized PNGs stay PNG so transparency survives;
- * other oversized formats re-encode to WebP. Throws ImageRejectedError on
+ * Files already within the cap keep their pixels but lose their metadata
+ * (GIFs always do, so animation survives). Oversized PNGs stay PNG so
+ * transparency survives; other oversized formats re-encode to WebP. Either
+ * way, no EXIF/GPS/XMP reaches storage. Throws ImageRejectedError on
  * bad type/size/decode. `onDecoded` gets the final pixel size as soon as the
  * file is decoded, ahead of the slower re-encode, so callers can size a
  * loading placeholder.
@@ -78,26 +81,43 @@ export async function prepareImageFile(
 
     let bitmap: ImageBitmap
     try {
-        bitmap = await createImageBitmap(file)
+        // Explicit so the bitmap (and any re-encode below) is upright for
+        // photos that rely on the EXIF Orientation tag.
+        bitmap = await createImageBitmap(file, {
+            imageOrientation: 'from-image',
+        })
     } catch {
         throw new ImageRejectedError('decode')
     }
 
     const { width, height } = bitmap
     const longEdge = Math.max(width, height)
+    const oversized = file.type !== 'image/gif' && longEdge > MAX_IMAGE_EDGE_PX
 
-    if (file.type === 'image/gif' || longEdge <= MAX_IMAGE_EDGE_PX) {
-        bitmap.close()
-        onDecoded?.(width, height)
-        return {
-            blob: file,
-            mimeType: file.type,
-            naturalWidth: width,
-            naturalHeight: height,
+    // Within the cap: keep the original pixels and drop only the metadata
+    // (location, camera, timestamps). A rotated photo or a file we can't
+    // parse falls through to the re-encode, which bakes in the rotation and
+    // carries no metadata.
+    if (!oversized) {
+        const stripped = stripImageMetadata(
+            new Uint8Array(await file.arrayBuffer()),
+            file.type
+        )
+        if (stripped && stripped.orientation === 1) {
+            bitmap.close()
+            onDecoded?.(width, height)
+            return {
+                blob: new Blob([stripped.bytes as Uint8Array<ArrayBuffer>], {
+                    type: file.type,
+                }),
+                mimeType: file.type,
+                naturalWidth: width,
+                naturalHeight: height,
+            }
         }
     }
 
-    const ratio = MAX_IMAGE_EDGE_PX / longEdge
+    const ratio = oversized ? MAX_IMAGE_EDGE_PX / longEdge : 1
     const targetW = Math.round(width * ratio)
     const targetH = Math.round(height * ratio)
     onDecoded?.(targetW, targetH)
@@ -126,6 +146,18 @@ export async function prepareImageFile(
         blob = await canvasToBlob(canvas, 'image/jpeg', REENCODE_QUALITY)
     }
     if (!blob) throw new ImageRejectedError('decode')
+
+    // Safari's canvas encoder writes its own EXIF (dimensions, color space).
+    // Strip it too, so nothing stored carries metadata in any browser.
+    const reencoded = stripImageMetadata(
+        new Uint8Array(await blob.arrayBuffer()),
+        blob.type
+    )
+    if (reencoded) {
+        blob = new Blob([reencoded.bytes as Uint8Array<ArrayBuffer>], {
+            type: blob.type,
+        })
+    }
 
     return {
         blob,

@@ -20,6 +20,14 @@
 - Source resolution is `metadata.url ?? objectURL(assetId)`. A missing asset shows the dashed placeholder.
 - Group-select copies are built from the factory, so they get their own `<image>`. It auto-disposes when the copy leaves the scene. The element component owns and disposes its own node (`ownsImageNode: true`).
 
+## Photo metadata
+
+- **Stripped before storage, every format.** `src/utils/imageMetadata.ts` (`stripImageMetadata`) removes EXIF/GPS, XMP, IPTC, comments and text chunks at the byte level, without re-encoding. JPEG keeps only image data, JFIF, Adobe and ICC; PNG drops `eXIf`/`tEXt`/`zTXt`/`iTXt`/`tIME`; WebP drops `EXIF`/`XMP ` and clears their VP8X flags; GIF drops comments and app blocks except `NETSCAPE2.0`/`ANIMEXTS1.0` (looping). Bytes after end-of-image are cut (phones append depth maps with their own EXIF).
+- **Orientation.** The EXIF Orientation tag is read before stripping. A rotated photo (tag not 1) or an unparseable file goes through the canvas re-encode instead, which bakes in the rotation.
+- **Re-encoded output is stripped too.** Safari's canvas encoder writes its own EXIF into JPEG and PNG.
+- Images stored before this change keep their metadata.
+- Tests: `tests/e2e/image-metadata.spec.js`. WebKit's canvas can't encode WebP, so that fixture is skipped there.
+
 ## Loading placeholder
 
 - **Why.** A phone photo spends ~0.6 s (laptop) to a few seconds (phone) in decode, downscale and WebP re-encode before a record exists. Without feedback the drop looks ignored.

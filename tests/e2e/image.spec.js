@@ -373,44 +373,73 @@ test.describe('Image elements (local mode)', () => {
             color: '#f59e0b',
         })
 
-        // When the loader leaves the DOM, record whether the painted image
-        // is already there. That is the "no blank gap" check.
+        // The whole pipeline can finish in tens of ms (a flat-color PNG
+        // encodes fast), faster than Playwright polls. So record the loader's
+        // lifecycle with a MutationObserver and assert on the log afterwards.
         await page.evaluate(
             (sel) => {
-                window.__loaderRemoval = null
+                const log = []
+                window.__loaderLog = log
                 new MutationObserver((records) => {
                     for (const r of records) {
-                        for (const n of r.removedNodes) {
+                        for (const n of r.addedNodes) {
                             if (n.nodeType === 1 && n.matches(sel.pending)) {
-                                window.__loaderRemoval = {
+                                log.push({
+                                    event: 'added',
+                                    framed: !n
+                                        .querySelector('rect')
+                                        .hasAttribute('visibility'),
                                     imagePresent: !!document.querySelector(
                                         sel.image
                                     ),
-                                }
+                                })
+                            }
+                        }
+                        if (
+                            r.type === 'attributes' &&
+                            r.target.closest?.(sel.pending) &&
+                            !r.target.hasAttribute('visibility')
+                        ) {
+                            log.push({
+                                event: 'framed',
+                                width: r.target.getAttribute('width'),
+                                height: r.target.getAttribute('height'),
+                            })
+                        }
+                        for (const n of r.removedNodes) {
+                            if (n.nodeType === 1 && n.matches(sel.pending)) {
+                                // The "no blank gap" check: the painted
+                                // image must already be there.
+                                log.push({
+                                    event: 'removed',
+                                    imagePresent: !!document.querySelector(
+                                        sel.image
+                                    ),
+                                })
                             }
                         }
                     }
-                }).observe(document.body, { childList: true, subtree: true })
+                }).observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['visibility'],
+                })
             },
             { pending: PENDING_NODE, image: IMAGE_NODE }
         )
 
         await dropImageFile(page, png, drop)
-
-        // Shown at the drop point right away, then framed at the final size
-        // (3000x2000 fits to 480x320) before the record exists.
-        const loader = page.locator(PENDING_NODE)
-        await expect(loader).toHaveCount(1)
-        const frame = loader.locator('rect')
-        await expect(frame).not.toHaveAttribute('visibility', 'hidden')
-        await expect(frame).toHaveAttribute('width', '480')
-        await expect(frame).toHaveAttribute('height', '320')
-
         await waitForImageElement(page)
-        await expect(loader).toHaveCount(0)
-        expect(await page.evaluate(() => window.__loaderRemoval)).toEqual({
-            imagePresent: true,
-        })
+        await expect(page.locator(PENDING_NODE)).toHaveCount(0)
+
+        // Spinner first (no frame, no image yet), then the frame at the final
+        // size (3000x2000 fits to 480x320), then removal once painted.
+        expect(await page.evaluate(() => window.__loaderLog)).toEqual([
+            { event: 'added', framed: false, imagePresent: false },
+            { event: 'framed', width: '480', height: '320' },
+            { event: 'removed', imagePresent: true },
+        ])
     })
 
     test('a file that fails to decode removes its loader and says why', async ({
