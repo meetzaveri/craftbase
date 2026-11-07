@@ -17,6 +17,11 @@ concurrency:
 
 jobs:
     e2e-deploy-preview:
+        # `playwright install --with-deps` only knows the distros its version
+        # was released against. If ubuntu-latest moves to a release this fails
+        # on ("Playwright does not support chromium on ubuntuXX.XX"), upgrade
+        # @playwright/test first (1.62 added 26.04), then pin if none supports
+        # it yet.
         runs-on: ubuntu-latest
         name: e2e-deploy-preview
         if: github.event.pull_request.draft == false
