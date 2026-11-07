@@ -30,7 +30,7 @@ I work on this mostly on weekends. So expect the occasional bug. If you hit one,
 
 ## Use it in your React app
 
-Craftbase is also an npm package. You can embed the whiteboard in your own React app with the `<Craftbase />` component.
+Craftbase is also shipped as an npm package. You can embed the whiteboard in your own React app with the `<Craftbase />` component.
 
 ```sh
 npm install craftbase
