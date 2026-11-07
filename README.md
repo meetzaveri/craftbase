@@ -1,5 +1,7 @@
 # Craftbase
 
+[![npm version](https://img.shields.io/npm/v/craftbase)](https://www.npmjs.com/package/craftbase)
+
 Craftbase is a minimal online whiteboard. You open it and start drawing. There is no signup and no setup.
 
 **Try it:** [craftbase.org](https://craftbase.org)

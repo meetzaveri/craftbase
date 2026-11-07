@@ -7,6 +7,24 @@
         <priority>1.0</priority>
     </url>
     <url>
+        <loc>http://www.craftbase.org/</loc>
+        <lastmod>2026-06-14</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://www.craftbase.org/</loc>
+        <lastmod>2026-06-14</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>http://www.craftbase.org/</loc>
+        <lastmod>2026-06-14</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
         <loc>https://craftbase.org/home</loc>
         <lastmod>2026-06-14</lastmod>
         <changefreq>monthly</changefreq>
