@@ -7,6 +7,7 @@ import {
     DEFAULT_POINT_CATEGORY,
     sizedCategoryIcon,
 } from '../../constants/misc'
+import { getCanvasOrigin } from '../../utils/embedRoot'
 
 // Display-only tooltip card for the currently-selected point (the HTML
 // "tooltip card" variant). Content comes from `metadata.tooltip`; editing is a
@@ -57,11 +58,13 @@ function PointTooltip(): ReactElement | null {
             )
             if (el) {
                 const r = el.getBoundingClientRect()
+                // Box-local: the tooltip is `fixed` inside the canvas box.
+                const o = getCanvasOrigin()
                 const next: Box = {
-                    left: r.left,
-                    top: r.top,
+                    left: r.left - o.left,
+                    top: r.top - o.top,
                     width: r.width,
-                    bottom: r.bottom,
+                    bottom: r.bottom - o.top,
                 }
                 const prev = lastBoxRef.current
                 // Only re-render when the pin actually moved (sub-pixel jitter

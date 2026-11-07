@@ -24,6 +24,10 @@ import {
     IMAGE_COMPONENT,
     isCurvedPathType,
     type CurvedPathType,
+    USER_ID_KEY,
+    ARROW_DRAW_MODE_KEY,
+    PENDING_SHAPE_TYPE_KEY,
+    PENDING_SHAPE_PROPS_KEY,
 } from '../../constants/misc'
 
 import './sidebar.css'
@@ -32,6 +36,7 @@ import { requestImageInsert } from '../../hooks/useImageDrop'
 import ShareLinkPopup from './shareLinkPopup'
 import ThemeSwitcher from './themeSwitcher'
 import MenuDrawer from './menuDrawer'
+import { cbStorage } from '../../utils/storage'
 
 const DRAW_SHAPE_TYPES = ['circle', 'rectangle', 'diamond']
 
@@ -68,12 +73,14 @@ const PrimarySidebar = (): ReactElement => {
         defaultFill,
         defaultStrokeColor,
         defaultTextFontFamily,
+        features,
+        imagesEnabled,
     } = useBoardContext()
     const [hintText, setHintText] = useState(
         'Click anywhere to place element there.'
     )
     const { loading: getComponentTypesLoading, data: getComponentTypesData } =
-        useQuery(GET_COMPONENT_TYPES)
+        useQuery(GET_COMPONENT_TYPES, { skip: !features.network })
 
     // Verify component-type seeds are present.
     useEffect(() => {
@@ -111,7 +118,7 @@ const PrimarySidebar = (): ReactElement => {
         if (getComponentTypesData) {
             getComponentTypesData.componentTypes.forEach((item) => {
                 if (item.label === label) {
-                    const userId = localStorage.getItem('userId')
+                    const userId = cbStorage.getItem(USER_ID_KEY)
                     shapeData = {
                         id: generateId,
                         componentType: label,
@@ -151,7 +158,7 @@ const PrimarySidebar = (): ReactElement => {
 
         // Fallback when the Hasura catalog isn't reachable.
         if (!shapeData && FALLBACK_CATALOG[label]) {
-            const userId = localStorage.getItem('userId')
+            const userId = cbStorage.getItem(USER_ID_KEY)
             const fb = FALLBACK_CATALOG[label]
             shapeData = {
                 id: generateId,
@@ -191,8 +198,8 @@ const PrimarySidebar = (): ReactElement => {
         updateLastAddedElement(shapeData)
         const root = document.getElementById('main-two-root')
         if (root) root.style.cursor = 'crosshair'
-        localStorage.setItem('arrowDrawMode', 'true')
-        localStorage.setItem('lastAddedElementId', generateId)
+        cbStorage.setItem(ARROW_DRAW_MODE_KEY, 'true')
+        cbStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, generateId)
         setArrowDrawModeInBoard(true)
         addToLocalComponentStore(
             (shapeData as ComponentRecord).id,
@@ -226,7 +233,7 @@ const PrimarySidebar = (): ReactElement => {
         togglePencilMode(false)
         togglePointer(false)
 
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         const generateId = generateUUID()
         const geoDef = GEO_TYPE_DEFAULTS.point
         // Category is chosen up front from the point drawer (defaults to the
@@ -272,8 +279,8 @@ const PrimarySidebar = (): ReactElement => {
         }
 
         updateLastAddedElement(shapeData)
-        localStorage.setItem(GEO_POINT_PLACE_MODE_KEY, 'true')
-        localStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, generateId)
+        cbStorage.setItem(GEO_POINT_PLACE_MODE_KEY, 'true')
+        cbStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, generateId)
         addToLocalComponentStore(
             shapeData.id,
             shapeData.componentType,
@@ -307,12 +314,12 @@ const PrimarySidebar = (): ReactElement => {
             boardId,
             boardName: null,
             textColor: null,
-            updatedBy: localStorage.getItem('userId'),
+            updatedBy: cbStorage.getItem(USER_ID_KEY),
         }
 
-        localStorage.setItem(GEO_DRAW_MODE_KEY, 'true')
-        localStorage.setItem(GEO_DRAW_TYPE_KEY, label)
-        localStorage.setItem(GEO_DRAW_PROPS_KEY, JSON.stringify(baseProps))
+        cbStorage.setItem(GEO_DRAW_MODE_KEY, 'true')
+        cbStorage.setItem(GEO_DRAW_TYPE_KEY, label)
+        cbStorage.setItem(GEO_DRAW_PROPS_KEY, JSON.stringify(baseProps))
         const root = document.getElementById('main-two-root')
         if (root) root.style.cursor = 'crosshair'
 
@@ -335,6 +342,7 @@ const PrimarySidebar = (): ReactElement => {
         // the canvas (useImageDrop places them at the viewport center), and
         // leave the active tool alone.
         if (label === IMAGE_COMPONENT) {
+            if (!imagesEnabled) return
             prefetchElementModule(IMAGE_COMPONENT)
             void openImageFilePicker().then((files) => {
                 if (files.length > 0) requestImageInsert(files)
@@ -427,7 +435,7 @@ const PrimarySidebar = (): ReactElement => {
                 if (getComponentTypesData) {
                     getComponentTypesData.componentTypes.forEach((item) => {
                         if (item.label === label) {
-                            const userId = localStorage.getItem('userId')
+                            const userId = cbStorage.getItem(USER_ID_KEY)
                             const useShapeFill =
                                 DRAW_SHAPE_TYPES.includes(label)
                             shapeData = {
@@ -482,7 +490,7 @@ const PrimarySidebar = (): ReactElement => {
                 // seed this label. Lets craftbase work standalone as a
                 // library without a Hasura backend.
                 if (!shapeData && FALLBACK_CATALOG[label]) {
-                    const userId = localStorage.getItem('userId')
+                    const userId = cbStorage.getItem(USER_ID_KEY)
                     const fb = FALLBACK_CATALOG[label]
                     const useShapeFill = DRAW_SHAPE_TYPES.includes(label)
                     shapeData = {
@@ -528,16 +536,16 @@ const PrimarySidebar = (): ReactElement => {
 
                 if (DRAW_SHAPE_TYPES.includes(label)) {
                     // Draw-to-place: store pending shape props, canvas creates on mouseup
-                    localStorage.setItem('pendingShapeType', label)
-                    localStorage.setItem(
-                        'pendingShapeProps',
+                    cbStorage.setItem(PENDING_SHAPE_TYPE_KEY, label)
+                    cbStorage.setItem(
+                        PENDING_SHAPE_PROPS_KEY,
                         JSON.stringify(shapeData)
                     )
                     const root = document.getElementById('main-two-root')
                     if (root) root.style.cursor = 'crosshair'
                 } else {
                     updateLastAddedElement(shapeData)
-                    localStorage.setItem('lastAddedElementId', generateId)
+                    cbStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, generateId)
                     addToLocalComponentStore(
                         (shapeData as ComponentRecord).id,
                         (shapeData as ComponentRecord).componentType,
@@ -634,8 +642,8 @@ const PrimarySidebar = (): ReactElement => {
                     </div>
                 )}
 
-                {!isMobile && <ThemeSwitcher />}
-                {!isMobile && <ShareLinkPopup />}
+                {!isMobile && features.themeSwitcher && <ThemeSwitcher />}
+                {!isMobile && features.share && <ShareLinkPopup />}
             </div>
         </>
     )

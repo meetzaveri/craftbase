@@ -24,6 +24,7 @@ import {
     collectImageAssetIds,
     pruneImageAssets,
 } from '../utils/imageAssetStore'
+import { cbStorage } from '../utils/storage'
 
 export interface LocalDraftPersistenceOptions {
     isPersisted: boolean
@@ -47,6 +48,18 @@ export interface LocalDraftPersistenceOptions {
      * toolbar instead of the top-center one and drops the zoom arrow.
      */
     isMobile?: boolean
+    /**
+     * Embed: components the host handed in via `initialData`. When defined
+     * (even empty) it wins over the stored draft and the welcome sketch.
+     */
+    initialComponents?: ComponentStore
+    /** False skips IndexedDB image-asset pruning (npm embed has no images). */
+    imagesEnabled?: boolean
+    /**
+     * Embed: "start fresh" resets the canvas in place instead of navigating
+     * the host page to `/`.
+     */
+    embedded?: boolean
 }
 
 export interface LocalDraftPersistenceApi {
@@ -82,6 +95,9 @@ export function useLocalDraftPersistence({
     onDraftOverBudgetRef,
     welcomeSketch,
     isMobile,
+    initialComponents,
+    imagesEnabled = true,
+    embedded = false,
 }: LocalDraftPersistenceOptions): LocalDraftPersistenceApi {
     const [showStorageLimitModal, setShowStorageLimitModal] = useState(false)
     const [draftSizeBytes, setDraftSizeBytes] = useState(0)
@@ -99,7 +115,20 @@ export function useLocalDraftPersistence({
     useEffect(() => {
         if (isPersisted) return
 
-        const savedBgBoardId = localStorage.getItem(BACKGROUND_BOARD_STORAGE_KEY)
+        // Host-supplied document (embed). Skips the draft and welcome sketch.
+        if (initialComponents !== undefined) {
+            const safeComponents = Object.fromEntries(
+                Object.entries(initialComponents).filter(
+                    ([, v]) => v?.componentType !== GROUP_COMPONENT
+                )
+            ) as ComponentStore
+            if (Object.keys(safeComponents).length > 0) {
+                setComponentStore(safeComponents)
+            }
+            return
+        }
+
+        const savedBgBoardId = cbStorage.getItem(BACKGROUND_BOARD_STORAGE_KEY)
         if (savedBgBoardId) {
             backgroundBoardIdRef.current = savedBgBoardId
             setBackgroundBoardId(savedBgBoardId)
@@ -112,7 +141,7 @@ export function useLocalDraftPersistence({
         // parsed), so nothing is pruned out from under it.
         let referencedAssetIds: Set<string> | null = new Set()
         try {
-            const draft = localStorage.getItem(DRAFT_STORAGE_KEY)
+            const draft = cbStorage.getItem(DRAFT_STORAGE_KEY)
             if (draft) {
                 // Load-side guard FIRST, on the raw string — before any parse.
                 // Parsing + rebuilding a multi-MB object graph is itself heavy
@@ -143,19 +172,21 @@ export function useLocalDraftPersistence({
                                 collectImageAssetIds(safeComponents)
                         }
                     } else {
-                        localStorage.removeItem(DRAFT_STORAGE_KEY)
-                        localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
+                        cbStorage.removeItem(DRAFT_STORAGE_KEY)
+                        cbStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
                     }
                 }
             }
         } catch {
-            localStorage.removeItem(DRAFT_STORAGE_KEY)
-            localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
+            cbStorage.removeItem(DRAFT_STORAGE_KEY)
+            cbStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
         }
 
         // Pruning only happens here, on load, never on delete: undo has to be
         // able to bring a deleted image back within the session.
-        if (referencedAssetIds) void pruneImageAssets(referencedAssetIds)
+        if (referencedAssetIds && imagesEnabled) {
+            void pruneImageAssets(referencedAssetIds)
+        }
 
         // First-visit welcome seed: only when opt-in flag is set, no draft was
         // restored, and the user has not previously dismissed the sketch on
@@ -163,7 +194,7 @@ export function useLocalDraftPersistence({
         if (
             welcomeSketch &&
             !restoredDraft &&
-            !localStorage.getItem(WELCOME_DISMISSED_KEY)
+            !cbStorage.getItem(WELCOME_DISMISSED_KEY)
         ) {
             setComponentStore(
                 buildWelcomeSketch(localBoardId, {
@@ -194,7 +225,7 @@ export function useLocalDraftPersistence({
                     )
                 ) as ComponentStore
                 if (Object.keys(componentsToSave).length === 0) return
-                localStorage.setItem(
+                cbStorage.setItem(
                     DRAFT_STORAGE_KEY,
                     JSON.stringify({
                         boardId: localBoardId,
@@ -250,9 +281,13 @@ export function useLocalDraftPersistence({
     }, [componentStore, isPersisted])
 
     const handleStartNewCanvas = (): void => {
-        localStorage.removeItem(DRAFT_STORAGE_KEY)
+        cbStorage.removeItem(DRAFT_STORAGE_KEY)
         setShowStorageLimitModal(false)
         setStorageLimitBoardUrl(null)
+        if (embedded) {
+            setComponentStore({})
+            return
+        }
         window.location.href = '/'
     }
 
@@ -271,9 +306,13 @@ export function useLocalDraftPersistence({
     }
 
     const handleStartFreshFromTooLarge = (): void => {
-        localStorage.removeItem(DRAFT_STORAGE_KEY)
+        cbStorage.removeItem(DRAFT_STORAGE_KEY)
         deferredRawDraftRef.current = null
         setShowBoardTooLargeModal(false)
+        if (embedded) {
+            setComponentStore({})
+            return
+        }
         window.location.href = '/'
     }
 

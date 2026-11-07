@@ -14,6 +14,7 @@ import {
     ERASER_SIZES,
     type EraserSize,
 } from '../constants/misc'
+import { cbStorage } from '../utils/storage'
 
 // Toggle helpers accept an optional options bag that lets the caller plug
 // in the surrounding board state (selection clear, pending-element cancel,
@@ -67,21 +68,21 @@ export function useDrawingModes(): DrawingModesApi {
     const [isTextDrawMode, setIsTextDrawMode] = useState(false)
     const [isRubberMode, setIsRubberMode] = useState<boolean>(() => {
         try {
-            return localStorage.getItem(RUBBER_MODE_KEY) === 'true'
+            return cbStorage.getItem(RUBBER_MODE_KEY) === 'true'
         } catch {
             return false
         }
     })
     const [isPanMode, setPanMode] = useState<boolean>(() => {
         try {
-            return localStorage.getItem(PAN_MODE_KEY) === 'true'
+            return cbStorage.getItem(PAN_MODE_KEY) === 'true'
         } catch {
             return false
         }
     })
     const [eraserSize, setEraserSize] = useState<EraserSize>(() => {
         try {
-            const stored = localStorage.getItem(ERASER_SIZE_KEY)
+            const stored = cbStorage.getItem(ERASER_SIZE_KEY)
             return (ERASER_SIZES as string[]).includes(stored ?? '')
                 ? (stored as EraserSize)
                 : DEFAULT_ERASER_SIZE
@@ -103,8 +104,8 @@ export function useDrawingModes(): DrawingModesApi {
             setIsRubberMode(false)
             setPanMode(false)
             try {
-                localStorage.removeItem(RUBBER_MODE_KEY)
-                localStorage.removeItem(PAN_MODE_KEY)
+                cbStorage.removeItem(RUBBER_MODE_KEY)
+                cbStorage.removeItem(PAN_MODE_KEY)
             } catch {
                 /* noop */
             }
@@ -124,16 +125,16 @@ export function useDrawingModes(): DrawingModesApi {
             setIsRubberMode(false)
             setPanMode(false)
             try {
-                localStorage.removeItem(RUBBER_MODE_KEY)
-                localStorage.removeItem(PAN_MODE_KEY)
+                cbStorage.removeItem(RUBBER_MODE_KEY)
+                cbStorage.removeItem(PAN_MODE_KEY)
             } catch {
                 /* noop */
             }
-            localStorage.setItem(PENCIL_MODE_KEY, 'TRUE')
+            cbStorage.setItem(PENCIL_MODE_KEY, 'TRUE')
             const el = document.getElementById('main-two-root')
             if (el) el.style.cursor = 'crosshair'
         } else {
-            localStorage.removeItem(PENCIL_MODE_KEY)
+            cbStorage.removeItem(PENCIL_MODE_KEY)
         }
     }
 
@@ -150,13 +151,13 @@ export function useDrawingModes(): DrawingModesApi {
             setPencilMode(false)
             setIsRubberMode(false)
             try {
-                localStorage.setItem(PAN_MODE_KEY, 'true')
-                localStorage.removeItem(PENCIL_MODE_KEY)
-                localStorage.removeItem(RUBBER_MODE_KEY)
-                localStorage.removeItem(ARROW_DRAW_MODE_KEY)
-                localStorage.removeItem(TEXT_DRAW_MODE_KEY)
-                localStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
-                localStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
+                cbStorage.setItem(PAN_MODE_KEY, 'true')
+                cbStorage.removeItem(PENCIL_MODE_KEY)
+                cbStorage.removeItem(RUBBER_MODE_KEY)
+                cbStorage.removeItem(ARROW_DRAW_MODE_KEY)
+                cbStorage.removeItem(TEXT_DRAW_MODE_KEY)
+                cbStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
+                cbStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
             } catch {
                 /* noop */
             }
@@ -169,7 +170,7 @@ export function useDrawingModes(): DrawingModesApi {
             }
         } else {
             try {
-                localStorage.removeItem(PAN_MODE_KEY)
+                cbStorage.removeItem(PAN_MODE_KEY)
             } catch {
                 /* noop */
             }
@@ -182,15 +183,15 @@ export function useDrawingModes(): DrawingModesApi {
         if (val) {
             setPanMode(false)
             try {
-                localStorage.removeItem(PAN_MODE_KEY)
+                cbStorage.removeItem(PAN_MODE_KEY)
             } catch {
                 /* noop */
             }
-            localStorage.setItem(RUBBER_MODE_KEY, 'true')
+            cbStorage.setItem(RUBBER_MODE_KEY, 'true')
             const el = document.getElementById('main-two-root')
             if (el) el.style.cursor = 'crosshair'
         } else {
-            localStorage.removeItem(RUBBER_MODE_KEY)
+            cbStorage.removeItem(RUBBER_MODE_KEY)
             const el = document.getElementById('main-two-root')
             if (el) el.style.cursor = 'default'
         }
@@ -199,7 +200,7 @@ export function useDrawingModes(): DrawingModesApi {
     const setEraserSizeInBoard = (val: EraserSize): void => {
         setEraserSize(val)
         try {
-            localStorage.setItem(ERASER_SIZE_KEY, val)
+            cbStorage.setItem(ERASER_SIZE_KEY, val)
         } catch {
             /* noop */
         }
@@ -223,13 +224,13 @@ export function useDrawingModes(): DrawingModesApi {
     }, [isPencilMode, isArrowDrawMode, isRubberMode, isPanMode])
 
     const clearDrawModesFromStorage = (): void => {
-        localStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
-        localStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
-        localStorage.removeItem(ARROW_DRAW_MODE_KEY)
-        localStorage.removeItem(TEXT_DRAW_MODE_KEY)
-        localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
-        localStorage.removeItem(RUBBER_MODE_KEY)
-        localStorage.removeItem(PAN_MODE_KEY)
+        cbStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
+        cbStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
+        cbStorage.removeItem(ARROW_DRAW_MODE_KEY)
+        cbStorage.removeItem(TEXT_DRAW_MODE_KEY)
+        cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+        cbStorage.removeItem(RUBBER_MODE_KEY)
+        cbStorage.removeItem(PAN_MODE_KEY)
         setIsRubberMode(false)
         setPanMode(false)
     }

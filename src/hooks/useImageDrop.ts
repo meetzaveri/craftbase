@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import { IMAGE_COMPONENT } from '../constants/misc'
+import {
+    IMAGE_COMPONENT,
+    USER_ID_KEY,
+} from '../constants/misc'
 import { generateUUID } from '../utils/misc'
 import { putImageAsset } from '../utils/imageAssetStore'
 import {
@@ -16,6 +19,7 @@ import { createPendingImageNode } from '../utils/imagePendingNode'
 import type { PendingImageNode } from '../utils/imagePendingNode'
 import { prefetchElementModule } from '../elementModules'
 import type { ComponentRecord } from '../types/board'
+import { cbStorage } from '../utils/storage'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TwoLike = any
@@ -58,6 +62,11 @@ export interface ImageDropOptions {
         skipHistory?: boolean
     ) => void
     showCanvasNotice: (message: string) => void
+    /**
+     * False in the npm embed: no drop/insert listeners bind at all, so the
+     * host page's own drag-and-drop is never intercepted. Read once at mount.
+     */
+    enabled?: boolean
 }
 
 const REJECT_MESSAGES: Record<ImageRejectedError['reason'], string> = {
@@ -82,6 +91,7 @@ export function useImageDrop(options: ImageDropOptions): void {
     optionsRef.current = options
 
     useEffect(() => {
+        if (optionsRef.current.enabled === false) return
         const root = document.getElementById('main-two-root')
         if (!root) return
 
@@ -173,7 +183,7 @@ export function useImageDrop(options: ImageDropOptions): void {
                 boardId,
                 children: {},
                 metadata,
-                updatedBy: localStorage.getItem('userId'),
+                updatedBy: cbStorage.getItem(USER_ID_KEY),
             } as unknown as ComponentRecord
             handOffPending(id, pending)
             addToLocalComponentStore(id, IMAGE_COMPONENT, record)

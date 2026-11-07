@@ -15,25 +15,34 @@ For example:
 - Refactor code as you go to keep code clean
 - Keep file sizes small and put helper functions and components in their own files.
 
-# Craftbase as a reusable dependency
+# Craftbase as an npm package (`<Craftbase />`)
 
-**Craftbase is consumed as a library by other apps.** The first such consumer is `craftmaps` (sibling repo at `../craftmaps`), which imports craftbase via `"craftbase": "link:../craftbase"` and treats the `Board` as a generic whiteboarding canvas mounted behind a Mapbox basemap. More consumers are expected over time, so treat craftbase's surface as a **generic, embeddable whiteboard** — not a standalone app exclusive to its own `views/Board` route.
+Craftbase is a standalone app **and** an embeddable npm package (`craftbase`). The package exports one component, `<Craftbase />` (`src/embed/Craftbase.tsx`), from `src/lib.ts`. It wraps the same `Board` with the embed feature gates. `src/lib.ts` is the public surface, so keep it small and don't break it.
 
-## Implications when editing craftbase
+## Embed vs app: one gate
 
-- **Keep `Board` generic.** Don't bake in assumptions about the host app (no map concepts, no consumer-specific UI, no hard-coded routes/branding inside reusable components). If a feature is consumer-specific, it belongs in the consumer, not here.
-- **The public surface lives in `src/lib.ts`.** Anything a consumer needs (`Board`, `BoardContext`, `useBoardContext`, hooks, bootstrap helpers like `INSERT_USER_ONE`, `generateRandomUsernames`) must be exported there. Adding a new consumer-facing API? Export it from `lib.ts` and avoid breaking existing exports.
-- **Extension points over forks.** When a consumer needs to customize behavior, prefer adding an **optional prop on `Board`** (default-free, no-op when omitted) rather than letting them fork. Existing examples used by craftmaps:
-    - `onCameraChange({ scale, tx, ty })` — fires on ZUI camera updates (wired via `useRef` inside `addZUI` to dodge the stale-closure trap documented below).
-    - `renderBackground={() => <JSX />}` — render slot mounted between `#selector-rect` and `#main-two-root` for the consumer's background layer.
-    - `scaleToDisplay(scale) → string` — overrides the zoom-readout in `ZoomControls` (read from `BoardContext`).
-- **Craftbase ships `.ts`/`.tsx` source files.** Consumers must configure their bundler to handle TypeScript from `node_modules/craftbase/src/...` (craftmaps' vite glob needs to include `node_modules/craftbase/src/**/*.{ts,tsx}` and keep `craftbase` in `optimizeDeps.exclude`). The previous JSX-in-`.js` contract was retired as part of the TypeScript migration — consumers need to update their bundler config on next reload.
-- **Tailwind classes must survive consumer purging.** Consumers add `./node_modules/craftbase/src/**/*.{ts,tsx}` to their tailwind `content`. Stick to standard utility classes; avoid dynamically composed class names that purge can't see.
-- **`link:` symlink, not `file:` copy.** Edits in `craftbase/src` are picked up live in craftmaps' dev server with no reinstall. Behavior changes here ship to consumers immediately on their next dev reload — be mindful when changing existing prop shapes or context values.
+- `BoardFeatures` (`src/embed/embedConfig.ts`) is the only switch: `share`, `themeSwitcher`, `menuItems` (`'clearOnly'` in the embed), `images`, `network`. Read it as `features` from `useBoardContext()`, or `imagesEnabled` for images. Put new embed-vs-app differences there, not in scattered `isEmbedded` checks.
+- `Board` takes `boardId` as a prop. It never reads the router, so the embed needs no `<Router>`. The `/board/:id` route passes it in `App.tsx`.
+- The embed wraps Board in an offline `ApolloProvider` (`src/embed/offlineApolloClient.ts`). Every network path must also be gated by `features.network`.
+- Embed-only Board props: `initialData`, `onChange` (whole document on every store change), `apiRef` (`load` / `clear` / `getData`).
 
-## When in doubt
+## Rules for all code (both modes)
 
-If a change feels consumer-specific (map glue, geocoding, basemap controls, anything tying behavior to a specific host), it belongs in the consumer repo. Open an extension point in `Board` if the consumer needs a hook into craftbase, and keep craftbase ignorant of the consumer's domain.
+- **Never call `localStorage` directly.** Use `cbStorage` (`src/utils/storage.ts`). In the embed it runs in memory until the user consents (`src/embed/storageConsent.ts`), and a `storageKey` is added as a suffix (`craftbase_local_draft__notes`).
+- **Every storage key starts with `craftbase_`** and is a constant in `src/constants/misc.ts`. Never use a bare string key. Renaming a key? Add the old → new pair to `src/utils/legacyStorageKeys.ts` (one-time startup migration for app users).
+- **Never read the theme from `<html>`.** Use `isDarkTheme()` / `getThemeRoot()` (`src/utils/embedRoot.ts`). In the embed, the `dark` class and the CSS variables live on the `.cb-embed` root.
+- **Overlays placed from `clientX/clientY` or `getBoundingClientRect()`** (textareas, menus, tooltips, drawers) must subtract `getCanvasOrigin()`. Window-size reads use `getCanvasSize()`. Both are no-ops in the app. Coordinates that go through ZUI `clientToSurface` / `zoomBy` are already correct.
+- **New window-level `keydown` handlers** must start with `if (isForeignEvent(e)) return`, so the embed doesn't take keys from the host page's inputs.
+- **CSS:** the library build scopes every selector under `.cb-embed` (postcss-prefix-selector in `vite.lib.config.mts`). Plain Tailwind and App.css work unchanged. Don't rely on styles outside the board's DOM.
+- Portals mount in `getPortalRoot()`, which is the embed root in the embed and `document.body` in the app.
+- **Mount effects must be StrictMode-safe.** Host apps usually run React StrictMode, which mounts → unmounts → remounts in development. Anything a mount effect creates (Two.js instance and its `<svg>`, window listeners, observers, rAF loops, controllers) must be fully torn down in its cleanup. Canvas teardown lives in the mount effect's cleanup in `newCanvas.tsx` (`dispose*` helpers returned by `addZUI`).
+
+## Build and release
+
+- `yarn build:lib` builds `dist-lib/` (ESM + `style.css` + types pruned to the public graph, manifest generated from `VERSION`). `yarn check:lib` fails on leaked backend config, a version mismatch, or public types importing anything but React. `yarn pack:lib` makes a tarball in `dist-pack/`.
+- `yarn publish:npm [--dry-run] [--tag next]` publishes from a machine. CI: `.github/workflows/npm-package-check.yml` (PRs) and `npm-publish.yml` (on GitHub Release publish, needs the `NPM_TOKEN` secret).
+- Test host app: `../test-craftbase-npm-package` (installs the packed tarball: `npm run reinstall:craftbase`).
+- Limits (v1): one board per page (fixed DOM ids, module-level storage/root), no images, no sharing.
 
 # Code structure
 

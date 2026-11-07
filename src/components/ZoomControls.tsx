@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { useBoardContext } from '../views/Board/boardContext'
 import ZoomInIcon from '../assets/zoom-in.svg?react'
 import ZoomOutIcon from '../assets/zoom-out.svg?react'
+import { getCanvasOrigin, getCanvasSize } from '../utils/embedRoot'
 
 type ZuiWrapperLike = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +33,10 @@ const ZoomControls = (): ReactElement => {
 
     const zoom = (delta: number): void => {
         if (!zui || !twoJSInstance) return
-        zui.zui.zoomBy(delta, window.innerWidth / 2, window.innerHeight / 2)
+        // zoomBy takes client coords: zoom about the canvas box's center.
+        const o = getCanvasOrigin()
+        const size = getCanvasSize()
+        zui.zui.zoomBy(delta, o.left + size.width / 2, o.top + size.height / 2)
         twoJSInstance.update()
         zui.syncBackgroundToCamera?.()
         window.dispatchEvent(

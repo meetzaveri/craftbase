@@ -59,6 +59,8 @@ import {
     type EraserSize,
     isCurvedPathType,
     type CurvedPathType,
+    USER_ID_KEY,
+    TABS_OPEN_KEY_PREFIX,
 } from './constants/misc'
 import { createEraserTrail } from './utils/eraserTrail'
 import Spinner from './components/common/spinner'
@@ -154,6 +156,8 @@ import type {
     SelectedComponent,
     CurrentElement,
 } from './types/board'
+import { cbStorage } from './utils/storage'
+import { isDarkTheme, getThemeRoot, toCanvasLocal, getCanvasOrigin, isForeignEvent } from './utils/embedRoot'
 
 /**
  * One lazy component per element *type*, not per element.
@@ -728,9 +732,9 @@ function addZUI(
         geoDrawType = null
         geoDrawProps = null
         geoVertices = []
-        localStorage.removeItem(GEO_DRAW_MODE_KEY)
-        localStorage.removeItem(GEO_DRAW_TYPE_KEY)
-        localStorage.removeItem(GEO_DRAW_PROPS_KEY)
+        cbStorage.removeItem(GEO_DRAW_MODE_KEY)
+        cbStorage.removeItem(GEO_DRAW_TYPE_KEY)
+        cbStorage.removeItem(GEO_DRAW_PROPS_KEY)
         domElement.removeEventListener('mousemove', mousemove, false)
     }
 
@@ -825,7 +829,21 @@ function addZUI(
         setPointerElement('pointer', { select: true })
     }
 
-    window.addEventListener('cancelGeoDraw', () => {
+    // Window listeners bound for the canvas's lifetime. Tracked so the Canvas
+    // unmount can remove them (an embed host may mount/unmount the board).
+    const windowListeners: Array<
+        [string, EventListener, boolean | AddEventListenerOptions | undefined]
+    > = []
+    const onWindow = (
+        type: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        listener: (e: any) => void,
+        options?: boolean | AddEventListenerOptions
+    ): void => {
+        window.addEventListener(type, listener as EventListener, options)
+        windowListeners.push([type, listener as EventListener, options])
+    }
+    onWindow('cancelGeoDraw', () => {
         // Not gated on geoDrawType: the multi-click hint banner is shown as
         // soon as the tool is ARMED (handleMultiClickDraw writes
         // GEO_DRAW_TYPE_KEY to localStorage), but geoDrawType itself is only
@@ -839,11 +857,12 @@ function addZUI(
 
     // Mobile ✓ button (board.tsx) — finish the in-progress multi-click draw,
     // the touch equivalent of pressing Enter (no keyboard on mobile).
-    window.addEventListener('finishGeoDraw', () => {
+    onWindow('finishGeoDraw', () => {
         if (geoDrawType) finishGeoDraw({})
     })
 
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
+    onWindow('keydown', (e: KeyboardEvent) => {
+        if (isForeignEvent(e)) return
         if (!geoDrawType) return
         if (e.key === 'Enter' || e.key === 'Escape') {
             e.preventDefault()
@@ -893,6 +912,7 @@ function addZUI(
     // delete path, so wire one here. Scoped to `curvedLine` to avoid
     // double-deleting the arrow/line that already handle their own key.
     const onCurvedLineDeleteKeyDown = (e: KeyboardEvent): void => {
+        if (isForeignEvent(e)) return
         if (e.keyCode !== 8 && e.keyCode !== 46) return
         const tag = document.activeElement?.tagName
         if (tag === 'INPUT' || tag === 'TEXTAREA') return
@@ -912,7 +932,7 @@ function addZUI(
         lastSelectedShape = null
         setSelectedComponentInBoard(null)
     }
-    window.addEventListener('keydown', onCurvedLineDeleteKeyDown, false)
+    onWindow('keydown', onCurvedLineDeleteKeyDown, false)
 
     // An element can leave the scene without the selection ever being cleared —
     // undoing its ADD is the common case (history's applyRemove just drops the
@@ -921,7 +941,7 @@ function addZUI(
     // the dead shape's last position. Drop any selection state pointing at the
     // removed id. Idempotent: detach() no-ops when nothing is selected, so the
     // delete paths that already detach are unaffected.
-    window.addEventListener('elementRemoved', ((e: CustomEvent) => {
+    onWindow('elementRemoved', ((e: CustomEvent) => {
         const id = e.detail?.id
         if (!id) return
         if (selectionController.currentGroup?.elementData?.id === id) {
@@ -949,15 +969,15 @@ function addZUI(
             mousewheel(e as WheelEvent)
         }
     }
-    window.addEventListener('mousewheel', canvasWheel, { passive: false })
-    window.addEventListener('wheel', canvasWheel, { passive: false })
+    onWindow('mousewheel', canvasWheel, { passive: false })
+    onWindow('wheel', canvasWheel, { passive: false })
 
     domElement.addEventListener('touchstart', touchstart, { passive: false })
     domElement.addEventListener('touchmove', touchmove, { passive: false })
     domElement.addEventListener('touchend', touchend, false)
     domElement.addEventListener('touchcancel', touchend, false)
 
-    window.addEventListener('groupFocused', ((e: CustomEvent) => {
+    onWindow('groupFocused', ((e: CustomEvent) => {
         activeGroupRef.current = e.detail?.group ?? null
         // A Shift-click group just mounted. If more Shift-clicks landed while
         // it was mounting, rebuild it to match. Deferred so the rebuild doesn't
@@ -972,7 +992,7 @@ function addZUI(
             if (!same) window.setTimeout(() => applyShiftSelection(intended), 0)
         }
     }) as EventListener)
-    window.addEventListener('groupBlurred', () => {
+    onWindow('groupBlurred', () => {
         activeGroupRef.current = null
     })
 
@@ -984,7 +1004,7 @@ function addZUI(
     // Poll first: the shape may still be mounting (undo of its delete, a
     // freshly pasted clone); if it's gone entirely (redo of a delete) the
     // poll times out and the restack is a no-op anyway.
-    window.addEventListener('restackPorts', ((e: CustomEvent) => {
+    onWindow('restackPorts', ((e: CustomEvent) => {
         if (!getConnectorsEnabled()) return
         const ports = e.detail?.ports as
             | { shapeId: string; edge: string }[]
@@ -1025,7 +1045,7 @@ function addZUI(
     // their props at mount and won't re-render from the store. Colors are never
     // transformed at create/load/edit — only here, on an explicit toggle. The
     // selection box stroke is UI chrome and stays theme-driven (active `ink`).
-    let prevDark = document.documentElement.classList.contains('dark')
+    let prevDark = isDarkTheme()
     const flipColorOnNodesAndStore = (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         child: any
@@ -1139,12 +1159,12 @@ function addZUI(
         selectionController.applyThemeStroke()
     }
     const themeObserver = new MutationObserver(() => {
-        const isDark = document.documentElement.classList.contains('dark')
+        const isDark = isDarkTheme()
         if (isDark === prevDark) return
         prevDark = isDark
         repaintForTheme()
     })
-    themeObserver.observe(document.documentElement, {
+    themeObserver.observe(getThemeRoot(), {
         attributes: true,
         attributeFilter: ['class'],
     })
@@ -1187,12 +1207,12 @@ function addZUI(
             const inDrawMode =
                 isPencilModeRef?.current === true ||
                 arrowDrawElement !== null ||
-                localStorage.getItem(RUBBER_MODE_KEY) === 'true' ||
-                localStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
-                localStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
+                cbStorage.getItem(RUBBER_MODE_KEY) === 'true' ||
+                cbStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
+                cbStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
             if (!inDrawMode && createTextAtSurfaceRef?.current) {
                 const surfaceCoords = toSurface(e)
                 createTextAtSurfaceRef.current(surfaceCoords.x, surfaceCoords.y)
@@ -1406,8 +1426,11 @@ function addZUI(
 
                 input.style.width = `${contentWidth}px`
                 input.style.height = `${contentHeight}px`
-                input.style.left = `${centerX - contentWidth / 2}px`
-                input.style.top = `${centerY - contentHeight / 2}px`
+                // centerX/Y are client coords; the textarea is absolute
+                // inside the canvas box (offset from the page in the embed).
+                const origin = getCanvasOrigin()
+                input.style.left = `${centerX - origin.left - contentWidth / 2}px`
+                input.style.top = `${centerY - origin.top - contentHeight / 2}px`
             }
 
             // Grow ONLY the shape height to fit the wrapped lines (width is
@@ -1601,7 +1624,7 @@ function addZUI(
     // because, like RUBBER_MODE_KEY elsewhere in this file, the value is only
     // ever needed synchronously inside a DOM event handler.
     function getEraserSize(): EraserSize {
-        const stored = localStorage.getItem(
+        const stored = cbStorage.getItem(
             ERASER_SIZE_KEY
         ) as EraserSize | null
         return stored && stored in ERASER_SIZE_RADIUS
@@ -1746,7 +1769,7 @@ function addZUI(
         if (
             isMousePanning ||
             geoDrawType ||
-            localStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true'
+            cbStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true'
         ) {
             return
         }
@@ -2004,7 +2027,7 @@ function addZUI(
         tailEdge: string
     ) {
         const arrowId = generateUUID()
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         // Slot among the connectors already leaving this port — drives the fan
         // so this new tail doesn't bunch onto the existing ones.
         const tailPortIndex = countPortConnectors(tailShapeId, tailEdge)
@@ -2471,7 +2494,7 @@ function addZUI(
         }
 
         // initialize shape definition
-        const lastAddedElementId = localStorage.getItem(
+        const lastAddedElementId = cbStorage.getItem(
             LAST_ADDED_ELEMENT_ID_KEY
         )
 
@@ -2483,11 +2506,11 @@ function addZUI(
         // over the new draw (the new element auto-selects again on mouseup).
         const inCreateMode =
             isDrawing === true ||
-            localStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
-            localStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
-            localStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
-            localStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
-            localStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
+            cbStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
+            cbStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
+            cbStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
+            cbStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
+            cbStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
 
         if (inCreateMode) {
             // Starting a new element clears any prior selection indicators so
@@ -2576,12 +2599,12 @@ function addZUI(
             scenario = SCENARIO_PENCIL_MODE
         }
 
-        const arrowDrawMode = localStorage.getItem(ARROW_DRAW_MODE_KEY)
-        const textDrawMode = localStorage.getItem(TEXT_DRAW_MODE_KEY)
-        const pendingShapeType = localStorage.getItem(PENDING_SHAPE_TYPE_KEY)
-        const rubberMode = localStorage.getItem(RUBBER_MODE_KEY)
-        const geoPointPlaceMode = localStorage.getItem(GEO_POINT_PLACE_MODE_KEY)
-        const geoDrawMode = localStorage.getItem(GEO_DRAW_MODE_KEY)
+        const arrowDrawMode = cbStorage.getItem(ARROW_DRAW_MODE_KEY)
+        const textDrawMode = cbStorage.getItem(TEXT_DRAW_MODE_KEY)
+        const pendingShapeType = cbStorage.getItem(PENDING_SHAPE_TYPE_KEY)
+        const rubberMode = cbStorage.getItem(RUBBER_MODE_KEY)
+        const geoPointPlaceMode = cbStorage.getItem(GEO_POINT_PLACE_MODE_KEY)
+        const geoDrawMode = cbStorage.getItem(GEO_DRAW_MODE_KEY)
         if (rubberMode === 'true') {
             scenario = SCENARIO_RUBBER_MODE
         } else if (arrowDrawMode === 'true') {
@@ -2603,10 +2626,10 @@ function addZUI(
         switch (scenario) {
             case SCENARIO_ARROW_DRAW: {
                 const surfaceCoords = toSurface(e)
-                const arrowId = localStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
+                const arrowId = cbStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
 
-                localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
-                localStorage.removeItem(ARROW_DRAW_MODE_KEY)
+                cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+                cbStorage.removeItem(ARROW_DRAW_MODE_KEY)
 
                 domElement.addEventListener('mousemove', mousemove, false)
                 domElement.addEventListener('mouseup', mouseup, false)
@@ -2655,7 +2678,7 @@ function addZUI(
             }
             case SCENARIO_TEXT_DRAW: {
                 const surfaceCoords = toSurface(e)
-                const textId = localStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
+                const textId = cbStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
 
                 textDrawElement = two.scene.children.find(
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2676,8 +2699,8 @@ function addZUI(
                     )
                 }
 
-                localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
-                localStorage.removeItem(TEXT_DRAW_MODE_KEY)
+                cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+                cbStorage.removeItem(TEXT_DRAW_MODE_KEY)
 
                 domElement.addEventListener('mouseup', mouseup, false)
                 setRootCursor('auto')
@@ -2685,10 +2708,10 @@ function addZUI(
             }
             case SCENARIO_GEO_POINT: {
                 const surfaceCoords = toSurface(e)
-                const pointId = localStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
+                const pointId = cbStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
 
-                localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
-                localStorage.removeItem(GEO_POINT_PLACE_MODE_KEY)
+                cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+                cbStorage.removeItem(GEO_POINT_PLACE_MODE_KEY)
 
                 // The point module loads lazily on first use — poll until the
                 // pre-created element appears, then drop it at the click point.
@@ -2720,13 +2743,13 @@ function addZUI(
                 const surfaceCoords = toSurface(e)
                 // First click of this draw — capture type/props from storage.
                 if (!geoDrawType) {
-                    geoDrawType = localStorage.getItem(GEO_DRAW_TYPE_KEY) as
+                    geoDrawType = cbStorage.getItem(GEO_DRAW_TYPE_KEY) as
                         | 'area'
                         | 'route'
                         | CurvedPathType
                         | null
                     geoDrawProps = JSON.parse(
-                        localStorage.getItem(GEO_DRAW_PROPS_KEY) ?? 'null'
+                        cbStorage.getItem(GEO_DRAW_PROPS_KEY) ?? 'null'
                     )
                     geoVertices = []
                     domElement.addEventListener('mousemove', mousemove, false)
@@ -2741,13 +2764,13 @@ function addZUI(
                 const surfaceCoords = toSurface(e)
                 drawOrigin = { x: surfaceCoords.x, y: surfaceCoords.y }
                 drawCurrentCoords = { x: surfaceCoords.x, y: surfaceCoords.y }
-                drawShapeType = localStorage.getItem(PENDING_SHAPE_TYPE_KEY)
+                drawShapeType = cbStorage.getItem(PENDING_SHAPE_TYPE_KEY)
                 drawShapeProps = JSON.parse(
-                    localStorage.getItem(PENDING_SHAPE_PROPS_KEY) ?? 'null'
+                    cbStorage.getItem(PENDING_SHAPE_PROPS_KEY) ?? 'null'
                 )
 
-                localStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
-                localStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
+                cbStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
+                cbStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
 
                 // Preview lives on a DOM overlay, positioned in client coords —
                 // it never enters the scene, so the drag never repaints the SVG.
@@ -2806,7 +2829,7 @@ function addZUI(
                     lastPlacedElement = twoJSElement
                 }
 
-                localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+                cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
 
                 // remove event listeners for mousemove
                 // domElement.removeEventListener('mousemove', mousemove, false)
@@ -3121,14 +3144,14 @@ function addZUI(
             return
         }
 
-        const lastAddedElementId = localStorage.getItem(
+        const lastAddedElementId = cbStorage.getItem(
             LAST_ADDED_ELEMENT_ID_KEY
         )
 
         if (
             lastAddedElementId !== null &&
-            localStorage.getItem(ARROW_DRAW_MODE_KEY) !== 'true' &&
-            localStorage.getItem(TEXT_DRAW_MODE_KEY) !== 'true'
+            cbStorage.getItem(ARROW_DRAW_MODE_KEY) !== 'true' &&
+            cbStorage.getItem(TEXT_DRAW_MODE_KEY) !== 'true'
         ) {
             scenario = SCENARIO_JUST_ADDED_ELEMENT
         }
@@ -4215,7 +4238,7 @@ function addZUI(
         if (!props.boardId) return
         if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
         viewportSaveTimer = setTimeout(() => {
-            localStorage.setItem(
+            cbStorage.setItem(
                 `${VIEWPORT_KEY_PREFIX}${props.boardId}`,
                 JSON.stringify({
                     tx: two.scene.translation.x,
@@ -4427,7 +4450,7 @@ function addZUI(
                 isSinglePanning = false
                 if (props.boardId) {
                     try {
-                        localStorage.setItem(
+                        cbStorage.setItem(
                             `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
                             JSON.stringify({
                                 tx: two.scene.translation.x,
@@ -4518,7 +4541,7 @@ function addZUI(
         // distance > 0 means twoFingerStart ran (a real 2-finger gesture was active).
         if (e.touches.length < 2) {
             if (distance > 0 && props.boardId) {
-                localStorage.setItem(
+                cbStorage.setItem(
                     `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
                     JSON.stringify({
                         tx: two.scene.translation.x,
@@ -4777,6 +4800,23 @@ function addZUI(
             return true
         },
         disconnectThemeObserver: () => themeObserver.disconnect(),
+        disposeWindowListeners: () => {
+            for (const [type, listener, options] of windowListeners) {
+                window.removeEventListener(type, listener, options)
+            }
+            windowListeners.length = 0
+        },
+        // Tear down everything that outlives the canvas's <svg>: the
+        // selection controller's window listeners and `update` binding, and
+        // a pending hover frame. Required for React StrictMode, which
+        // mounts → unmounts → remounts the canvas in development.
+        disposeSelection: () => {
+            if (hoverFrame !== null) {
+                cancelAnimationFrame(hoverFrame)
+                hoverFrame = null
+            }
+            selectionController.destroy()
+        },
     }
 }
 
@@ -4803,6 +4843,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         createTextAtSurface,
         isPersisted,
         showCanvasNotice,
+        features,
     } = useBoardContext()
 
     // addZUI's post-draw resets funnel a 'pointer' through setPointerElement.
@@ -4895,14 +4936,30 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         isPersisted,
         addToLocalComponentStore,
         showCanvasNotice,
+        enabled: features.images,
     })
 
     useEffect(() => {
         const elem = document.getElementById('main-two-root')
         if (!elem) return
 
-        const two = new Two({ fullscreen: true }).appendTo(elem)
+        // App: the canvas is the window (`fullscreen` also locks <body>).
+        // Embed: fit the host's box instead and track its size, so <body> is
+        // never touched and the board follows the container as it resizes.
+        const embedded = features.embedded
+        const two = new Two(
+            embedded ? { fitted: true } : { fullscreen: true }
+        ).appendTo(elem)
         two.update()
+        let resizeObserver: ResizeObserver | null = null
+        if (embedded && typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ;(two as any).fit?.()
+                two.update()
+            })
+            resizeObserver.observe(elem)
+        }
 
         let zui_instance = addZUI(
             props,
@@ -4942,13 +4999,13 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // scene — setting two.scene.scale directly desynchronises ZUI and
         // causes the first pan gesture to jump back to the origin.
         const restoreViewport = (storageKey: string): boolean => {
-            const saved = localStorage.getItem(storageKey)
+            const saved = cbStorage.getItem(storageKey)
             if (!saved) return false
             try {
                 const parsed = JSON.parse(saved)
                 const { tx, ty, scale, savedAt } = parsed
                 if (!savedAt || Date.now() - savedAt > VIEWPORT_TTL_MS) {
-                    localStorage.removeItem(storageKey)
+                    cbStorage.removeItem(storageKey)
                     return false
                 }
                 // zoomSet updates zui.zScale + surface.scale atomically.
@@ -4961,7 +5018,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                 two.update()
                 return true
             } catch (_) {
-                localStorage.removeItem(storageKey)
+                cbStorage.removeItem(storageKey)
                 return false
             }
         }
@@ -4993,11 +5050,11 @@ const Canvas: React.FC<CanvasProps> = (props) => {
                         scale,
                         savedAt: Date.now(),
                     })
-                    localStorage.setItem(
+                    cbStorage.setItem(
                         `${VIEWPORT_KEY_PREFIX}${props.boardId}`,
                         seeded
                     )
-                    localStorage.setItem(
+                    cbStorage.setItem(
                         `${MOBILE_VIEWPORT_KEY_PREFIX}${props.boardId}`,
                         seeded
                     )
@@ -5047,25 +5104,26 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         })
 
         const boardId = props.boardId
-        const tabsOpen = localStorage.getItem(`tabs_open_${boardId}`)
+        const tabsOpen = cbStorage.getItem(`${TABS_OPEN_KEY_PREFIX}${boardId}`)
         if (tabsOpen == null) {
-            localStorage.setItem(`tabs_open_${boardId}`, '1')
+            cbStorage.setItem(`${TABS_OPEN_KEY_PREFIX}${boardId}`, '1')
         } else {
-            localStorage.setItem(
-                `tabs_open_${boardId}`,
+            cbStorage.setItem(
+                `${TABS_OPEN_KEY_PREFIX}${boardId}`,
                 String(parseInt(tabsOpen) + 1)
             )
         }
 
-        window.onunload = function (e) {
-            const newTabCount = localStorage.getItem(`tabs_open_${boardId}`)
+        const onUnload = function () {
+            const newTabCount = cbStorage.getItem(`${TABS_OPEN_KEY_PREFIX}${boardId}`)
             if (newTabCount !== null) {
-                localStorage.setItem(
-                    `tabs_open_${boardId}`,
+                cbStorage.setItem(
+                    `${TABS_OPEN_KEY_PREFIX}${boardId}`,
                     String(Number(newTabCount) - 1)
                 )
             }
         }
+        window.addEventListener('unload', onUnload)
 
         // Two.js `fullscreen: true` mutates document.body inline styles
         // (overflow:hidden, position:fixed, margin/padding/inset:0) and binds
@@ -5078,6 +5136,26 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         return () => {
             zui_instance?.disconnectThemeObserver?.()
             zui_instance?.disposeEraserTrail?.()
+            zui_instance?.disposeWindowListeners?.()
+            zui_instance?.disposeSelection?.()
+            window.removeEventListener('unload', onUnload)
+            resizeObserver?.disconnect()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const fit = (two as any).fit
+            if (fit && fit.domElement === window) {
+                window.removeEventListener('resize', fit)
+            }
+            // Retire this Two.js instance completely. Without this, a
+            // remount (React StrictMode in development does mount → unmount →
+            // mount) leaves the first <svg> in #main-two-root and the first
+            // instance alive, so two canvases fight over one board.
+            two.pause()
+            const instances = (Two as unknown as { Instances: unknown[] })
+                .Instances
+            const idx = instances.indexOf(two)
+            if (idx !== -1) instances.splice(idx, 1)
+            two.renderer.domElement?.remove()
+            if (embedded) return
             for (const prop of [
                 'overflow',
                 'position',
@@ -5573,6 +5651,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
 
     useEffect(() => {
         const onUndoRedoKeyDown = (evt: KeyboardEvent) => {
+            if (isForeignEvent(evt)) return
             if (evt.key.toLowerCase() === 'z' && (evt.ctrlKey || evt.metaKey)) {
                 // Live text editing (solo text component, shape inline text —
                 // both are .temp-input-area textareas — or any other text
@@ -5595,18 +5674,19 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         }
 
         const onTextModeKeyDown = (evt: KeyboardEvent) => {
+            if (isForeignEvent(evt)) return
             if (evt.key !== 't' && evt.key !== 'T') return
             if (evt.ctrlKey || evt.metaKey || evt.altKey) return
             const tag = document.activeElement?.tagName
             if (tag === 'INPUT' || tag === 'TEXTAREA') return
             if (
-                localStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(RUBBER_MODE_KEY) === 'true' ||
-                localStorage.getItem(PENCIL_MODE_KEY) === 'TRUE' ||
-                localStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
-                localStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
-                localStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
+                cbStorage.getItem(TEXT_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(ARROW_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(RUBBER_MODE_KEY) === 'true' ||
+                cbStorage.getItem(PENCIL_MODE_KEY) === 'TRUE' ||
+                cbStorage.getItem(GEO_DRAW_MODE_KEY) === 'true' ||
+                cbStorage.getItem(GEO_POINT_PLACE_MODE_KEY) === 'true' ||
+                cbStorage.getItem(PENDING_SHAPE_TYPE_KEY) !== null
             )
                 return
             evt.preventDefault()
@@ -5739,13 +5819,14 @@ const Canvas: React.FC<CanvasProps> = (props) => {
             evt.preventDefault()
             const group = zuiInstanceRef.current?.getSelectedGroup?.()
             if (group) {
-                setCtxMenu({ x: evt.clientX, y: evt.clientY })
+                setCtxMenu(toCanvasLocal(evt.clientX, evt.clientY))
             } else {
                 setCtxMenu(null)
             }
         }
 
         const onExportKeyDown = (evt: KeyboardEvent) => {
+            if (isForeignEvent(evt)) return
             if (
                 evt.key.toLowerCase() !== 'd' ||
                 !(evt.ctrlKey || evt.metaKey) ||
@@ -5768,6 +5849,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         // the key when a shape is actually selected, so bare [ /] stay inert and
         // ⌘[ /⌘] keep their browser history-nav behaviour on an empty selection.
         const onReorderKeyDown = (evt: KeyboardEvent) => {
+            if (isForeignEvent(evt)) return
             if (evt.shiftKey || evt.altKey) return
             const isRight =
                 evt.code === 'BracketRight' ||
@@ -5914,7 +5996,7 @@ const Canvas: React.FC<CanvasProps> = (props) => {
         newShapeData,
         oldShapeData
     ) => {
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         // prevX === -9999 means initial arrow placement — skip extra undo steps
         const isInitialArrowPlacement = newShapeData.prevX === -9999
 

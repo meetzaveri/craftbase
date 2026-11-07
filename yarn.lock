@@ -3433,6 +3433,11 @@ postcss-nested@^6.0.1:
   dependencies:
     postcss-selector-parser "^6.0.11"
 
+postcss-prefix-selector@^2.1.1:
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/postcss-prefix-selector/-/postcss-prefix-selector-2.2.1.tgz#bfad268a15b2a7acff398fbc6aabde92f9b7f5ec"
+  integrity sha512-oMvY0GLVjg6b/N09B4h/xWYczc+LsX1O+laIpXDBbP6tZll+Cj5kXxdI0IZ23NOQ+XIko8VDsCFj+bhgYsmP8g==
+
 postcss-selector-parser@^6.0.11, postcss-selector-parser@^6.1.5:
   version "6.1.5"
   resolved "https://registry.yarnpkg.com/postcss-selector-parser/-/postcss-selector-parser-6.1.5.tgz#20e988ce8eab87575d54824d9800236c5fd872ca"

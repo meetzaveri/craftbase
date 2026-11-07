@@ -1,3 +1,4 @@
+import { isDarkTheme } from './embedRoot'
 // Theme-toggle color flip.
 //
 // Core model (intentionally NOT a theme-dependent display transform):
@@ -71,10 +72,7 @@ for (const [a, b] of [...SHADE_PAIRS, ...BW_PAIRS]) {
  * current canvas (it then flips on toggle like everything else).
  */
 export const themeDefaultInk = (): string =>
-    typeof document !== 'undefined' &&
-    document.documentElement.classList.contains('dark')
-        ? '#fff'
-        : '#000'
+    typeof document !== 'undefined' && isDarkTheme() ? '#fff' : '#000'
 
 /**
  * Flip a color to its theme counterpart. Returns the input unchanged for any

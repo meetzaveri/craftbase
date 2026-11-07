@@ -17,6 +17,7 @@
 // which keeps this optimisation from colliding with any of those paths.
 
 import { GROUP_COMPONENT } from '../constants/misc'
+import { getCanvasSize } from './embedRoot'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Two = any
@@ -102,8 +103,7 @@ export function cullToViewport(
     const scale = scene.scale || 1
     const tx = scene.translation.x
     const ty = scene.translation.y
-    const vw = window.innerWidth
-    const vh = window.innerHeight
+    const { width: vw, height: vh } = getCanvasSize()
 
     let visible = 0
     let culled = 0

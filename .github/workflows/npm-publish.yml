@@ -1,0 +1,108 @@
+name: npm publish
+
+# Publishes the craftbase npm package.
+#
+# - Automatic: when a GitHub Release is published. draft-release.yml already
+#   drafts `vX.Y.Z` from the VERSION file on every merge to main; publishing
+#   that draft publishes craftbase@X.Y.Z to npm.
+# - Manual: Actions → "npm publish" → Run workflow. Defaults to a dry run.
+#
+# Needs the repo secret NPM_TOKEN: an npm granular access token with
+# read and write permission on the `craftbase` package.
+
+on:
+    release:
+        types: [published]
+    workflow_dispatch:
+        inputs:
+            dry_run:
+                description: 'Dry run (build and check, do not upload)'
+                type: boolean
+                default: true
+
+concurrency:
+    group: npm-publish
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # npm provenance
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.release.tag_name || github.ref }}
+
+            - name: Set up Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: yarn
+                  registry-url: https://registry.npmjs.org
+
+            - name: Read version
+              id: version
+              run: |
+                  VERSION=$(tr -d '[:space:]' < VERSION)
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+                  if [[ "$VERSION" == *-* ]]; then
+                      echo "tag=next" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "tag=latest" >> "$GITHUB_OUTPUT"
+                  fi
+                  echo "craftbase@$VERSION"
+
+            - name: Release tag must match VERSION
+              if: github.event_name == 'release'
+              run: |
+                  EXPECTED="v${{ steps.version.outputs.version }}"
+                  ACTUAL="${{ github.event.release.tag_name }}"
+                  if [ "$EXPECTED" != "$ACTUAL" ]; then
+                      echo "::error::Release tag $ACTUAL does not match VERSION ($EXPECTED)."
+                      exit 1
+                  fi
+
+            - name: Skip if already on npm
+              id: exists
+              run: |
+                  if npm view "craftbase@${{ steps.version.outputs.version }}" version >/dev/null 2>&1; then
+                      echo "exists=true" >> "$GITHUB_OUTPUT"
+                      echo "::warning::craftbase@${{ steps.version.outputs.version }} is already published. Nothing to do."
+                  else
+                      echo "exists=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Install dependencies
+              if: steps.exists.outputs.exists == 'false'
+              run: yarn install --frozen-lockfile
+
+            - name: Typecheck
+              if: steps.exists.outputs.exists == 'false'
+              run: yarn typecheck
+
+            - name: Build and check
+              if: steps.exists.outputs.exists == 'false'
+              run: |
+                  yarn build:lib
+                  yarn check:lib
+                  npm pack ./dist-lib --dry-run
+
+            - name: Publish
+              if: steps.exists.outputs.exists == 'false'
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+                  # npm provenance requires a public source repository.
+                  PROVENANCE: ${{ github.event.repository.private == false }}
+              run: |
+                  ARGS=(publish ./dist-lib --access public --tag "${{ steps.version.outputs.tag }}")
+                  if [ "$PROVENANCE" = "true" ]; then ARGS+=(--provenance); fi
+                  if [ "$DRY_RUN" = "true" ]; then ARGS+=(--dry-run); fi
+                  if [ "$DRY_RUN" != "true" ] && [ -z "$NODE_AUTH_TOKEN" ]; then
+                      echo "::error::NPM_TOKEN secret is not set."
+                      exit 1
+                  fi
+                  npm "${ARGS[@]}"

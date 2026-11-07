@@ -1,5 +1,7 @@
 import React, { type ReactNode } from 'react'
 import * as Sentry from '@sentry/react'
+import { cbStorage } from '../../utils/storage'
+import { USER_ID_KEY } from '../../constants/misc'
 
 interface Props {
     children?: ReactNode
@@ -21,11 +23,11 @@ class ErrorBoundaryBoardView extends React.Component<Props, State> {
 
     override componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
         Sentry.captureException(error, {
-            user: { id: localStorage.getItem('userId') ?? undefined },
+            user: { id: cbStorage.getItem(USER_ID_KEY) ?? undefined },
             contexts: {
                 board: {
                     boardId:
-                        localStorage.getItem(
+                        cbStorage.getItem(
                             'craftbase_background_board_id'
                         ) ?? undefined,
                 },

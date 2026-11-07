@@ -6,7 +6,6 @@ import React, {
     type ReactNode,
 } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
-import { useParams, useNavigate } from 'react-router-dom'
 import { useMediaQueryUtils } from '../../constants/exportHooks'
 import {
     GET_COMPONENTS_FOR_BOARD_QUERY,
@@ -47,7 +46,10 @@ import {
     excludeImages,
 } from '../../utils/importBoard'
 import type { ParsedImport, BoardViewport } from '../../utils/importBoard'
-import { draftFitsForStore } from '../../utils/boardSizeGuard'
+import {
+    draftFitsForStore,
+    selectPersistableComponents,
+} from '../../utils/boardSizeGuard'
 import { restoreImageAssets } from '../../utils/imageAssetStore'
 import { generateUUID, generateRandomUsernames } from '../../utils/misc'
 import { prefetchElementModule } from '../../elementModules'
@@ -89,6 +91,8 @@ import {
     DEFAULT_GEO_RESIST,
     WELCOME_DISMISSED_KEY,
     isImageType,
+    USER_ID_KEY,
+    LAST_OPEN_BOARD_KEY,
 } from '../../constants/misc'
 import {
     isWelcomeComponent,
@@ -113,8 +117,12 @@ import type {
     ComponentRecord,
     ComponentStore,
     CameraChangeEvent,
+    CraftbaseData,
 } from '../../types/board'
 import { BoardContext, useBoardContext } from './boardContext'
+import { FULL_APP_FEATURES } from '../../embed/embedConfig'
+import { cbStorage } from '../../utils/storage'
+import { isDarkTheme, getThemeRoot } from '../../utils/embedRoot'
 
 // Re-exported so existing importers (`from '.../views/Board/board'`) and the
 // public lib.ts surface keep working — the canonical definition now lives in
@@ -134,6 +142,12 @@ function stripTypename(obj: any): any {
     return obj
 }
 
+/** The embed's document envelope around the persistable part of a store. */
+const toCraftbaseData = (store: ComponentStore): CraftbaseData => ({
+    formatVersion: '1.1',
+    components: selectPersistableComponents(store),
+})
+
 /** Human-readable size for the live local-draft readout (UTF-8 bytes). */
 const formatDraftBytes = (n: number): string => {
     if (n < 1024) return `${n} B`
@@ -142,14 +156,14 @@ const formatDraftBytes = (n: number): string => {
 }
 
 const BoardViewPage: React.FC<BoardProps> = (props) => {
-    const routeParams = useParams()
-    const boardIdFromUrl = routeParams.id
+    const boardIdFromUrl = props.boardId
+    const features = props.features ?? FULL_APP_FEATURES
     const [localBoardId, setLocalBoardId] = useState(() => {
         if (boardIdFromUrl) return boardIdFromUrl
         // Reuse the boardId stored with the local draft so viewport persistence
         // keys stay stable across page refreshes in local (non-persisted) mode.
         try {
-            const draft = localStorage.getItem(DRAFT_STORAGE_KEY)
+            const draft = cbStorage.getItem(DRAFT_STORAGE_KEY)
             if (draft) {
                 const parsed = JSON.parse(draft)
                 if (parsed?.boardId) return parsed.boardId
@@ -159,6 +173,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     })
     const [isPersisted, setIsPersisted] = useState(!!boardIdFromUrl)
     const isPersistedRef = useRef(!!boardIdFromUrl)
+    // Images are local-mode only, and off entirely in the embed.
+    const imagesEnabled = !isPersisted && features.images
+    const imagesEnabledRef = useRef(imagesEnabled)
+    imagesEnabledRef.current = imagesEnabled
     const boardId = boardIdFromUrl || localBoardId
     const [backgroundBoardId, setBackgroundBoardId] = useState<string | null>(
         null
@@ -176,7 +194,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         skip: !isPersisted,
     })
 
-    const { data: getComponentTypesData } = useQuery(GET_COMPONENT_TYPES)
+    const { data: getComponentTypesData } = useQuery(GET_COMPONENT_TYPES, {
+        skip: !features.network,
+    })
 
     const [insertComponent] = useMutation(INSERT_COMPONENT, {
         ignoreResults: true,
@@ -207,8 +227,6 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     ] = useMutation(UPDATE_USER_REVISIT_COUNT)
 
     const [insertUser] = useMutation(INSERT_USER_ONE)
-
-    const navigate = useNavigate()
 
     const [
         createBoard,
@@ -367,14 +385,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             setDefaultTextColor(ink)
         }
         forceInkDefaults()
-        let prevDark = document.documentElement.classList.contains('dark')
+        let prevDark = isDarkTheme()
         const obs = new MutationObserver(() => {
-            const isDark = document.documentElement.classList.contains('dark')
+            const isDark = isDarkTheme()
             if (isDark === prevDark) return
             prevDark = isDark
             forceInkDefaults()
         })
-        obs.observe(document.documentElement, {
+        obs.observe(getThemeRoot(), {
             attributes: true,
             attributeFilter: ['class'],
         })
@@ -408,6 +426,9 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         onDraftOverBudgetRef,
         welcomeSketch: props.welcomeSketch,
         isMobile,
+        initialComponents: props.initialData?.components,
+        imagesEnabled,
+        embedded: features.embedded,
     })
 
     const {
@@ -533,7 +554,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 // Backstop for the filter in beginBoardImport: this path sets
                 // the store directly, skipping addToLocalComponentStore's
                 // shared-board image guard.
-                if (isPersistedRef.current && isImageType(comp.componentType))
+                if (
+                    !imagesEnabledRef.current &&
+                    isImageType(comp.componentType)
+                )
                     return
                 store[id] = { ...comp, boardId: newLocalId }
             })
@@ -627,7 +651,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (text == null) return // cancelled
         try {
             const raw = parseImportedBoard(text)
-            const parsed = isPersistedRef.current ? excludeImages(raw) : raw
+            const parsed = imagesEnabledRef.current ? raw : excludeImages(raw)
             if (Object.keys(parsed.components).length === 0) {
                 pendingImportRef.current = null
                 setImportError(
@@ -726,8 +750,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     useEffect(() => {
         try {
             const now = Date.now()
-            for (let i = localStorage.length - 1; i >= 0; i--) {
-                const key = localStorage.key(i)
+            for (const key of cbStorage.keys()) {
                 if (
                     !key ||
                     (!key.startsWith(VIEWPORT_KEY_PREFIX) &&
@@ -736,16 +759,16 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                     continue
                 try {
                     const parsed = JSON.parse(
-                        localStorage.getItem(key) ?? 'null'
+                        cbStorage.getItem(key) ?? 'null'
                     )
                     if (
                         !parsed?.savedAt ||
                         now - parsed.savedAt > VIEWPORT_TTL_MS
                     ) {
-                        localStorage.removeItem(key)
+                        cbStorage.removeItem(key)
                     }
                 } catch (_) {
-                    localStorage.removeItem(key)
+                    cbStorage.removeItem(key)
                 }
             }
         } catch (_) {}
@@ -771,7 +794,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // user with the known id; the `after_user_insert` Postgres trigger
     // then creates the revisits row (count = 1) for this visit.
     useEffect(() => {
-        const userId = localStorage.getItem('userId')
+        if (!features.network) return
+        const userId = cbStorage.getItem(USER_ID_KEY)
         if (!userId) return
         // Capture the revisit moment client-side as an ISO 8601 string;
         // Hasura coerces it into the timestamptz `last_visit` column for
@@ -798,7 +822,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // Track last opened board only once it's persisted
     useEffect(() => {
         if (isPersisted && boardId) {
-            localStorage.setItem('lastOpenBoard', boardId)
+            cbStorage.setItem(LAST_OPEN_BOARD_KEY, boardId)
         }
     }, [isPersisted])
 
@@ -865,8 +889,23 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }, [])
 
     useEffect(() => {
-        console.log('change in componentStore in Board', componentStore)
         stateRefForComponentStore.current = componentStore
+    }, [componentStore])
+
+    // Embed: hand the full document to the host on every store change (the
+    // parent component owns the board state). Same filter as the draft save:
+    // no transient groupobjects, no welcome-sketch seeds. The mount run is
+    // skipped so the host never sees a transient empty board before
+    // initialData / the draft is applied. Compares store identity rather
+    // than counting runs, so React StrictMode's double effect run in
+    // development doesn't emit that empty board either.
+    const onChangeRef = useRef(props.onChange)
+    onChangeRef.current = props.onChange
+    const lastEmittedStoreRef = useRef(componentStore)
+    useEffect(() => {
+        if (lastEmittedStoreRef.current === componentStore) return
+        lastEmittedStoreRef.current = componentStore
+        onChangeRef.current?.(toCraftbaseData(componentStore))
     }, [componentStore])
 
     // One-shot soft-land entrance for the welcome sketch. Fires once the seeded
@@ -916,10 +955,10 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (value) {
             cancelPendingElement()
             setRubberModeInBoard(false)
-            localStorage.setItem(PENCIL_MODE_KEY, 'TRUE')
+            cbStorage.setItem(PENCIL_MODE_KEY, 'TRUE')
             setRootCursor('crosshair')
         } else {
-            localStorage.removeItem(PENCIL_MODE_KEY)
+            cbStorage.removeItem(PENCIL_MODE_KEY)
         }
     }
 
@@ -950,13 +989,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // Creates a board in the background on first interaction (non-blocking).
     // Stores the server board ID in state + ref + localStorage for later use.
     const ensureBackgroundBoard = async () => {
+        if (!features.network) return
         if (isPersistedRef.current) return
         if (backgroundBoardIdRef.current) return
         if (boardCreationInFlightRef.current) return
 
         boardCreationInFlightRef.current = true
         try {
-            const userId = localStorage.getItem('userId')
+            const userId = cbStorage.getItem(USER_ID_KEY)
             const { data: boardData } = await createBoard({
                 variables: { object: {} },
             })
@@ -964,7 +1004,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             if (!newBoardId) return
             backgroundBoardIdRef.current = newBoardId
             setBackgroundBoardId(newBoardId)
-            localStorage.setItem(BACKGROUND_BOARD_STORAGE_KEY, newBoardId)
+            cbStorage.setItem(BACKGROUND_BOARD_STORAGE_KEY, newBoardId)
         } catch (e) {
             console.error('Background board creation failed:', e)
         } finally {
@@ -991,7 +1031,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         welcomePromotedRef.current = true
         // The sketch now lives in the draft, so it must not be re-seeded on the
         // next visit.
-        localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
+        cbStorage.setItem(WELCOME_DISMISSED_KEY, '1')
 
         const two = twoJSInstanceRef.current
         const next = { ...stateRefForComponentStore.current }
@@ -1043,7 +1083,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // Images are local-mode only. Covers every add path (drop is already
         // refused upstream; this catches import-merge and paste on a shared
         // board) so an image row never reaches the DB.
-        if (isPersistedRef.current && isImageType(type)) return
+        if (!imagesEnabledRef.current && isImageType(type)) return
 
         // Strip transient grouping coords — not part of DB schema
         const {
@@ -1144,7 +1184,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
                 metadata: {},
             }
         }
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         const sizesMap = isMobile ? MOBILE_TEXT_SIZES_OBJECT : TEXT_SIZES_OBJECT
         // A new text always starts at size M in the theme ink (black in light
         // mode, white in dark), whatever text size/color was last picked.
@@ -1193,8 +1233,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         if (!shapeData) return
         updateLastAddedElement(shapeData)
         setRootCursor('crosshair')
-        localStorage.setItem(TEXT_DRAW_MODE_KEY, 'true')
-        localStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, id)
+        cbStorage.setItem(TEXT_DRAW_MODE_KEY, 'true')
+        cbStorage.setItem(LAST_ADDED_ELEMENT_ID_KEY, id)
         setTextDrawModeInBoard(true)
         addToLocalComponentStore(id, componentType, shapeData)
     }
@@ -1233,7 +1273,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         promoteWelcomeSketch()
         ensureBackgroundBoard()
 
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
 
         if (!skipHistory) {
             // Snapshot only the properties that bulkObj will overwrite
@@ -1302,7 +1342,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         promoteWelcomeSketch()
         ensureBackgroundBoard()
 
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
 
         recordToHistoryLog({
             action: 'UPDATE_VERTICES',
@@ -1462,7 +1502,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }
 
     const onCreateBoard = () => {
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         createBoard({
             variables: {
                 object: {},
@@ -1550,7 +1590,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
 
         // Persist draft immediately under the new local ID
         try {
-            localStorage.setItem(
+            cbStorage.setItem(
                 DRAFT_STORAGE_KEY,
                 JSON.stringify({
                     boardId: newLocalId,
@@ -1563,8 +1603,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // Clear the background board (its work is now on the shared board)
         backgroundBoardIdRef.current = null
         setBackgroundBoardId(null)
-        localStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
-        localStorage.setItem('lastOpenBoard', serverBoardId)
+        cbStorage.removeItem(BACKGROUND_BOARD_STORAGE_KEY)
+        cbStorage.setItem(LAST_OPEN_BOARD_KEY, serverBoardId)
 
         // Stay in local (non-persisted) mode — new drawings on '/' are a fresh session
         return serverBoardId
@@ -1573,6 +1613,14 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     // Assign storage-limit handler ref so useLocalDraftPersistence can call it
     // without a direct dependency on persistBoard being defined at hook-call time.
     onStorageLimitRef.current = async () => {
+        if (!features.network) {
+            // Embed: there's no backend to spill into. Keep the session
+            // going in memory and tell the user it won't survive a refresh.
+            showCanvasNotice(
+                "This board is too large for browser storage. Changes won't survive a refresh."
+            )
+            return
+        }
         try {
             const serverBoardId = await persistBoard()
             setStorageLimitBoardUrl(
@@ -1583,6 +1631,34 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
             console.error('Failed to auto-persist board on storage limit:', e)
         }
     }
+
+    // Embed: imperative API behind the <Craftbase> ref. Reads the latest
+    // closures through refs so it can be installed once.
+    const clearBoardRef = useRef<() => void>(() => {})
+    const importAsNewCanvasRef = useRef(importAsNewCanvas)
+    importAsNewCanvasRef.current = importAsNewCanvas
+    useEffect(() => {
+        const apiRef = props.apiRef
+        if (!apiRef) return
+        apiRef.current = {
+            load: (data: CraftbaseData): void => {
+                const raw = parseImportedBoard(
+                    JSON.stringify({ components: data?.components ?? {} })
+                )
+                const parsed = imagesEnabledRef.current
+                    ? raw
+                    : excludeImages(raw)
+                importAsNewCanvasRef.current(parsed)
+            },
+            clear: (): void => clearBoardRef.current(),
+            getData: (): CraftbaseData =>
+                toCraftbaseData(stateRefForComponentStore.current),
+        }
+        return (): void => {
+            apiRef.current = null
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const clearBoard = () => {
         if (isPersisted) {
@@ -1604,6 +1680,7 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
         // (e.g. linewidth:0) doesn't leak into shapes drawn after clearing.
         resetDefaults()
     }
+    clearBoardRef.current = clearBoard
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sel: any = selectedComponent
@@ -1852,22 +1929,22 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }
 
     const cancelPendingElement = () => {
-        const pendingId = localStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
+        const pendingId = cbStorage.getItem(LAST_ADDED_ELEMENT_ID_KEY)
         if (pendingId) {
             undoLastAction()
             setLastAddedElement(null)
         }
-        localStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
-        localStorage.removeItem(ARROW_DRAW_MODE_KEY)
-        localStorage.removeItem(TEXT_DRAW_MODE_KEY)
-        localStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
-        localStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
+        cbStorage.removeItem(LAST_ADDED_ELEMENT_ID_KEY)
+        cbStorage.removeItem(ARROW_DRAW_MODE_KEY)
+        cbStorage.removeItem(TEXT_DRAW_MODE_KEY)
+        cbStorage.removeItem(PENDING_SHAPE_TYPE_KEY)
+        cbStorage.removeItem(PENDING_SHAPE_PROPS_KEY)
         // Abort any in-progress geo draw (multi-click area/route, point place)
         // and tell the canvas to drop its preview vertices.
-        localStorage.removeItem(GEO_DRAW_MODE_KEY)
-        localStorage.removeItem(GEO_DRAW_TYPE_KEY)
-        localStorage.removeItem(GEO_DRAW_PROPS_KEY)
-        localStorage.removeItem(GEO_POINT_PLACE_MODE_KEY)
+        cbStorage.removeItem(GEO_DRAW_MODE_KEY)
+        cbStorage.removeItem(GEO_DRAW_TYPE_KEY)
+        cbStorage.removeItem(GEO_DRAW_PROPS_KEY)
+        cbStorage.removeItem(GEO_POINT_PLACE_MODE_KEY)
         window.dispatchEvent(new CustomEvent('cancelGeoDraw', {}))
         setIsArrowDrawMode(false)
         setIsTextDrawMode(false)
@@ -2028,6 +2105,8 @@ const BoardViewPage: React.FC<BoardProps> = (props) => {
     }
 
     const contextValueForSidebar = {
+        features,
+        imagesEnabled,
         scaleToDisplay: props.scaleToDisplay,
         geoObjectsEnabled: props.geoObjectsEnabled,
         pointClusteringEnabled: props.pointClusteringEnabled,

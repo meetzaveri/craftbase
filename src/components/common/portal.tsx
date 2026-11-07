@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
 import type { ReactNode, ReactPortal } from 'react'
+import { getPortalRoot } from '../../utils/embedRoot'
 
 interface PortalProps {
     children: ReactNode
@@ -15,7 +16,7 @@ export default function Portal({
 }: PortalProps): ReactPortal {
     const el = React.useMemo(() => document.createElement('div'), [])
     React.useEffect(() => {
-        const target = parent ?? document.body
+        const target = parent ?? getPortalRoot()
         const classList = ['portal-container']
         if (className)
             className.split(' ').forEach((item) => classList.push(item))
