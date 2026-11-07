@@ -77,7 +77,7 @@ const HomePage: React.FC = () => {
                                 </a>
                                 <a
                                     className="pl-2"
-                                    href="https://github.com/craftbase-org"
+                                    href="https://github.com/meetzaveri/craftbase"
                                 >
                                     <img
                                         className="w-6 h-6"
@@ -244,7 +244,7 @@ const HomePage: React.FC = () => {
                         </a>
                         <a
                             className="pl-2"
-                            href="https://github.com/craftbase-org"
+                            href="https://github.com/meetzaveri/craftbase"
                         >
                             <img className="w-7 h-7" src={GithubLogoSVG} />
                         </a>
