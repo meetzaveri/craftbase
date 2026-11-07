@@ -1,5 +1,7 @@
 # Craftbase
 
+[![npm version](https://img.shields.io/npm/v/craftbase)](https://www.npmjs.com/package/craftbase)
+
 Craftbase is a minimal online whiteboard. You open it and start drawing. There is no signup and no setup.
 
 **Try it:** [craftbase.org](https://craftbase.org)
@@ -25,6 +27,34 @@ Below is what you can do on a board:
 Live collaboration is built but turned off behind a flag. I am still hardening it. Once it is on, you can share a board and draw on it together in real time.
 
 I work on this mostly on weekends. So expect the occasional bug. If you hit one, or want a feature, [open an issue](https://github.com/craftbase-org/craftbase/issues). I read all of them.
+
+## Use it in your React app
+
+Craftbase is also shipped as an npm package. You can embed the whiteboard in your own React app with the `<Craftbase />` component.
+
+```sh
+npm install craftbase
+```
+
+```tsx
+import { useRef, useState } from 'react'
+import { Craftbase } from 'craftbase'
+import type { CraftbaseData, CraftbaseHandle } from 'craftbase'
+import 'craftbase/style.css'
+
+export function Whiteboard() {
+    const [data, setData] = useState<CraftbaseData>()
+    const board = useRef<CraftbaseHandle>(null)
+
+    return (
+        <div style={{ height: 600 }}>
+            <Craftbase initialData={data} onChange={setData} ref={board} />
+        </div>
+    )
+}
+```
+
+The board fills its parent element, so give the parent a size. It needs `react` and `react-dom` 18 or 19. For props, saving and loading data and the full API, see the [package docs on npm](https://www.npmjs.com/package/craftbase?activeTab=readme).
 
 ## History
 
