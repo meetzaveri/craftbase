@@ -112,8 +112,8 @@ const EmbeddablePage: React.FC = () => {
                     </h1>
                     <p className="text-sm tablet-landscape:text-base text-ink-muted leading-relaxed">
                         Craftbase is an embeddable whiteboard you can drop into
-                        any React app as one component. Mount 
-                        <code className="text-accent-dark">{'<Craftbase />'}</code> 
+                        any React app as one component. Mount{' '}
+                        <code className="text-accent-dark">{'<Craftbase />'}</code>{' '}
                         and you get shapes, connectors, text, freehand drawing,
                         pan and zoom. No backend is needed. Your app holds the
                         board data, and the user decides whether their browser
@@ -124,17 +124,17 @@ const EmbeddablePage: React.FC = () => {
                 <Section title="Install">
                     <CodeBlock>{`npm install craftbase`}</CodeBlock>
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mt-3">
-                        Needs <code className="text-accent-dark">react</code> and 
-                        <code className="text-accent-dark">react-dom</code> 18.
-                        The package ships compiled JavaScript, one CSS file and
-                        TypeScript types, so it works with any bundler.
+                        Needs <code className="text-accent-dark">react</code> and{' '}
+                        <code className="text-accent-dark">react-dom</code> 18 or
+                        19. The package ships compiled JavaScript, one CSS file
+                        and TypeScript types, so it works with any bundler.
                     </p>
                 </Section>
 
                 <Section title="Drop it into your app">
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
                         Render it inside an element that has a size. The board
-                        fills that element. Keep the data in your own state with 
+                        fills that element. Keep the data in your own state with{' '}
                         <code className="text-accent-dark">onChange</code>.
                     </p>
                     <CodeBlock>{`import { useRef, useState } from 'react'
@@ -160,7 +160,7 @@ export default function Whiteboard() {
 
                 <Section title="Where your whiteboard data lives">
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        Your component gets the whole board through 
+                        Your component gets the whole board through{' '}
                         <code className="text-accent-dark">onChange</code>. Separately,
                         the <code className="text-accent-dark">storage</code> prop
                         decides whether the browser keeps a copy:
@@ -183,9 +183,9 @@ export default function Whiteboard() {
                         </li>
                     </ul>
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed">
-                        Stored keys start with 
+                        Stored keys start with{' '}
                         <code className="text-accent-dark">craftbase_</code>, so
-                        they never clash with your app's keys. Use 
+                        they never clash with your app's keys. Use{' '}
                         <code className="text-accent-dark">storageKey</code> to
                         keep separate boards apart.
                     </p>
@@ -199,7 +199,7 @@ export default function Whiteboard() {
                             inside the board.
                         </li>
                         <li>
-                            <code className="text-accent-dark">theme</code> 
+                            <code className="text-accent-dark">theme</code>{' '}
                             switches between light and dark.
                         </li>
                         <li>One board per page.</li>

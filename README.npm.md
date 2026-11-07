@@ -9,7 +9,7 @@ drawing, pan and zoom. No backend needed.
 npm install craftbase
 ```
 
-Peer dependencies: `react` and `react-dom` 18.
+Peer dependencies: `react` and `react-dom` 18 or 19.
 
 ## Use
 

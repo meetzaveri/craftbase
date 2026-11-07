@@ -103,7 +103,8 @@ pruneEmpty(TYPES)
 writeFileSync(join(OUT, 'index.d.ts'), "export * from './types/lib.js'\n")
 
 // 3. Publish manifest, written from scratch: only what consumers need.
-const reactRange = '^18.2.0'
+// Verified on React 18.3 and 19.3 (embed checks in both, incl. StrictMode).
+const reactRange = '^18.2.0 || ^19.0.0'
 const manifest = {
     name: 'craftbase',
     version,
