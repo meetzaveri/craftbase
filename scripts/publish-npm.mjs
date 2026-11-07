@@ -27,8 +27,21 @@ const dryRun = has('--dry-run')
 const allowBranch = has('--allow-branch')
 const otp = valueOf('--otp')
 
-const sh = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim()
-const run = (cmd) => execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
+// Always talk to the public npm registry. `yarn run` (yarn v1) injects
+// npm_config_* variables into child processes, including
+// npm_config_registry=https://registry.yarnpkg.com. `npm login` stores its
+// token for registry.npmjs.org, so under yarn every npm command would look
+// logged out (ENEEDAUTH). Drop yarn's npm_config_* and pin the registry.
+const REGISTRY = 'https://registry.npmjs.org/'
+const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+        ([k]) => !k.toLowerCase().startsWith('npm_config_')
+    )
+)
+env.npm_config_registry = REGISTRY
+
+const sh = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf8', env }).trim()
+const run = (cmd) => execSync(cmd, { cwd: ROOT, stdio: 'inherit', env })
 const die = (msg) => {
     console.error(`\n✖ ${msg}\n`)
     process.exit(1)
@@ -55,7 +68,7 @@ if (branch !== 'main' && !allowBranch) {
 step('Checking npm login')
 let npmUser = ''
 try {
-    npmUser = sh('npm whoami')
+    npmUser = sh(`npm whoami --registry ${REGISTRY}`)
     console.log(`  logged in as ${npmUser}`)
 } catch {
     if (!dryRun) die('Not logged in to npm. Run `npm login` and try again.')
@@ -66,6 +79,7 @@ step(`Checking that ${version} is not published yet`)
 const view = spawnSync('npm', ['view', `craftbase@${version}`, 'version'], {
     cwd: ROOT,
     encoding: 'utf8',
+    env,
 })
 if (view.status === 0 && view.stdout.trim() === version) {
     die(`craftbase@${version} is already on npm. Bump VERSION first.`)
@@ -88,6 +102,8 @@ step(dryRun ? 'Dry-run publish' : 'Publishing')
 const publishArgs = [
     'publish',
     './dist-lib',
+    '--registry',
+    REGISTRY,
     '--access',
     'public',
     '--tag',
@@ -96,7 +112,11 @@ const publishArgs = [
 if (dryRun) publishArgs.push('--dry-run')
 if (otp) publishArgs.push('--otp', otp)
 // stdio inherit: npm prompts for a 2FA code / web login itself if it needs one.
-const pub = spawnSync('npm', publishArgs, { cwd: ROOT, stdio: 'inherit' })
+const pub = spawnSync('npm', publishArgs, {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env,
+})
 if (pub.status !== 0) die('npm publish failed (see output above).')
 
 if (dryRun) {
@@ -104,7 +124,10 @@ if (dryRun) {
 } else {
     console.log(`\n✔ Published craftbase@${version} (tag: ${tag}).`)
     console.log(`  https://www.npmjs.com/package/craftbase/v/${version}`)
-    console.log(
-        `  Tag the release if you haven't: git tag v${version} && git push origin v${version}\n`
-    )
+    if (!sh(`git tag --list v${version}`)) {
+        console.log(
+            `  Tag the release: git tag v${version} && git push origin v${version}`
+        )
+    }
+    console.log('')
 }
