@@ -2,6 +2,7 @@
     "name": "craftbase",
     "version": "0.9.7",
     "private": true,
+    "license": "MIT",
     "main": "src/lib.ts",
     "module": "src/lib.ts",
     "types": "src/lib.ts",
@@ -50,7 +51,11 @@
         "test:e2e:ui": "playwright test --ui",
         "test:e2e:headed": "playwright test --headed",
         "typecheck": "tsc --noEmit",
-        "codegen": "graphql-codegen --config codegen.ts"
+        "codegen": "graphql-codegen --config codegen.ts",
+        "build:lib": "node scripts/build-package.mjs",
+        "check:lib": "node scripts/check-package.mjs",
+        "pack:lib": "node scripts/build-package.mjs && node scripts/check-package.mjs && mkdir -p dist-pack && npm pack ./dist-lib --pack-destination ./dist-pack",
+        "publish:npm": "node scripts/publish-npm.mjs"
     },
     "resolutions": {
         "micromatch": ">=4.0.8",
@@ -100,11 +105,13 @@
         "autoprefixer": "^10.4.27",
         "dotenv": "^17.4.2",
         "jsdom": "^25.0.0",
+        "postcss-prefix-selector": "^2.1.1",
         "tailwindcss": "^3.4.4",
         "typescript": "^6.0.3",
         "vite": "^6.4.5",
         "vite-plugin-svgr": "^5.2.0",
         "vite-tsconfig-paths": "^6.1.1",
         "vitest": "^4.1.12"
-    }
+    },
+    "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

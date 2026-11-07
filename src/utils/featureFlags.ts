@@ -4,6 +4,7 @@ import {
     DRAG_SCANS_ENABLED_KEY,
     VIEWPORT_CULLING_ENABLED_KEY,
 } from '../constants/misc'
+import { cbStorage } from './storage'
 
 // Live, user-toggleable feature flags backed by localStorage.
 //
@@ -25,7 +26,7 @@ const listeners = new Set<Listener>()
 
 export function getConnectorsEnabled(): boolean {
     if (cached === null) {
-        const stored = localStorage.getItem(CONNECTORS_ENABLED_KEY)
+        const stored = cbStorage.getItem(CONNECTORS_ENABLED_KEY)
         cached =
             stored === null ? DEFAULT_CONNECTORS_ENABLED : stored === 'true'
     }
@@ -35,7 +36,7 @@ export function getConnectorsEnabled(): boolean {
 export function setConnectorsEnabled(enabled: boolean): void {
     cached = enabled
     try {
-        localStorage.setItem(CONNECTORS_ENABLED_KEY, String(enabled))
+        cbStorage.setItem(CONNECTORS_ENABLED_KEY, String(enabled))
     } catch {
         // Persistence is best-effort; an in-memory toggle still works for the
         // current session even if storage is full/blocked.
@@ -66,7 +67,7 @@ const dotGridListeners = new Set<Listener>()
 
 export function getDotGridEnabled(): boolean {
     if (dotGridCached === null) {
-        const stored = localStorage.getItem(DOT_GRID_ENABLED_KEY)
+        const stored = cbStorage.getItem(DOT_GRID_ENABLED_KEY)
         dotGridCached =
             stored === null ? DEFAULT_DOT_GRID_ENABLED : stored === 'true'
     }
@@ -76,7 +77,7 @@ export function getDotGridEnabled(): boolean {
 export function setDotGridEnabled(enabled: boolean): void {
     dotGridCached = enabled
     try {
-        localStorage.setItem(DOT_GRID_ENABLED_KEY, String(enabled))
+        cbStorage.setItem(DOT_GRID_ENABLED_KEY, String(enabled))
     } catch {
         // Persistence is best-effort; an in-memory toggle still works for the
         // current session even if storage is full/blocked.
@@ -108,7 +109,7 @@ const dragScansListeners = new Set<Listener>()
 
 export function getDragScansEnabled(): boolean {
     if (dragScansCached === null) {
-        const stored = localStorage.getItem(DRAG_SCANS_ENABLED_KEY)
+        const stored = cbStorage.getItem(DRAG_SCANS_ENABLED_KEY)
         dragScansCached =
             stored === null ? DEFAULT_DRAG_SCANS_ENABLED : stored === 'true'
     }
@@ -118,7 +119,7 @@ export function getDragScansEnabled(): boolean {
 export function setDragScansEnabled(enabled: boolean): void {
     dragScansCached = enabled
     try {
-        localStorage.setItem(DRAG_SCANS_ENABLED_KEY, String(enabled))
+        cbStorage.setItem(DRAG_SCANS_ENABLED_KEY, String(enabled))
     } catch {
         // Persistence is best-effort; an in-memory toggle still works for the
         // current session even if storage is full/blocked.
@@ -147,7 +148,7 @@ const cullingListeners = new Set<Listener>()
 
 export function getViewportCullingEnabled(): boolean {
     if (cullingCached === null) {
-        const stored = localStorage.getItem(VIEWPORT_CULLING_ENABLED_KEY)
+        const stored = cbStorage.getItem(VIEWPORT_CULLING_ENABLED_KEY)
         cullingCached =
             stored === null
                 ? DEFAULT_VIEWPORT_CULLING_ENABLED
@@ -159,7 +160,7 @@ export function getViewportCullingEnabled(): boolean {
 export function setViewportCullingEnabled(enabled: boolean): void {
     cullingCached = enabled
     try {
-        localStorage.setItem(VIEWPORT_CULLING_ENABLED_KEY, String(enabled))
+        cbStorage.setItem(VIEWPORT_CULLING_ENABLED_KEY, String(enabled))
     } catch {
         // Persistence is best-effort; an in-memory toggle still works for the
         // current session even if storage is full/blocked.

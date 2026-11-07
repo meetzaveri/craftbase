@@ -13,6 +13,7 @@ import {
 } from '../utils/canvasUtils'
 import type { ComponentRecord, ComponentStore } from '../types/board'
 import type { HistoryEntry } from './useComponentHistory'
+import { isForeignEvent } from '../utils/embedRoot'
 
 // Two.js scene objects are typed loosely here; canvas-side typing converges
 // in Stages 7–9.
@@ -149,6 +150,7 @@ export function useCanvasClipboard({
     // Copy handler (Ctrl+C / Cmd+C)
     useEffect(() => {
         const onCopyEvent = (evt: KeyboardEvent): void => {
+            if (isForeignEvent(evt)) return
             if (evt.key !== 'c' || !(evt.ctrlKey || evt.metaKey)) return
             const tag = document.activeElement?.tagName
             if (tag === 'INPUT' || tag === 'TEXTAREA') return
@@ -242,6 +244,7 @@ export function useCanvasClipboard({
     // Paste handler (Ctrl+V / Cmd+V)
     useEffect(() => {
         const onPasteEvent = (evt: KeyboardEvent): void => {
+            if (isForeignEvent(evt)) return
             if (evt.key !== 'v' || !(evt.ctrlKey || evt.metaKey)) return
             const tag = document.activeElement?.tagName
             if (tag === 'INPUT' || tag === 'TEXTAREA') return

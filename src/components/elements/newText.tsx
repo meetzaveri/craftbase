@@ -9,6 +9,7 @@ import { lineHeightFor } from '../../utils/textLayout'
 import { htmlToBulletText } from '../../utils/htmlToBulletText'
 import { DEFAULT_TEXT_FONT_FAMILY } from '../../constants/misc'
 import { scheduleRender } from '../../utils/renderScheduler'
+import { getCanvasOrigin } from '../../utils/embedRoot'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -386,8 +387,11 @@ function NewText(props: ElementProps): ReactElement {
 
                 input.style.width = `${contentWidth}px`
                 input.style.height = `${contentHeight}px`
-                input.style.left = `${leftAnchor}px`
-                input.style.top = `${centerY - anchorHeight / 2}px`
+                // leftAnchor/centerY are client coords (calibrated from a
+                // screen rect); the textarea is absolute inside the canvas box.
+                const origin = getCanvasOrigin()
+                input.style.left = `${leftAnchor - origin.left}px`
+                input.style.top = `${centerY - origin.top - anchorHeight / 2}px`
             }
 
             // Re-glue the editor to the text after any render (pan/zoom/content).

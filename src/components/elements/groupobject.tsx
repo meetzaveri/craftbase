@@ -13,6 +13,7 @@ import { updateX1Y1Vertices, updateX2Y2Vertices } from '../../utils/updateVertic
 import {
     isCurvedPathType,
     isStandaloneTextType,
+    USER_ID_KEY,
 } from '../../constants/misc'
 import { layoutMemberOutlines } from './groupMemberOutlines'
 
@@ -35,6 +36,7 @@ import {
     readOpacity,
     focusSvgElement,
 } from '../../utils/canvasUtils'
+import { cbStorage } from '../../utils/storage'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElementProps = any
@@ -169,7 +171,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
             return
         }
 
-        const userId = localStorage.getItem('userId')
+        const userId = cbStorage.getItem(USER_ID_KEY)
         const childrenIds = props.children.map((i: ShapeLike) => i.id)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const batchEntries: any[] = []
@@ -487,6 +489,10 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
     useEffect(() => {
         const prevX = props.x
         const prevY = props.y
+        // StrictMode (host apps of the npm package) runs mount → cleanup →
+        // mount. Async work started by a torn-down mount must not touch the
+        // scene, or it hides members / paints into a removed group.
+        let disposed = false
 
         const rectangle = two.makeRectangle(
             0,
@@ -528,6 +534,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         })
 
         Promise.all(loaders).then((resolved) => {
+            if (disposed) return
             resolved.forEach((entry) => {
                 if (!entry) return
                 const { item, mod } = entry
@@ -702,7 +709,7 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         // and record one BATCH of UPDATE_BULK entries so a single undo reverts
         // the whole resize.
         const bakeGroupResize = (s: number, O: { x: number; y: number }): void => {
-            const userId = localStorage.getItem('userId')
+            const userId = cbStorage.getItem(USER_ID_KEY)
             const childrenIds = props.children.map((i: ShapeLike) => i.id)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const batchEntries: any[] = []
@@ -1087,9 +1094,20 @@ function GroupedObjectWrapper(props: ElementProps): ReactElement {
         setGroupId(group.id)
 
         return (): void => {
+            disposed = true
             resizeCleanups.forEach((fn) => fn())
             window.removeEventListener('mousemove', onResizeMove, false)
             window.removeEventListener('mouseup', onResizeUp, false)
+            // Detach the focus listeners BEFORE removing the group. The group's
+            // <g> is focused; the next two.update() detaches it, which fires
+            // `blur` synchronously mid-render. A live onBlurHandler would then
+            // call two.update() re-entrantly and corrupt scene.subtractions
+            // (CLAUDE.md "Two.js scene.subtractions Pitfall").
+            if (groupEl) {
+                groupEl.removeEventListener('focus', onFocusHandler)
+                groupEl.removeEventListener('blur', onBlurHandler)
+                groupEl.removeEventListener('keydown', onKeyDown)
+            }
             if (isInScene(group)) {
                 two.remove(group)
             }

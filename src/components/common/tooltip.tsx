@@ -14,6 +14,7 @@ import type {
 } from 'react'
 
 import Portal from './portal'
+import { getCanvasOrigin, getCanvasSize } from '../../utils/embedRoot'
 
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right'
 
@@ -127,15 +128,18 @@ const Tooltip = ({
                 left = anchor.left + anchor.width / 2 - bw / 2
         }
 
-        // Keep the bubble fully on-screen.
+        // The bubble is `fixed` inside the canvas box (the window in the app,
+        // the embed root otherwise): convert from viewport coords and keep it
+        // fully inside that box.
+        const origin = getCanvasOrigin()
+        const box = getCanvasSize()
+        left -= origin.left
+        top -= origin.top
         left = Math.max(
             EDGE_MARGIN,
-            Math.min(left, window.innerWidth - bw - EDGE_MARGIN)
+            Math.min(left, box.width - bw - EDGE_MARGIN)
         )
-        top = Math.max(
-            EDGE_MARGIN,
-            Math.min(top, window.innerHeight - bh - EDGE_MARGIN)
-        )
+        top = Math.max(EDGE_MARGIN, Math.min(top, box.height - bh - EDGE_MARGIN))
         setPos({ top, left })
     }, [anchor, placement])
 

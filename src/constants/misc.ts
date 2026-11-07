@@ -14,7 +14,7 @@ export const isImageType = (type: string | null | undefined): boolean =>
 // exactly one place — including the welcome sketch (`SKETCH_FONT`).
 export const DEFAULT_TEXT_FONT_FAMILY = 'Caveat Brush'
 
-export const RUBBER_MODE_KEY = 'rubberMode'
+export const RUBBER_MODE_KEY = 'craftbase_rubber_mode'
 
 // Eraser size: the eraser deletes whole elements via a point hit test, not
 // pixel painting, so size is a tolerance around the cursor — a bigger size
@@ -22,7 +22,7 @@ export const RUBBER_MODE_KEY = 'rubberMode'
 // Persisted like the other draw mode keys so re-opening eraser mode remembers
 // the last pick.
 export type EraserSize = 'small' | 'medium' | 'large'
-export const ERASER_SIZE_KEY = 'eraserSize'
+export const ERASER_SIZE_KEY = 'craftbase_eraser_size'
 export const DEFAULT_ERASER_SIZE: EraserSize = 'medium'
 export const ERASER_SIZES: readonly EraserSize[] = ['small', 'medium', 'large']
 
@@ -94,21 +94,21 @@ export const isCurvedPathType = (
     type: string | null | undefined
 ): type is CurvedPathType => type === 'curvedLine' || type === 'curvedArrow'
 
-// Draw mode localStorage keys
-export const ARROW_DRAW_MODE_KEY = 'arrowDrawMode'
-export const TEXT_DRAW_MODE_KEY = 'textDrawMode'
-export const PENDING_SHAPE_TYPE_KEY = 'pendingShapeType'
-export const PENDING_SHAPE_PROPS_KEY = 'pendingShapeProps'
-export const LAST_ADDED_ELEMENT_ID_KEY = 'lastAddedElementId'
-export const PENCIL_MODE_KEY = 'pencilMode'
-export const PAN_MODE_KEY = 'panMode'
+// Draw mode localStorage keys (transient: cleared on every board mount)
+export const ARROW_DRAW_MODE_KEY = 'craftbase_arrow_draw_mode'
+export const TEXT_DRAW_MODE_KEY = 'craftbase_text_draw_mode'
+export const PENDING_SHAPE_TYPE_KEY = 'craftbase_pending_shape_type'
+export const PENDING_SHAPE_PROPS_KEY = 'craftbase_pending_shape_props'
+export const LAST_ADDED_ELEMENT_ID_KEY = 'craftbase_last_added_element_id'
+export const PENCIL_MODE_KEY = 'craftbase_pencil_mode'
+export const PAN_MODE_KEY = 'craftbase_pan_mode'
 
 // Geo draw modes. AREA/ROUTE use multi-click vertex placement; POINT is a
 // single click-to-place. The active geo type is stashed alongside the flag.
-export const GEO_DRAW_MODE_KEY = 'geoDrawMode'
-export const GEO_DRAW_TYPE_KEY = 'geoDrawType'
-export const GEO_DRAW_PROPS_KEY = 'geoDrawProps'
-export const GEO_POINT_PLACE_MODE_KEY = 'geoPointPlaceMode'
+export const GEO_DRAW_MODE_KEY = 'craftbase_geo_draw_mode'
+export const GEO_DRAW_TYPE_KEY = 'craftbase_geo_draw_type'
+export const GEO_DRAW_PROPS_KEY = 'craftbase_geo_draw_props'
+export const GEO_POINT_PLACE_MODE_KEY = 'craftbase_geo_point_place_mode'
 
 // Pin/point counter-scale: 1/scale^resist keeps the pin legible when zoomed
 // out (0 = fully fixed on screen, 1 = scales with the world).
@@ -249,6 +249,25 @@ export const DRAFT_STORAGE_KEY = 'craftbase_local_draft'
 export const DRAFT_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000
 export const BACKGROUND_BOARD_STORAGE_KEY = 'craftbase_background_board_id'
 export const STORAGE_QUOTA_ERROR_NAME = 'QuotaExceededError'
+
+// Every browser-storage key craftbase writes starts with `craftbase_`, so an
+// embedding app can tell them apart from its own keys at a glance. Keys that
+// used other names before are renamed on startup by
+// `src/utils/legacyStorageKeys.ts` — add an entry there when renaming one.
+export const USER_ID_KEY = 'craftbase_user_id'
+export const THEME_KEY = 'craftbase_theme'
+export const ELEMENT_DEFAULTS_KEY = 'craftbase_element_defaults'
+export const SAVED_COLORS_KEY = 'craftbase_saved_colors'
+export const LAST_OPEN_BOARD_KEY = 'craftbase_last_open_board'
+export const TABS_OPEN_KEY_PREFIX = 'craftbase_tabs_open_'
+export const DISPLACEMENT_X_KEY = 'craftbase_displacement_x'
+export const DISPLACEMENT_Y_KEY = 'craftbase_displacement_y'
+export const FIT_PROBE_KEY = 'craftbase_fit_probe'
+// Embed: the user's answer to "save this board in your browser?". Global
+// (not namespaced by storageKey): consent is per site, not per board.
+export const STORAGE_CONSENT_KEY = 'craftbase_storage_consent'
+// sessionStorage (app only): one-shot reload guard after a stale deploy.
+export const PRELOAD_RELOAD_KEY = 'craftbase_preload_reloaded'
 
 // First-visit welcome sketch: once dismissed (user added their first element),
 // never seed again for this browser profile.

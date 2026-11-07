@@ -1,0 +1,39 @@
+/* Stylesheet for the npm package (dist: craftbase/style.css).
+ *
+ * Same CSS the standalone app ships (Tailwind + App.css + common.css), but the
+ * library build runs every selector through postcss-prefix-selector (see
+ * vite.lib.config.mts), so all of it is scoped under `.cb-embed`:
+ *   :root / html / body  → .cb-embed      (theme variables, base font)
+ *   .dark                → .cb-embed.dark (the `theme` prop)
+ *   everything else      → .cb-embed <selector>
+ * Tailwind's preflight is therefore a reset for the board only — the host
+ * page's own styles and CSS variables are never touched.
+ */
+@import '../App.css';
+@import '../common.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The board fills whatever box the host gives it. `contain: layout paint`
+   makes this element the containing block for every `position: fixed` piece
+   of chrome (menu, toolbars, zoom, help), so they pin to the board instead of
+   the browser window. `isolation` keeps the canvas's negative z-indexes from
+   escaping under the host page. */
+:root {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    contain: layout paint;
+    isolation: isolate;
+    text-align: center;
+    box-sizing: border-box;
+    color: rgb(var(--color-ink));
+}
+
+#main-two-root {
+    position: absolute;
+    inset: 0;
+}

@@ -1,7 +1,12 @@
 import Two from 'two.js'
 import { ZUI } from 'two.js/extras/jsm/zui'
 
-import { offsetHeight } from '../../constants/misc'
+import {
+    offsetHeight,
+    DISPLACEMENT_X_KEY,
+    DISPLACEMENT_Y_KEY,
+} from '../../constants/misc'
+import { cbStorage } from '../../utils/storage'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TwoLike = any
@@ -43,10 +48,10 @@ function handleDrag(
 
     function mousemove(e: MouseEvent): void {
         const displacementX = parseInt(
-            localStorage.getItem('displacement_x') ?? '0'
+            cbStorage.getItem(DISPLACEMENT_X_KEY) ?? '0'
         )
         const displacementY = parseInt(
-            localStorage.getItem('displacement_y') ?? '0'
+            cbStorage.getItem(DISPLACEMENT_Y_KEY) ?? '0'
         )
 
         const dx = e.clientX - mouse.x
@@ -73,14 +78,14 @@ function handleDrag(
     function mouseup(e: MouseEvent): void {
         const scale = twoJSInstance.scene.scale
 
-        localStorage.setItem(
+        cbStorage.setItem(
             `${el}_coordX`,
             String(
                 parseInt(String(e.clientX)) +
                     scale * twoJSInstance.scene.translation.x
             )
         )
-        localStorage.setItem(
+        cbStorage.setItem(
             `${el}_coordY`,
             String(
                 parseInt(

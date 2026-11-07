@@ -16,6 +16,7 @@ import { DEFAULT_TEXT_FONT_FAMILY } from '../constants/misc'
 import { getConnectorsEnabled } from '../utils/featureFlags'
 import { isPortShape } from '../utils/shapePorts'
 import { markSelectionChrome } from '../utils/svgExportShared'
+import { getThemeRoot, isForeignEvent } from '../utils/embedRoot'
 
 // Two.js scene shapes carry codebase-specific bookkeeping (elementData,
 // _renderer, etc.) outside the published types. Stay loose here; Stage 12
@@ -145,7 +146,7 @@ const GLOW_CORE_COLOR = '#F2C150'
 // The muted `accent.dark` gold used previously blended into the bg.
 const getSelectionStroke = (): string => {
     if (typeof document === 'undefined') return '#1A1612'
-    const channels = getComputedStyle(document.documentElement)
+    const channels = getComputedStyle(getThemeRoot())
         .getPropertyValue('--color-ink')
         .trim()
     return channels ? `rgb(${channels})` : '#1A1612'
@@ -528,6 +529,7 @@ export default class SelectionController {
         window.addEventListener('clearSelector', this._onClearSelector, false)
 
         this._onKeyDown = (e: KeyboardEvent): void => {
+            if (isForeignEvent(e)) return
             if (!this.currentGroup) return
             const tag = document.activeElement?.tagName
             if (tag === 'INPUT' || tag === 'TEXTAREA') return

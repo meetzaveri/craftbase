@@ -4,8 +4,11 @@ import { allColorShades, essentialShades } from '../../utils/constants'
 import { flipThemeColor } from '../../utils/themeColorFlip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MIXED } from '../../utils/groupInspect'
+import { cbStorage } from '../../utils/storage'
+import { isDarkTheme } from '../../utils/embedRoot'
+import { SAVED_COLORS_KEY } from '../../constants/misc'
 
-const STORAGE_KEY = 'craftbase_saved_colors'
+const STORAGE_KEY = SAVED_COLORS_KEY
 const MAX_SAVED = 8
 
 // Checkerboard shown behind a transparent swatch so it reads as "no paint"
@@ -29,7 +32,7 @@ const swatchBackground = (color?: string | null): string =>
 
 const loadSavedColors = (): string[] => {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY)
+        const stored = cbStorage.getItem(STORAGE_KEY)
         return stored ? (JSON.parse(stored) as string[]) : []
     } catch {
         return []
@@ -38,7 +41,7 @@ const loadSavedColors = (): string[] => {
 
 const persistSavedColors = (colors: string[]): void => {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(colors))
+        cbStorage.setItem(STORAGE_KEY, JSON.stringify(colors))
     } catch {
         /* noop */
     }
@@ -66,10 +69,8 @@ const ColorPicker = ({
     // In dark mode the quick-access tray shows each essential's dark counterpart
     // (flipThemeColor), so picking a swatch stores the theme-appropriate value —
     // which flips back to the light essential when the theme is toggled.
-    const isDarkTheme =
-        typeof document !== 'undefined' &&
-        document.documentElement.classList.contains('dark')
-    const displayEssentials = isDarkTheme
+    const isDark = typeof document !== 'undefined' && isDarkTheme()
+    const displayEssentials = isDark
         ? essentialColors.map((c) => flipThemeColor(c) as string)
         : essentialColors
     const [localExpanded, setLocalExpanded] = useState(false)

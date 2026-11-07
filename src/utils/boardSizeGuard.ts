@@ -1,6 +1,11 @@
 import type { ComponentStore } from '../types/board'
-import { GROUP_COMPONENT, DRAFT_STORAGE_KEY } from '../constants/misc'
+import {
+    GROUP_COMPONENT,
+    DRAFT_STORAGE_KEY,
+    FIT_PROBE_KEY,
+} from '../constants/misc'
 import { isWelcomeComponent } from './welcomeSketch'
+import { cbStorage } from './storage'
 
 /**
  * localStorage stores strings as UTF-16 (~2 bytes/char) and the per-origin
@@ -35,7 +40,7 @@ export const MAX_DRAFT_UTF8_BYTES = 3 * 1024 * 1024 // 3 MB UTF-8
 export function measureStoredDraftUtf8Bytes(): number {
     let raw: string | null = null
     try {
-        raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+        raw = cbStorage.getItem(DRAFT_STORAGE_KEY)
     } catch {
         raw = null
     }
@@ -77,28 +82,28 @@ export function draftFitsForStore(store: ComponentStore): boolean {
     // Approximate the real save envelope; components dominate the size.
     const serialized = JSON.stringify({ components: persistable })
 
-    const PROBE_KEY = '__craftbase_fit_probe__'
+    const PROBE_KEY = FIT_PROBE_KEY
     let current: string | null = null
     try {
-        current = localStorage.getItem(DRAFT_STORAGE_KEY)
+        current = cbStorage.getItem(DRAFT_STORAGE_KEY)
     } catch {
         current = null
     }
     try {
-        if (current != null) localStorage.removeItem(DRAFT_STORAGE_KEY)
-        localStorage.setItem(PROBE_KEY, serialized)
+        if (current != null) cbStorage.removeItem(DRAFT_STORAGE_KEY)
+        cbStorage.setItem(PROBE_KEY, serialized)
         return true
     } catch {
         return false
     } finally {
         try {
-            localStorage.removeItem(PROBE_KEY)
+            cbStorage.removeItem(PROBE_KEY)
         } catch {
             /* ignore */
         }
         if (current != null) {
             try {
-                localStorage.setItem(DRAFT_STORAGE_KEY, current)
+                cbStorage.setItem(DRAFT_STORAGE_KEY, current)
             } catch {
                 /* ignore — nothing we can do, original was already read */
             }
@@ -109,7 +114,7 @@ export function draftFitsForStore(store: ComponentStore): boolean {
 /** Read the raw persisted draft string without parsing/rendering it. */
 export function readRawDraft(): string | null {
     try {
-        return localStorage.getItem(DRAFT_STORAGE_KEY)
+        return cbStorage.getItem(DRAFT_STORAGE_KEY)
     } catch {
         return null
     }

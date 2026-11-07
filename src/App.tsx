@@ -1,5 +1,5 @@
 import React, { Component, useEffect, useState } from 'react'
-import { Routes, Route, BrowserRouter } from 'react-router-dom'
+import { Routes, Route, BrowserRouter, useParams } from 'react-router-dom'
 
 import {
     ApolloClient,
@@ -27,9 +27,9 @@ import { generateRandomUsernames } from './utils/misc'
 import './App.css'
 
 import './common.css'
+import { USER_ID_KEY } from './constants/misc'
 
 function getApolloClient() {
-    const accessToken = localStorage.getItem('access_token')
     // console.log('access_token in client', accessToken)
     // const httpLink = new HttpLink({
     //     uri: import.meta.env.VITE_GRAPHQL_ENDPOINT,
@@ -53,7 +53,7 @@ function getApolloClient() {
         options: {
             reconnect: true,
             connectionParams: () => {
-                const userId = localStorage.getItem('userId')
+                const userId = localStorage.getItem(USER_ID_KEY)
                 return {
                     headers: {
                         'content-type': 'application/json',
@@ -68,7 +68,7 @@ function getApolloClient() {
     })
 
     const authLink = setContext((operation, { headers }) => {
-        const userId = localStorage.getItem('userId')
+        const userId = localStorage.getItem(USER_ID_KEY)
         const isUserInsert = operation.operationName === 'insertUser'
 
         if (!userId && !isUserInsert) {
@@ -115,7 +115,7 @@ const apolloClient = getApolloClient()
 
 function AppInit({ children }: { children: React.ReactNode }) {
     const [userReady, setUserReady] = useState(
-        () => !!localStorage.getItem('userId')
+        () => !!localStorage.getItem(USER_ID_KEY)
     )
     const [insertUser] = useMutation(INSERT_USER_ONE)
 
@@ -126,7 +126,7 @@ function AppInit({ children }: { children: React.ReactNode }) {
                 variables: { object: { nickname, firstName, lastName } },
             }).then(({ data }) => {
                 if (data?.user?.id) {
-                    localStorage.setItem('userId', data.user.id)
+                    localStorage.setItem(USER_ID_KEY, data.user.id)
                     setUserReady(true)
                 }
             })
@@ -136,6 +136,13 @@ function AppInit({ children }: { children: React.ReactNode }) {
     if (!userReady) return <CraftbaseLoader />
 
     return <>{children}</>
+}
+
+// Board no longer reads the router itself (so the npm embed needs no Router);
+// the app route hands the `/board/:id` param in as a prop.
+function PersistedBoardRoute() {
+    const { id } = useParams()
+    return <BoardViewContainer boardId={id} />
 }
 
 class App extends Component {
@@ -158,7 +165,7 @@ class App extends Component {
                                 />
                                 <Route
                                     path={routes.board}
-                                    element={<BoardViewContainer />}
+                                    element={<PersistedBoardRoute />}
                                 />
                                 <Route
                                     path={routes.marketing}

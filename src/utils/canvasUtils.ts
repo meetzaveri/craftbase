@@ -8,6 +8,7 @@ import { lineHeightFor, measureTextWidth, type FontSpec } from './textLayout'
 import { reflowTextForShape } from './shapeTextFit'
 import { isFontReady, runWhenFontReady } from './fontLoading'
 import { scheduleRender } from './renderScheduler'
+import { isDarkTheme, getThemeRoot } from './embedRoot'
 
 // Two.js scene/shape objects in the codebase carry extra bookkeeping fields
 // (elementData, _renderer, etc.) that aren't part of the published types. Keep
@@ -30,9 +31,9 @@ type ZUILike = any
 // token otherwise. Low alpha keeps members readable underneath.
 export const getGroupFill = (): string => {
     if (typeof document === 'undefined') return 'rgba(26, 22, 18, 0.1)'
-    const isDark = document.documentElement.classList.contains('dark')
+    const isDark = isDarkTheme()
     const token = isDark ? '--color-ink' : '--color-topbar'
-    const channels = getComputedStyle(document.documentElement)
+    const channels = getComputedStyle(getThemeRoot())
         .getPropertyValue(token)
         .trim()
     const rgb = channels ? channels.split(/\s+/).join(', ') : '26, 22, 18'

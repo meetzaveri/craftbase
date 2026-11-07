@@ -19,6 +19,7 @@ import {
     IMAGE_COMPONENT,
     type EraserSize,
 } from '../../constants/misc'
+import { getCanvasOrigin, getCanvasSize } from '../../utils/embedRoot'
 
 // Hover labels for the eraser size dots. The dots' pixel sizes come from
 // ERASER_DOT_PX rather than living here, because the trail drawn on the board
@@ -140,11 +141,27 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
         applyProperty,
         eraserSize,
         setEraserSizeInBoard,
-        isPersisted,
+        imagesEnabled,
     } = useBoardContext()
     const { isMobile } = useMediaQueryUtils()
     const [openDrawer, setOpenDrawer] = useState<string | null>(null)
-    const [drawerAnchor, setDrawerAnchor] = useState<DrawerAnchor | null>(null)
+    const [drawerAnchor, setDrawerAnchorState] = useState<DrawerAnchor | null>(
+        null
+    )
+    // Call sites pass the trigger's viewport rect; drawers are `fixed` inside
+    // the canvas box, so store the anchor box-local (no-op in the app).
+    const setDrawerAnchor = (anchor: DrawerAnchor | null): void => {
+        if (!anchor) {
+            setDrawerAnchorState(null)
+            return
+        }
+        const o = getCanvasOrigin()
+        setDrawerAnchorState({
+            left: anchor.left - o.left,
+            top: anchor.top - o.top,
+            rectTop: anchor.rectTop - o.top,
+        })
+    }
     const drawerRef = useRef<HTMLDivElement | null>(null)
     // Last category chosen for *new* points (so the drawer reflects the user's
     // pick across placements). A selected point's own category takes priority
@@ -186,8 +203,8 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                 (el) =>
                     !geoObjectsEnabled || !GEO_HIDDEN_TOOLS.has(el.elementName)
             )
-            // Images are local-mode only; shared boards don't offer the tool.
-            .filter((el) => !isPersisted || el.elementName !== IMAGE_COMPONENT)
+            // Images are local-mode only (and off in the npm embed).
+            .filter((el) => imagesEnabled || el.elementName !== IMAGE_COMPONENT)
             // Geo tools (point/area/route/geoText) appear alongside the shape
             // tools only when the consumer opts in via the geoObjectsEnabled
             // Board prop.
@@ -536,7 +553,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                         isMobile
                             ? {
                                   bottom:
-                                      window.innerHeight -
+                                      getCanvasSize().height -
                                       drawerAnchor.rectTop +
                                       6,
                                   left: drawerAnchor.left,
@@ -603,7 +620,7 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                         isMobile
                             ? {
                                   bottom:
-                                      window.innerHeight -
+                                      getCanvasSize().height -
                                       drawerAnchor.rectTop +
                                       6,
                                   left: drawerAnchor.left,
@@ -679,7 +696,8 @@ const ShapesToolbar = ({ addElement }: ShapesToolbarProps): ReactElement => {
                 <div
                     className="fixed bg-card-bg border border-border-panel rounded-card flex items-center flex-row px-1 py-1 gap-0.5"
                     style={{
-                        bottom: window.innerHeight - drawerAnchor.rectTop + 6,
+                        bottom:
+                            getCanvasSize().height - drawerAnchor.rectTop + 6,
                         left: drawerAnchor.left,
                         zIndex: 11,
                     }}

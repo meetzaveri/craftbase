@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App'
+import { migrateLegacyStorageKeys } from './utils/legacyStorageKeys'
 import * as serviceWorker from './serviceWorker'
+import { PRELOAD_RELOAD_KEY } from './constants/misc'
 
 Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
@@ -26,8 +28,6 @@ Sentry.init({
 // asset hashes. The sessionStorage flag prevents an infinite reload loop if the
 // asset is genuinely missing rather than just stale; it's cleared on a clean
 // load below so future stale deploys can recover again.
-const PRELOAD_RELOAD_KEY = 'vite-preload-reloaded'
-
 window.addEventListener('vite:preloadError', (event) => {
     if (sessionStorage.getItem(PRELOAD_RELOAD_KEY)) return
     // Suppress the throw so it doesn't surface to the ErrorBoundary/Sentry —
@@ -40,6 +40,10 @@ window.addEventListener('vite:preloadError', (event) => {
 window.addEventListener('load', () => {
     sessionStorage.removeItem(PRELOAD_RELOAD_KEY)
 })
+
+// Rename pre-`craftbase_` storage keys (userId, cb-theme, ...) before
+// anything reads them. App-only: the npm embed never used the old names.
+migrateLegacyStorageKeys()
 
 const rootEl = document.getElementById('root')
 if (rootEl) {

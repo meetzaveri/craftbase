@@ -1,6 +1,7 @@
 import { LINE_LIKE_GROUP_TYPES } from '../../utils/groupAccepts'
 import { markSelectionChrome } from '../../utils/svgExportShared'
 import { SELECTION_PADDING } from '../../canvas/selectionController'
+import { getThemeRoot } from '../../utils/embedRoot'
 
 // Per-member selection outlines for a Shift-click group. A Shift-selection is
 // a set of separate elements, so on top of the group frame each member gets
@@ -16,7 +17,7 @@ const OUTLINE_SCREEN_WIDTH = 1.5
 
 // Same token as the single-selection box (selectionController).
 const outlineStroke = (): string => {
-    const channels = getComputedStyle(document.documentElement)
+    const channels = getComputedStyle(getThemeRoot())
         .getPropertyValue('--color-ink')
         .trim()
     return channels ? `rgb(${channels})` : '#1A1612'
