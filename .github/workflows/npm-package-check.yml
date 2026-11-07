@@ -1,0 +1,44 @@
+name: npm package check
+
+# Builds the craftbase npm package on every PR and fails if it is incomplete,
+# mis-versioned, or would leak backend config. Uploads the tarball so it can be
+# installed and tried out (`npm install ./craftbase-x.y.z.tgz`).
+
+on:
+    pull_request:
+        branches:
+            - main
+            - dev
+
+concurrency:
+    group: npm-package-check-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    package:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: yarn
+
+            - name: Install dependencies
+              run: yarn install --frozen-lockfile
+
+            - name: Typecheck
+              run: yarn typecheck
+
+            - name: Build, check and pack
+              run: yarn pack:lib
+
+            - name: Upload tarball
+              uses: actions/upload-artifact@v4
+              with:
+                  name: craftbase-npm-package
+                  path: dist-pack/*.tgz
+                  retention-days: 14

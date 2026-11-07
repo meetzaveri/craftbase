@@ -18,6 +18,7 @@ import {
     isStandaloneTextType,
 } from '../constants/misc'
 import type { ComponentRecord, ComponentStore } from '../types/board'
+import { cbStorage } from '../utils/storage'
 
 // Two.js scene-group shapes are typed loosely until the canvas internals
 // converge (Stages 7–9). Bulk-prop bags are also row-shaped; we accept
@@ -1091,7 +1092,7 @@ export function useComponentHistory({
         writeHistory([])
         writeBucket([])
         if (!isPersistedArg) {
-            localStorage.removeItem(localDraftKey || DRAFT_STORAGE_KEY)
+            cbStorage.removeItem(localDraftKey || DRAFT_STORAGE_KEY)
         }
     }
 

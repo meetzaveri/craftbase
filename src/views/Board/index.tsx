@@ -1,5 +1,4 @@
 import React, { Suspense } from 'react'
-import { useParams } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 
 import ErrorBoundary from './errorBoundary'
@@ -18,7 +17,7 @@ const BoardViewPage = React.lazy(() => import('./board'))
 // BoardViewPage's hook order invariant. BoardViewPage's own copy of this
 // query (same vars, cache-first) then resolves from cache instantly.
 const BoardViewContainer: React.FC<BoardProps> = (props) => {
-    const { id: boardIdFromUrl } = useParams()
+    const boardIdFromUrl = props.boardId
     const isPersisted = !!boardIdFromUrl
 
     const { loading } = useQuery(GET_COMPONENTS_FOR_BOARD_QUERY, {

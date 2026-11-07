@@ -60,7 +60,7 @@ const mockGraphql = async (page, components) => {
         })
     })
     await page.addInitScript(() => {
-        localStorage.setItem('userId', 'test-user-id')
+        localStorage.setItem('craftbase_user_id', 'test-user-id')
         localStorage.setItem('craftbase_welcome_dismissed', '1')
     })
 }

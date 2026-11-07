@@ -134,7 +134,9 @@ const MenuDrawer = (): ReactElement => {
         stateRefForComponentStore,
         twoJSInstance,
         beginBoardImport,
+        features,
     } = useBoardContext()
+    const clearOnly = features.menuItems === 'clearOnly'
 
     useEffect(() => {
         const handleClick = (e: MouseEvent): void => {
@@ -245,285 +247,305 @@ const MenuDrawer = (): ReactElement => {
                     }}
                 >
                     <div className="bg-card-bg border border-border-panel rounded-lg shadow-lg py-1 w-max min-w-[188px] max-w-[calc(100vw-20px)]">
-                        <a
-                            href="https://github.com/craftbase-org/craftbase/releases"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer no-underline
-                                transition-colors ease-in-out duration-150"
-                            onClick={(): void => setShowMenu(false)}
-                        >
-                            <div className="flex items-center gap-2.5">
-                                <svg
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 14 14"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
+                        {/* Embed ('clearOnly'): the app's nav links, settings,
+                            import/export and image download are hidden — only
+                            Clear canvas remains. Also means no router <Link>
+                            renders, so the embed needs no Router. */}
+                        {!clearOnly && (
+                            <>
+                                <a
+                                    href="https://github.com/craftbase-org/craftbase/releases"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-between px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/50 rounded cursor-pointer no-underline
+                                    transition-colors ease-in-out duration-150"
+                                    onClick={(): void => setShowMenu(false)}
                                 >
-                                    <path
-                                        d="M2 1h10a1 1 0 011 1v10a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"
-                                        stroke="#8C7E6A"
-                                        strokeWidth="1.1"
-                                    />
-                                    <path
-                                        d="M4 4.5h6M4 7h6M4 9.5h3.5"
-                                        stroke="#8C7E6A"
-                                        strokeWidth="1.1"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
-                                <span>Changelog</span>
-                            </div>
-                            <ExternalIcon />
-                        </a>
+                                    <div className="flex items-center gap-2.5">
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 14 14"
+                                            fill="none"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                        >
+                                            <path
+                                                d="M2 1h10a1 1 0 011 1v10a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1z"
+                                                stroke="#8C7E6A"
+                                                strokeWidth="1.1"
+                                            />
+                                            <path
+                                                d="M4 4.5h6M4 7h6M4 9.5h3.5"
+                                                stroke="#8C7E6A"
+                                                strokeWidth="1.1"
+                                                strokeLinecap="round"
+                                            />
+                                        </svg>
+                                        <span>Changelog</span>
+                                    </div>
+                                    <ExternalIcon />
+                                </a>
 
-                        <Link
-                            to={routes.embeddable}
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer no-underline
-                                transition-colors ease-in-out duration-150"
-                            onClick={(): void => setShowMenu(false)}
-                        >
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 14 14"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    d="M5 9.5L2.5 7 5 4.5M9 4.5L11.5 7 9 9.5"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                            </svg>
-                            <span>Embeddable whiteboard</span>
-                        </Link>
+                                <Link
+                                    to={routes.embeddable}
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/50 rounded cursor-pointer no-underline
+                                    transition-colors ease-in-out duration-150"
+                                    onClick={(): void => setShowMenu(false)}
+                                >
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 14 14"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <path
+                                            d="M5 9.5L2.5 7 5 4.5M9 4.5L11.5 7 9 9.5"
+                                            stroke="#8C7E6A"
+                                            strokeWidth="1.1"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                    <span>Embeddable whiteboard</span>
+                                </Link>
 
-                        <Link
-                            to={routes.support}
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer no-underline
-                                transition-colors ease-in-out duration-150"
-                            onClick={(): void => setShowMenu(false)}
-                        >
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 14 14"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <circle
-                                    cx="7"
-                                    cy="7"
-                                    r="5.5"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                />
-                                <path
-                                    d="M7 4.5v3.5M7 9.5v.5"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                    strokeLinecap="round"
-                                />
-                            </svg>
-                            <span>Support</span>
-                        </Link>
+                                <Link
+                                    to={routes.support}
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/50 rounded cursor-pointer no-underline
+                                    transition-colors ease-in-out duration-150"
+                                    onClick={(): void => setShowMenu(false)}
+                                >
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 14 14"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <circle
+                                            cx="7"
+                                            cy="7"
+                                            r="5.5"
+                                            stroke="#8C7E6A"
+                                            strokeWidth="1.1"
+                                        />
+                                        <path
+                                            d="M7 4.5v3.5M7 9.5v.5"
+                                            stroke="#8C7E6A"
+                                            strokeWidth="1.1"
+                                            strokeLinecap="round"
+                                        />
+                                    </svg>
+                                    <span>Support</span>
+                                </Link>
 
-                        <Link
-                            to={routes.privacy}
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer no-underline
-                                transition-colors ease-in-out duration-150"
-                            onClick={(): void => setShowMenu(false)}
-                        >
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 14 14"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    d="M7 1.25l4.5 1.75v3.5c0 2.6-1.9 4.7-4.5 5.5-2.6-.8-4.5-2.9-4.5-5.5V3z"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                    strokeLinejoin="round"
-                                />
-                                <path
-                                    d="M5.25 7l1.25 1.25L9 5.75"
-                                    stroke="#8C7E6A"
-                                    strokeWidth="1.1"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                            </svg>
-                            <span>Privacy</span>
-                        </Link>
+                                <Link
+                                    to={routes.privacy}
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/50 rounded cursor-pointer no-underline
+                                    transition-colors ease-in-out duration-150"
+                                    onClick={(): void => setShowMenu(false)}
+                                >
+                                    <svg
+                                        width="14"
+                                        height="14"
+                                        viewBox="0 0 14 14"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <path
+                                            d="M7 1.25l4.5 1.75v3.5c0 2.6-1.9 4.7-4.5 5.5-2.6-.8-4.5-2.9-4.5-5.5V3z"
+                                            stroke="#8C7E6A"
+                                            strokeWidth="1.1"
+                                            strokeLinejoin="round"
+                                        />
+                                        <path
+                                            d="M5.25 7l1.25 1.25L9 5.75"
+                                            stroke="#8C7E6A"
+                                            strokeWidth="1.1"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                    <span>Privacy</span>
+                                </Link>
 
-                        <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
+                                <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
 
-                        <button
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer
-                                transition-colors ease-in-out duration-150"
-                            style={{ width: 'calc(100% - 8px)' }}
-                            onClick={handleSettingsClick}
-                        >
-                            <SettingsIcon
-                                className="w-3.5 h-3.5"
-                                stroke="currentColor"
-                                color="currentColor"
-                                aria-hidden="true"
-                            />
-                            <span>Settings</span>
-                        </button>
-
-                        <button
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/30 rounded cursor-pointer
-                                transition-colors ease-in-out duration-150"
-                            style={{ width: 'calc(100% - 8px)' }}
-                            onClick={handleShortcutsClick}
-                        >
-                            <HelpIcon
-                                className="w-3.5 h-3.5"
-                                stroke="currentColor"
-                                color="currentColor"
-                                aria-hidden="true"
-                            />
-                            <span>Keyboard shortcuts</span>
-                        </button>
-
-                        <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
-
-                        <div className="relative">
-                            <button
-                                className="flex items-center justify-between gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                <button
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
                                     hover:bg-accent/50 rounded cursor-pointer
                                     transition-colors ease-in-out duration-150"
-                                style={{ width: 'calc(100% - 8px)' }}
-                                onClick={(): void => {
-                                    setShowImportSubmenu(false)
-                                    setShowExportSubmenu((prev) => !prev)
-                                }}
-                            >
-                                <span className="flex items-center gap-2.5">
+                                    style={{ width: 'calc(100% - 8px)' }}
+                                    onClick={handleSettingsClick}
+                                >
+                                    <SettingsIcon
+                                        className="w-3.5 h-3.5"
+                                        stroke="currentColor"
+                                        color="currentColor"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Settings</span>
+                                </button>
+
+                                <button
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/30 rounded cursor-pointer
+                                    transition-colors ease-in-out duration-150"
+                                    style={{ width: 'calc(100% - 8px)' }}
+                                    onClick={handleShortcutsClick}
+                                >
+                                    <HelpIcon
+                                        className="w-3.5 h-3.5"
+                                        stroke="currentColor"
+                                        color="currentColor"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Keyboard shortcuts</span>
+                                </button>
+
+                                <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
+
+                                <div className="relative">
+                                    <button
+                                        className="flex items-center justify-between gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                        hover:bg-accent/50 rounded cursor-pointer
+                                        transition-colors ease-in-out duration-150"
+                                        style={{ width: 'calc(100% - 8px)' }}
+                                        onClick={(): void => {
+                                            setShowImportSubmenu(false)
+                                            setShowExportSubmenu(
+                                                (prev) => !prev
+                                            )
+                                        }}
+                                    >
+                                        <span className="flex items-center gap-2.5">
+                                            <DownloadIcon />
+                                            <span>Export board</span>
+                                        </span>
+                                        <ChevronRightIcon
+                                            className="w-3.5 h-3.5"
+                                            stroke="currentColor"
+                                            color="currentColor"
+                                            aria-hidden="true"
+                                        />
+                                    </button>
+
+                                    {showExportSubmenu && (
+                                        <div
+                                            className="absolute top-0 bg-card-bg border border-border-panel
+                                            rounded-lg shadow-lg py-1 w-max min-w-[152px] z-[101]"
+                                            style={{ left: '100%' }}
+                                        >
+                                            <button
+                                                className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                                hover:bg-accent/50 rounded cursor-pointer
+                                                transition-colors ease-in-out duration-150"
+                                                style={{
+                                                    width: 'calc(100% - 8px)',
+                                                }}
+                                                onClick={handleExportJson}
+                                            >
+                                                <span>Export as JSON</span>
+                                            </button>
+                                            <button
+                                                className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                                rounded transition-colors ease-in-out duration-150
+                                                disabled:opacity-50 disabled:cursor-default"
+                                                style={{
+                                                    width: 'calc(100% - 8px)',
+                                                }}
+                                                title="Coming soon"
+                                                disabled
+                                            >
+                                                <span>Export as SVG</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="relative">
+                                    <button
+                                        className="flex items-center justify-between gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                        hover:bg-accent/50 rounded cursor-pointer
+                                        transition-colors ease-in-out duration-150"
+                                        style={{ width: 'calc(100% - 8px)' }}
+                                        onClick={(): void => {
+                                            setShowExportSubmenu(false)
+                                            setShowImportSubmenu(
+                                                (prev) => !prev
+                                            )
+                                        }}
+                                    >
+                                        <span className="flex items-center gap-2.5">
+                                            <UploadIcon />
+                                            <span>Import board</span>
+                                        </span>
+                                        <ChevronRightIcon
+                                            className="w-3.5 h-3.5"
+                                            stroke="currentColor"
+                                            color="currentColor"
+                                            aria-hidden="true"
+                                        />
+                                    </button>
+
+                                    {showImportSubmenu && (
+                                        <div
+                                            className="absolute top-0 bg-card-bg border border-border-panel
+                                            rounded-lg shadow-lg py-1 w-max min-w-[152px] z-[101]"
+                                            style={{ left: '100%' }}
+                                        >
+                                            <button
+                                                className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                                hover:bg-accent/50 rounded cursor-pointer
+                                                transition-colors ease-in-out duration-150"
+                                                style={{
+                                                    width: 'calc(100% - 8px)',
+                                                }}
+                                                onClick={handleImportJson}
+                                            >
+                                                <span>Import JSON</span>
+                                            </button>
+                                            <button
+                                                className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                                rounded transition-colors ease-in-out duration-150
+                                                disabled:opacity-50 disabled:cursor-default"
+                                                style={{
+                                                    width: 'calc(100% - 8px)',
+                                                }}
+                                                title="Coming soon"
+                                                disabled
+                                            >
+                                                <span>Import SVG</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
+                                    hover:bg-accent/50 rounded cursor-pointer
+                                    transition-colors ease-in-out duration-150
+                                    disabled:opacity-50 disabled:cursor-default"
+                                    style={{ width: 'calc(100% - 8px)' }}
+                                    onClick={handleDownloadClick}
+                                    disabled={isExporting}
+                                >
                                     <DownloadIcon />
-                                    <span>Export board</span>
-                                </span>
-                                <ChevronRightIcon
-                                    className="w-3.5 h-3.5"
-                                    stroke="currentColor"
-                                    color="currentColor"
-                                    aria-hidden="true"
-                                />
-                            </button>
+                                    <span>
+                                        {isExporting
+                                            ? 'Preparing image…'
+                                            : 'Download as image'}
+                                    </span>
+                                </button>
 
-                            {showExportSubmenu && (
-                                <div
-                                    className="absolute top-0 bg-card-bg border border-border-panel
-                                        rounded-lg shadow-lg py-1 w-max min-w-[152px] z-[101]"
-                                    style={{ left: '100%' }}
-                                >
-                                    <button
-                                        className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                            hover:bg-accent/50 rounded cursor-pointer
-                                            transition-colors ease-in-out duration-150"
-                                        style={{ width: 'calc(100% - 8px)' }}
-                                        onClick={handleExportJson}
-                                    >
-                                        <span>Export as JSON</span>
-                                    </button>
-                                    <button
-                                        className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                            rounded transition-colors ease-in-out duration-150
-                                            disabled:opacity-50 disabled:cursor-default"
-                                        style={{ width: 'calc(100% - 8px)' }}
-                                        title="Coming soon"
-                                        disabled
-                                    >
-                                        <span>Export as SVG</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="relative">
-                            <button
-                                className="flex items-center justify-between gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                    hover:bg-accent/50 rounded cursor-pointer
-                                    transition-colors ease-in-out duration-150"
-                                style={{ width: 'calc(100% - 8px)' }}
-                                onClick={(): void => {
-                                    setShowExportSubmenu(false)
-                                    setShowImportSubmenu((prev) => !prev)
-                                }}
-                            >
-                                <span className="flex items-center gap-2.5">
-                                    <UploadIcon />
-                                    <span>Import board</span>
-                                </span>
-                                <ChevronRightIcon
-                                    className="w-3.5 h-3.5"
-                                    stroke="currentColor"
-                                    color="currentColor"
-                                    aria-hidden="true"
-                                />
-                            </button>
-
-                            {showImportSubmenu && (
-                                <div
-                                    className="absolute top-0 bg-card-bg border border-border-panel
-                                        rounded-lg shadow-lg py-1 w-max min-w-[152px] z-[101]"
-                                    style={{ left: '100%' }}
-                                >
-                                    <button
-                                        className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                            hover:bg-accent/50 rounded cursor-pointer
-                                            transition-colors ease-in-out duration-150"
-                                        style={{ width: 'calc(100% - 8px)' }}
-                                        onClick={handleImportJson}
-                                    >
-                                        <span>Import JSON</span>
-                                    </button>
-                                    <button
-                                        className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                            rounded transition-colors ease-in-out duration-150
-                                            disabled:opacity-50 disabled:cursor-default"
-                                        style={{ width: 'calc(100% - 8px)' }}
-                                        title="Coming soon"
-                                        disabled
-                                    >
-                                        <span>Import SVG</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-ink-mid
-                                hover:bg-accent/50 rounded cursor-pointer
-                                transition-colors ease-in-out duration-150
-                                disabled:opacity-50 disabled:cursor-default"
-                            style={{ width: 'calc(100% - 8px)' }}
-                            onClick={handleDownloadClick}
-                            disabled={isExporting}
-                        >
-                            <DownloadIcon />
-                            <span>
-                                {isExporting
-                                    ? 'Preparing image…'
-                                    : 'Download as image'}
-                            </span>
-                        </button>
-
-                        <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
+                                <div className="h-px bg-border-panel mx-2 mt-1 mb-1" />
+                            </>
+                        )}
 
                         <button
                             className="flex items-center gap-2.5 px-3 py-2 mx-1 text-sm text-red-500

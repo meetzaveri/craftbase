@@ -40,7 +40,7 @@ export async function setupLocalBoard(page) {
     })
 
     await page.addInitScript(() => {
-        localStorage.setItem('userId', 'test-user-id')
+        localStorage.setItem('craftbase_user_id', 'test-user-id')
         // Disable the first-visit welcome sketch for e2e: its seeded elements
         // would inflate element counts and its entrance animation would race
         // assertions. Setting the dismissal flag makes the board load as a

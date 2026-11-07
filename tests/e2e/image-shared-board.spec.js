@@ -81,7 +81,7 @@ async function openSharedBoard(page) {
         })
     })
     await page.addInitScript(() => {
-        localStorage.setItem('userId', 'test-user-id')
+        localStorage.setItem('craftbase_user_id', 'test-user-id')
         localStorage.setItem('craftbase_welcome_dismissed', '1')
     })
     await page.goto(`/board/${BOARD_ID}`)

@@ -9,6 +9,7 @@ import BringForwardIcon from '../assets/bring-forward.svg?react'
 import SendBackwardIcon from '../assets/send-backward.svg?react'
 import SendToBackIcon from '../assets/send-to-back.svg?react'
 import ChevronRightIcon from '../assets/chevron-right.svg?react'
+import { getCanvasSize } from '../utils/embedRoot'
 
 export type ReorderOp = 'front' | 'forward' | 'backward' | 'back'
 
@@ -118,14 +119,15 @@ const CanvasContextMenu = ({
         }
     }, [onClose])
 
-    const left = Math.min(x, window.innerWidth - MENU_WIDTH - MENU_MARGIN)
-    const top = Math.min(y, window.innerHeight - (height || 60) - MENU_MARGIN)
+    // x/y are canvas-box-local (see the setCtxMenu call in newCanvas).
+    const { width: boxW, height: boxH } = getCanvasSize()
+    const left = Math.min(x, boxW - MENU_WIDTH - MENU_MARGIN)
+    const top = Math.min(y, boxH - (height || 60) - MENU_MARGIN)
     const clampedLeft = Math.max(MENU_MARGIN, left)
 
     // Flip the flyout to the left when there isn't room on the right.
     const openLeft =
-        clampedLeft + MENU_WIDTH + SUBMENU_WIDTH + MENU_MARGIN >
-        window.innerWidth
+        clampedLeft + MENU_WIDTH + SUBMENU_WIDTH + MENU_MARGIN > boxW
 
     return (
         <Portal>

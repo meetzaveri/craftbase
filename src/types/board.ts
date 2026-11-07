@@ -13,68 +13,21 @@
 import type { ReactNode, MutableRefObject } from 'react'
 import type Two from 'two.js'
 import type { EraserSize } from '../constants/misc'
+import type { BoardFeatures } from '../embed/embedConfig'
 
-// --- DB shape (mirrors CLAUDE.md "Component schema (from DB)") ----------
-
-export interface ComponentMetadata {
-    [key: string]: unknown
-}
-
-export interface ComponentRecord {
-    id: string
-    componentType: string
-    /** Distinguishes geo objects (point/area/route) from regular shapes. */
-    objectClass?: 'shape' | 'geo'
-    x: number
-    y: number
-    x1: number
-    x2: number
-    y1: number
-    y2: number
-    width: number
-    height: number
-    fill: string
-    stroke: string | null
-    linewidth: number | null
-    strokeType: string | null
-    radius: number | null
-    iconStroke: string | null
-    textColor: string | null
-    boardId: string | null
-    boardName: string | null
-    metadata: ComponentMetadata | null
-    children: unknown | null
-    isDummy: boolean | null
-    updatedBy: string | null
-    createdAt: number | null
-    /**
-     * Z-order key (back→front). Lower draws first (behind), higher draws on
-     * top — matching Two.js `scene.children` where index 0 is the back. New
-     * elements get `max(position)+1` (assigned in addToLocalComponentStore).
-     * Optional/nullable: legacy DB rows and directly-seeded records (e.g. the
-     * welcome sketch) may omit it; the z-order reconcile treats absent as 0.
-     */
-    position?: number | null
-    /**
-     * Connector binding (arrowLine only): the arrow's tail/head is pinned to a
-     * shape's edge port and re-anchors when that shape moves/resizes. Stores the
-     * bound shape's id and the edge (`n/e/s/w-resize`). Null/absent = free
-     * endpoint; cleared when the user manually drags that endpoint off.
-     */
-    tailShapeId?: string | null
-    tailEdge?: string | null
-    headShapeId?: string | null
-    headEdge?: string | null
-    /**
-     * Fan slot among the connectors docked at the same port (0 = the bare port
-     * point; higher indices offset along the edge so stacked endpoints stay
-     * distinguishable). Reassigned by restackPortConnectors on every release.
-     */
-    tailPortIndex?: number | null
-    headPortIndex?: number | null
-}
-
-export type ComponentStore = Record<string, ComponentRecord>
+export type {
+    ComponentMetadata,
+    ComponentRecord,
+    ComponentStore,
+    CraftbaseData,
+    BoardApi,
+} from './component'
+import type {
+    ComponentRecord,
+    ComponentStore,
+    CraftbaseData,
+    BoardApi,
+} from './component'
 
 // --- Consumer-facing props on <Board /> --------------------------------
 
@@ -116,6 +69,24 @@ export interface Cluster {
 }
 
 export interface BoardProps {
+    /**
+     * Persisted board id (the `/board/:id` route param). Absent = local mode.
+     * Passed as a prop (not read via useParams) so Board never needs a Router.
+     */
+    boardId?: string
+    /** App vs embed feature gates. Defaults to FULL_APP_FEATURES. */
+    features?: BoardFeatures
+    /** Embed: start from this document instead of the local draft. */
+    initialData?: CraftbaseData
+    /** Embed: fires with the full document on every store change. */
+    onChange?: (data: CraftbaseData) => void
+    /** Embed: filled with load/clear/getData once Board mounts. */
+    apiRef?: MutableRefObject<BoardApi | null>
+    /**
+     * Embed: the root element the board is mounted in. Theme class reads,
+     * container sizing and keyboard scoping use it. Absent = full viewport.
+     */
+    rootRef?: MutableRefObject<HTMLElement | null>
     /** Fired on ZUI camera updates. See CLAUDE.md "Extension points over forks". */
     onCameraChange?: (event: CameraChangeEvent) => void
     /** Render slot mounted between #selector-rect and #main-two-root. */
@@ -289,6 +260,11 @@ export interface BoardContextValue {
     recordBatchToHistoryLog: (entries: HistoryEntry[]) => void
     undoLastAction: () => void
     redoLastAction: () => void
+
+    // App vs embed feature gates (share, menu, images, network)
+    features: BoardFeatures
+    /** Images allowed on this board (local mode AND features.images). */
+    imagesEnabled: boolean
 
     // Consumer extension points (forwarded from BoardProps)
     scaleToDisplay?: BoardProps['scaleToDisplay']

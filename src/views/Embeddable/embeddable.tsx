@@ -61,7 +61,7 @@ const EmbeddablePage: React.FC = () => {
             'Embeddable Whiteboard for React Apps — Craftbase'
 
         const description =
-            'Embed Craftbase, an open-source whiteboard canvas, into your React app with a single <Board /> component. Whiteboard data lives in the browser localStorage — no backend required to get started.'
+            'Embed Craftbase, a whiteboard canvas, into your React app with npm install craftbase and a single <Craftbase /> component. Your app owns the board data. No backend needed.'
         let meta = document.querySelector(
             'meta[name="description"]'
         ) as HTMLMetaElement | null
@@ -111,101 +111,103 @@ const EmbeddablePage: React.FC = () => {
                         Embeddable Whiteboard for React
                     </h1>
                     <p className="text-sm tablet-landscape:text-base text-ink-muted leading-relaxed">
-                        Craftbase is an open-source, embeddable whiteboard canvas
-                        you can drop into any React app as a single component.
-                        Mount the <code className="text-accent-dark">{'<Board />'}</code>{' '}
-                        and you get a full sketching surface — shapes, arrows,
-                        text, freehand drawing, pan and zoom — rendered with
-                        Two.js. No backend is required to get started: your
-                        whiteboard data lives in the browser's{' '}
-                        <strong className="text-ink">localStorage</strong>.
+                        Craftbase is an embeddable whiteboard you can drop into
+                        any React app as one component. Mount{' '}
+                        <code className="text-accent-dark">{'<Craftbase />'}</code>{' '}
+                        and you get shapes, connectors, text, freehand drawing,
+                        pan and zoom. No backend is needed. Your app holds the
+                        board data, and the user decides whether their browser
+                        keeps a copy.
                     </p>
                 </header>
 
                 <Section title="Install">
-                    <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        Add Craftbase as a dependency. During local development
-                        you can link the package directly from a sibling
-                        checkout:
+                    <CodeBlock>{`npm install craftbase`}</CodeBlock>
+                    <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mt-3">
+                        Needs <code className="text-accent-dark">react</code> and{' '}
+                        <code className="text-accent-dark">react-dom</code> 18 or
+                        19. The package ships compiled JavaScript, one CSS file
+                        and TypeScript types, so it works with any bundler.
                     </p>
-                    <CodeBlock>{`// package.json
-{
-  "dependencies": {
-    "craftbase": "link:../craftbase"
-  }
-}`}</CodeBlock>
                 </Section>
 
                 <Section title="Drop it into your app">
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        Import the <code className="text-accent-dark">Board</code>{' '}
-                        component and render it inside a sized container. That's
-                        the whole integration — Craftbase owns the canvas, tools
-                        and interactions.
+                        Render it inside an element that has a size. The board
+                        fills that element. Keep the data in your own state with{' '}
+                        <code className="text-accent-dark">onChange</code>.
                     </p>
-                    <CodeBlock>{`import { Board } from 'craftbase'
+                    <CodeBlock>{`import { useRef, useState } from 'react'
+import { Craftbase } from 'craftbase'
+import type { CraftbaseData, CraftbaseHandle } from 'craftbase'
+import 'craftbase/style.css'
 
 export default function Whiteboard() {
+    const [data, setData] = useState<CraftbaseData>()
+    const board = useRef<CraftbaseHandle>(null)
+
     return (
-        <div style={{ width: '100vw', height: '100vh' }}>
-            <Board />
+        <div style={{ height: 600 }}>
+            <Craftbase initialData={data} onChange={setData} ref={board} />
         </div>
     )
-}`}</CodeBlock>
+}
+
+// board.current?.load(data)   replace the board
+// board.current?.clear()      remove every element
+// board.current?.getData()    current document`}</CodeBlock>
                 </Section>
 
                 <Section title="Where your whiteboard data lives">
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        By default Craftbase runs in <strong className="text-ink">local
-                        mode</strong>. Everything a user draws is kept in React
-                        state and continuously saved to the browser's{' '}
-                        <strong className="text-ink">localStorage</strong> as a
-                        draft. This means:
+                        Your component gets the whole board through{' '}
+                        <code className="text-accent-dark">onChange</code>. Separately,
+                        the <code className="text-accent-dark">storage</code> prop
+                        decides whether the browser keeps a copy:
                     </p>
                     <ul className="list-disc pl-5 space-y-1.5 text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
                         <li>
-                            No database, server or account is needed to start —
-                            the canvas works fully offline.
+                            <strong className="text-ink">ask</strong> (default):
+                            a small prompt asks the user. If they allow it, the
+                            board is saved to localStorage and survives a
+                            refresh. If they say no, it lives in memory only and
+                            is gone on refresh. The answer is remembered.
                         </li>
                         <li>
-                            The board is restored automatically on reload from
-                            the saved localStorage draft.
+                            <strong className="text-ink">local</strong>: you
+                            already have consent. Saves without asking.
                         </li>
                         <li>
-                            Data is scoped to the user's browser and origin, so
-                            it is private to that device until you choose to
-                            persist or share it.
+                            <strong className="text-ink">memory</strong>: never
+                            touches localStorage.
                         </li>
                     </ul>
                     <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed">
-                        Because the draft is just localStorage, clearing the
-                        browser's site data (or opening the app in a different
-                        browser/device) starts a fresh board. When you're ready
-                        to sync across devices, Craftbase can be wired to a
-                        backend, but that's entirely opt-in.
+                        Stored keys start with{' '}
+                        <code className="text-accent-dark">craftbase_</code>, so
+                        they never clash with your app's keys. Use{' '}
+                        <code className="text-accent-dark">storageKey</code> to
+                        keep separate boards apart.
                     </p>
                 </Section>
 
-                <Section title="Configure your bundler">
-                    <p className="text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed mb-3">
-                        Craftbase ships TypeScript source (
-                        <code className="text-accent-dark">.ts</code>/
-                        <code className="text-accent-dark">.tsx</code>). Make sure
-                        your bundler compiles it and that Tailwind scans
-                        Craftbase's classes so they survive purging:
-                    </p>
-                    <CodeBlock>{`// tailwind.config.js
-export default {
-    content: [
-        './src/**/*.{ts,tsx}',
-        './node_modules/craftbase/src/**/*.{ts,tsx}',
-    ],
-}
-
-// vite.config.js — let Vite handle Craftbase's TS source
-export default {
-    optimizeDeps: { exclude: ['craftbase'] },
-}`}</CodeBlock>
+                <Section title="Styling and limits">
+                    <ul className="list-disc pl-5 space-y-1.5 text-xs tablet-landscape:text-sm text-ink-muted leading-relaxed">
+                        <li>
+                            All craftbase styles are scoped to the board. Your
+                            page's styles stay as they are, and they don't reach
+                            inside the board.
+                        </li>
+                        <li>
+                            <code className="text-accent-dark">theme</code>{' '}
+                            switches between light and dark.
+                        </li>
+                        <li>One board per page.</li>
+                        <li>
+                            No image elements, and no sharing. The board stays
+                            in the browser.
+                        </li>
+                    </ul>
                 </Section>
 
                 {/* CTA */}

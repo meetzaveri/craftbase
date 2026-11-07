@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { DEFAULT_TEXT_FONT_FAMILY } from '../constants/misc'
+import {
+    DEFAULT_TEXT_FONT_FAMILY,
+    ELEMENT_DEFAULTS_KEY,
+} from '../constants/misc'
+import { cbStorage } from '../utils/storage'
 
-const STORAGE_KEY = 'craftbase:elementDefaults'
+const STORAGE_KEY = ELEMENT_DEFAULTS_KEY
 
 export type TextSizeLabel = 'S' | 'M' | 'L' | 'XL'
 
@@ -34,7 +38,7 @@ const INITIAL_DEFAULTS: ElementDefaultsState = {
 
 function loadFromStorage(): ElementDefaultsState {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY)
+        const raw = cbStorage.getItem(STORAGE_KEY)
         if (!raw) return INITIAL_DEFAULTS
         const parsed = JSON.parse(raw) as Partial<ElementDefaultsState>
         return { ...INITIAL_DEFAULTS, ...parsed }
@@ -99,7 +103,7 @@ export function useElementDefaults(): ElementDefaultsApi {
             return
         }
         try {
-            localStorage.setItem(
+            cbStorage.setItem(
                 STORAGE_KEY,
                 JSON.stringify({
                     defaultFill,
